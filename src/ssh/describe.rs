@@ -9,9 +9,9 @@ use std::error::Error;
 
 use super::{
     AgentProblem, AgentUnreachable, AuthError, AuthenticationPrompt, AuthenticationRequest,
-    ChannelError, ConnectError, ConnectionPromptField, ExecError, ExecErrorKind, ExecFailure,
-    ForwardProblem, KnownHostsError, Latency, MissingCredential, PasswordWanted, ProxyError,
-    RouteFailure, UnknownHostPrompt, link_as,
+    ChannelError, ConnectError, ConnectionPromptField, ExecFailure, ForwardProblem,
+    KnownHostsError, Latency, MissingCredential, PasswordWanted, ProxyError, RouteFailure,
+    UnknownHostPrompt, link_as,
 };
 use crate::i18n::t;
 
@@ -49,35 +49,6 @@ pub fn describe_missing_credential(need: MissingCredential) -> String {
         MissingCredential::KeyboardInteractive => t!("ssh.missing.keyboard_interactive"),
     }
     .into()
-}
-
-/// Why a command from the external CLI did not run to its end.
-pub fn describe_exec_error(error: &ExecError) -> String {
-    let causes: Vec<Cause<'_>> = error.error.chain().collect();
-    if let Some(failure) = link_as::<ExecFailure>(causes[0]) {
-        return exec_failure(failure, &causes[1..]);
-    }
-    if error.kind == ExecErrorKind::MissingCredential
-        && let Some(need) = causes
-            .iter()
-            .find_map(|cause| link_as::<MissingCredential>(*cause))
-    {
-        return match need {
-            MissingCredential::Password { rejected: false } => t!("ssh.exec.no_saved_password"),
-            MissingCredential::Password { rejected: true } => {
-                t!("ssh.exec.saved_password_rejected")
-            }
-            MissingCredential::Passphrase { rejected: false } => {
-                t!("ssh.exec.no_saved_passphrase")
-            }
-            MissingCredential::Passphrase { rejected: true } => {
-                t!("ssh.exec.saved_passphrase_rejected")
-            }
-            MissingCredential::KeyboardInteractive => t!("ssh.exec.keyboard_interactive"),
-        }
-        .into();
-    }
-    login_reason(&causes)
 }
 
 /// A round trip as the tabs show it.

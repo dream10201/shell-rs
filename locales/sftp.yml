@@ -1,7 +1,7 @@
 _version: 2
 
 # SFTP connections, transfers and local file operations: mostly errors,
-# which the SFTP tab, the editor and the external CLI show.
+# which the SFTP tab and the editor show.
 
 sftp.place.home:
   zh-CN: 主目录

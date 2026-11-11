@@ -9,8 +9,8 @@ mod transport;
 mod worker;
 pub use describe::{
     authentication_fields, authentication_instructions, authentication_title, describe_chain,
-    describe_channel_error, describe_error, describe_exec_error, describe_link,
-    describe_login_error, describe_missing_credential, latency_label, unknown_host_description,
+    describe_channel_error, describe_error, describe_link, describe_login_error,
+    describe_missing_credential, latency_label, unknown_host_description,
 };
 pub use shellrs_ssh::*;
 pub use tester::SshConnectionTester;

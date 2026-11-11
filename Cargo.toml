@@ -6,19 +6,10 @@ publish = false
 description = "SSH client and host manager: terminal, SFTP, port forwarding"
 license = "GPL-3.0-only"
 repository = "https://github.com/dream10201/shell-rs"
-default-run = "shellrs"
 
-# The app. On macOS and Linux it doubles as the `shellrs` command when
-# started with arguments.
 [[bin]]
 name = "shellrs"
 path = "src/main.rs"
-
-# The `shellrs` command on its own, as a console program: Windows needs it,
-# because the app is a GUI program there and has no console to print to.
-[[bin]]
-name = "shellrs-cli"
-path = "src/bin/shellrs-cli.rs"
 
 # The sync, SSH and hosts cores are crates of their own, under MIT, so the
 # mobile apps can link them as well. Cargo commands here build, test and lint them
@@ -66,7 +57,6 @@ async-channel = "2"
 async-io = "2"
 base64 = "0.22"
 flate2 = "1"
-clap = { version = "4", features = ["derive"] }
 dirs = "6"
 # Canonical local paths without the `\\?\` prefix std adds on Windows.
 dunce = "1"
@@ -156,7 +146,6 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 ] }
 
 [target.'cfg(windows)'.dependencies]
-windows-registry = "0.6"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",

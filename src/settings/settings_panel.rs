@@ -2,14 +2,13 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _,
+    ActiveTheme as _, Disableable as _, Icon, Sizable as _,
     button::{Button, ButtonVariants as _},
     dock::{BasePanel, Panel, PanelEvent, TabGroup},
     group_box::GroupBoxVariant,
     h_flex,
     label::Label,
     menu::PopupMenu,
-    separator::Separator,
     setting::{
         NumberFieldOptions, SelectIndex, SettingField, SettingGroup, SettingItem, SettingPage,
         Settings,
@@ -21,11 +20,9 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::app::{
-    CatalogIcon, CenterTab, CheckForUpdates, CloseSettings, CopyAgentSkill, DownloadUpdate,
-    InstallAgentSkill, InstallCliCommand, OpenDownloadPage, OpenWebsite, RefreshCliIntegration,
-    RemoveAgentSkill, RemoveCliCommand, ShowUpdate,
+    CatalogIcon, CenterTab, CheckForUpdates, CloseSettings, DownloadUpdate, OpenDownloadPage,
+    OpenWebsite, ShowUpdate,
 };
-use crate::cli::{AgentKind, BinaryStatus, CliIntegration, IntegrationStatus, SkillStatus};
 use crate::explorer::{FileIcon, FileIconKind};
 use crate::i18n::t;
 use crate::sftp::{DEFAULT_PARALLEL_TRANSFERS, PARALLEL_TRANSFERS_RANGE};
@@ -62,8 +59,6 @@ pub enum SettingsPanelEvent {
 /// changes.
 pub struct SettingsPanel {
     store: Entity<SettingsStore>,
-    /// What of the external CLI is installed, for 外部 CLI.
-    integration: Entity<CliIntegration>,
     /// Where updating stands, for 关于.
     updater: Entity<Updater>,
     /// Where sync stands, for 同步.
@@ -84,7 +79,7 @@ pub struct SettingsPanel {
     shown_category: Rc<Cell<usize>>,
     focus_handle: FocusHandle,
     tab_group: Option<WeakEntity<TabGroup>>,
-    _subscriptions: [Subscription; 6],
+    _subscriptions: [Subscription; 5],
     _font_scan: Task<()>,
     _lock_subscription: Option<Subscription>,
 }
@@ -92,7 +87,6 @@ pub struct SettingsPanel {
 impl SettingsPanel {
     pub fn new(
         store: Entity<SettingsStore>,
-        integration: Entity<CliIntegration>,
         updater: Entity<Updater>,
         sync: Entity<SyncService>,
         window: &mut Window,
@@ -105,7 +99,6 @@ impl SettingsPanel {
             cx.observe(&store, |_, _, cx| cx.notify()),
             cx.observe(&shortcuts, |_, _, cx| cx.notify()),
             cx.observe(&local_shell, |_, _, cx| cx.notify()),
-            cx.observe(&integration, |_, _, cx| cx.notify()),
             cx.observe(&updater, |_, _, cx| cx.notify()),
             cx.observe(&sync, |_, _, cx| cx.notify()),
         ];
@@ -126,7 +119,6 @@ impl SettingsPanel {
         Self {
             _lock_subscription: lock_subscription,
             store,
-            integration,
             updater,
             sync,
             highlight_rules,
@@ -260,7 +252,7 @@ struct Category {
 type CategoryGroups = fn(&SettingsPanel, &App) -> Vec<SettingGroup>;
 
 /// The categories, in the order the left column lists them.
-const CATEGORIES: [Category; 9] = [
+const CATEGORIES: [Category; 8] = [
     Category {
         title: "settings.category.appearance",
         icon: CatalogIcon::Palette,
@@ -285,11 +277,6 @@ const CATEGORIES: [Category; 9] = [
         title: "settings.category.shortcuts",
         icon: CatalogIcon::Keyboard,
         groups: shortcuts_groups,
-    },
-    Category {
-        title: "settings.category.external_cli",
-        icon: CatalogIcon::SquareTerminal,
-        groups: external_cli_groups,
     },
     Category {
         title: "settings.category.sync",
@@ -1065,77 +1052,8 @@ fn app_lock_group(store: &Entity<SettingsStore>, cx: &App) -> SettingGroup {
             .disabled(busy)
             .keywords(keywords(t!("app_lock.keywords"))),
         );
-        let (reader, writer) = (store.clone(), store.clone());
-        items.push(
-            SettingItem::new(
-                t!("app_lock.allow_cli"),
-                SettingField::switch(
-                    move |cx| reader.read(cx).settings().app_lock_allow_cli,
-                    move |allowed, cx| {
-                        writer.update(cx, |store, cx| {
-                            store.update(|settings| settings.app_lock_allow_cli = allowed, cx)
-                        })
-                    },
-                )
-                .default_value(false),
-            )
-            .description(t!("app_lock.allow_cli_description"))
-            .disabled(busy)
-            .keywords(keywords(t!("app_lock.keywords"))),
-        );
     }
     SettingGroup::new().title(t!("app_lock.title")).items(items)
-}
-
-/// 外部 CLI: whether the `shellrs` command may use the saved hosts, the
-/// command itself, and the skill that teaches agents to use it.
-fn external_cli_groups(panel: &SettingsPanel, cx: &App) -> Vec<SettingGroup> {
-    let (reader, writer) = (panel.store.clone(), panel.store.clone());
-    let integration = panel.integration.read(cx);
-    let installable = integration.paths().is_some();
-    let status = integration.status().cloned();
-    let paths = integration.paths().cloned();
-    let (bin_link, skill_files) = match &paths {
-        Some(paths) => (
-            Some(paths.bin_link.display().to_string()),
-            Some(AgentKind::ALL.map(|agent| paths.skill_file(agent).display().to_string())),
-        ),
-        None => (None, None),
-    };
-    vec![
-        SettingGroup::new()
-            .title(t!("settings.cli.access"))
-            .items([SettingItem::new(
-                t!("settings.cli.enabled"),
-                SettingField::switch(
-                    move |cx| reader.read(cx).settings().external_cli.enabled,
-                    move |enabled, cx| {
-                        writer.update(cx, |store, cx| {
-                            store.update(|settings| settings.external_cli.enabled = enabled, cx)
-                        });
-                    },
-                )
-                .default_value(false),
-            )
-            .description(t!("settings.cli.enabled_description"))]),
-        SettingGroup::new()
-            .title(t!("settings.cli.binary"))
-            .description(if crate::app::portable_root().is_some() {
-                t!("settings.cli.binary_description_portable")
-            } else if cfg!(windows) {
-                t!("settings.cli.binary_description_windows")
-            } else {
-                t!("settings.cli.binary_description")
-            })
-            .items([binary_item(bin_link, status.clone())]),
-        SettingGroup::new()
-            .title("Agent Skills")
-            .description(t!("settings.cli.skills_description"))
-            .items([
-                skill_actions_item(installable),
-                skills_item(skill_files, status),
-            ]),
-    ]
 }
 
 /// 关于: 应用更新, as three rows: the version with where updating stands,
@@ -1325,248 +1243,6 @@ fn build_description() -> String {
         platform = format!("{platform} · {}", t!("settings.about.software_rendering"));
     }
     t!("settings.about.build", build = build, platform = platform).to_string()
-}
-
-/// Where the `shellrs` command stands, with the one thing to do about it.
-fn binary_item(bin_link: Option<String>, status: Option<IntegrationStatus>) -> SettingItem {
-    SettingItem::render(move |_, _, cx| {
-        let binary = status.as_ref().map(|status| &status.binary);
-        let (line, action) = match (&bin_link, binary) {
-            (None, _) => (
-                RowStatus::Plain(t!("settings.cli.binary_unsupported").into()),
-                None,
-            ),
-            (Some(_), None) => (RowStatus::Plain(t!("settings.cli.checking").into()), None),
-            (Some(path), Some(BinaryStatus::Installed)) => (
-                RowStatus::Installed(path.clone()),
-                Some((t!("settings.cli.remove"), false)),
-            ),
-            (Some(path), Some(BinaryStatus::Missing)) => (
-                RowStatus::Plain(t!("settings.cli.missing", path = path).into()),
-                Some((t!("settings.cli.install"), true)),
-            ),
-            (Some(path), Some(BinaryStatus::Stale { target })) => (
-                RowStatus::Warning(
-                    t!(
-                        "settings.cli.binary_stale",
-                        path = path,
-                        target = target.display()
-                    )
-                    .into(),
-                ),
-                Some((t!("settings.cli.reinstall"), true)),
-            ),
-            (Some(path), Some(BinaryStatus::Occupied { target })) => (
-                RowStatus::Warning(match target {
-                    Some(target) => t!(
-                        "settings.cli.binary_occupied_by",
-                        path = path,
-                        target = target.display()
-                    )
-                    .into(),
-                    None => t!("settings.cli.binary_occupied", path = path).into(),
-                }),
-                None,
-            ),
-            (Some(path), Some(BinaryStatus::Outdated)) => (
-                RowStatus::Warning(t!("settings.cli.outdated", path = path).into()),
-                Some((t!("settings.cli.update"), true)),
-            ),
-            (Some(path), Some(BinaryStatus::NotOnPath)) => (
-                RowStatus::Warning(t!("settings.cli.binary_not_on_path", path = path).into()),
-                Some((t!("settings.cli.install"), true)),
-            ),
-            (Some(_), Some(BinaryStatus::Unavailable)) => (
-                RowStatus::Warning(t!("settings.cli.binary_unavailable").into()),
-                None,
-            ),
-        };
-        h_flex()
-            .w_full()
-            .justify_between()
-            .items_center()
-            .gap_3()
-            .child(
-                v_flex()
-                    .gap_1()
-                    .min_w_0()
-                    .child(div().text_sm().child(t!("settings.cli.status")))
-                    .child(line.render("cli-binary-status", cx)),
-            )
-            .children(action.map(|(label, install)| {
-                row_button("cli-binary", label, install).on_click(move |_, window, cx| {
-                    if install {
-                        window.dispatch_action(Box::new(InstallCliCommand), cx);
-                    } else {
-                        window.dispatch_action(Box::new(RemoveCliCommand), cx);
-                    }
-                })
-            }))
-    })
-    .keywords(keywords(t!("settings.cli.binary_keywords")))
-}
-
-/// 检查状态 and 复制 skills, above the agents.
-fn skill_actions_item(installable: bool) -> SettingItem {
-    SettingItem::render(move |_, _, _| {
-        h_flex()
-            .gap_2()
-            .child(
-                Button::new("check-cli-integration")
-                    .outline()
-                    .small()
-                    .icon(Icon::new(CatalogIcon::RefreshCw))
-                    .label(t!("settings.cli.check"))
-                    .disabled(!installable)
-                    .on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(RefreshCliIntegration), cx)
-                    }),
-            )
-            .child(
-                Button::new("copy-agent-skill")
-                    .outline()
-                    .small()
-                    .icon(Icon::new(IconName::Copy))
-                    .label(t!("settings.cli.copy_skills"))
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(CopyAgentSkill), cx)),
-            )
-    })
-    .keywords(keywords(t!("settings.cli.skills_keywords")))
-}
-
-/// One row per agent, each with where its skill goes and whether it is
-/// there.
-fn skills_item(
-    files: Option<[String; AgentKind::ALL.len()]>,
-    status: Option<IntegrationStatus>,
-) -> SettingItem {
-    SettingItem::render(move |_, _, cx| {
-        v_flex()
-            .w_full()
-            .gap_3()
-            .children(AgentKind::ALL.iter().enumerate().map(|(ix, agent)| {
-                let file = files.as_ref().map(|files| files[ix].clone());
-                let skill = status.as_ref().map(|status| status.skill(*agent));
-                v_flex()
-                    .gap_3()
-                    .when(ix > 0, |row| row.child(Separator::horizontal()))
-                    .child(skill_row(*agent, file, skill, cx))
-            }))
-    })
-    .keywords(["skill", "Agent", "Codex", "Claude", "OpenCode", "WorkBuddy"])
-}
-
-fn skill_row(
-    agent: AgentKind,
-    file: Option<String>,
-    status: Option<SkillStatus>,
-    cx: &App,
-) -> impl IntoElement {
-    let (line, action) = match (&file, status) {
-        (None, _) => (
-            RowStatus::Plain(t!("settings.cli.skill_unsupported").into()),
-            None,
-        ),
-        (Some(_), None) => (RowStatus::Plain(t!("settings.cli.checking").into()), None),
-        (Some(file), Some(SkillStatus::Installed)) => (
-            RowStatus::Installed(file.clone()),
-            Some((t!("settings.cli.remove"), false)),
-        ),
-        (Some(file), Some(SkillStatus::Missing)) => (
-            RowStatus::Plain(t!("settings.cli.missing", path = file).into()),
-            Some((t!("settings.cli.install"), true)),
-        ),
-        (Some(file), Some(SkillStatus::Outdated)) => (
-            RowStatus::Warning(t!("settings.cli.outdated", path = file).into()),
-            Some((t!("settings.cli.update"), true)),
-        ),
-    };
-    h_flex()
-        .w_full()
-        .justify_between()
-        .items_center()
-        .gap_3()
-        .child(
-            v_flex()
-                .gap_1()
-                .min_w_0()
-                .child(div().text_sm().child(agent.label()))
-                .children(agent.description().map(|description| {
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(description)
-                }))
-                .child(line.render(
-                    SharedString::from(format!("skill-status-{}", agent.key())),
-                    cx,
-                )),
-        )
-        .children(action.map(|(label, install)| {
-            row_button(
-                SharedString::from(format!("skill-{}", agent.key())),
-                label,
-                install,
-            )
-            .on_click(move |_, window, cx| {
-                if install {
-                    window.dispatch_action(Box::new(InstallAgentSkill(agent)), cx);
-                } else {
-                    window.dispatch_action(Box::new(RemoveAgentSkill(agent)), cx);
-                }
-            })
-        }))
-}
-
-/// Installing is the step the row asks for, so it is the primary button;
-/// removing is not.
-fn row_button(id: impl Into<ElementId>, label: SharedString, install: bool) -> Button {
-    let button = Button::new(id).small().label(label);
-    if install {
-        button.primary()
-    } else {
-        button.outline()
-    }
-}
-
-/// The line under a row's name that says where things stand.
-enum RowStatus {
-    /// ✓ 已安装于 the path, in the success colour.
-    Installed(String),
-    Plain(String),
-    Warning(String),
-}
-
-impl RowStatus {
-    /// With `id` and what it says as its label, for tests.
-    fn render(self, id: impl Into<ElementId>, cx: &App) -> AnyElement {
-        let line = div().id(id).test_support().text_sm();
-        match self {
-            RowStatus::Installed(path) => line
-                .aria_label(t!("settings.cli.installed_at_path", path = path))
-                .text_color(cx.theme().success)
-                .child(
-                    h_flex()
-                        .gap_1()
-                        .child(Icon::new(IconName::Check).small())
-                        .child(t!("settings.cli.installed_at"))
-                        .child(
-                            div()
-                                .font_family(cx.theme().mono_font_family.clone())
-                                .child(path),
-                        ),
-                ),
-            RowStatus::Plain(text) => line
-                .aria_label(text.clone())
-                .text_color(cx.theme().muted_foreground)
-                .child(text),
-            RowStatus::Warning(text) => line
-                .aria_label(text.clone())
-                .text_color(cx.theme().warning)
-                .child(text),
-        }
-        .into_any_element()
-    }
 }
 
 /// The terminal font family: the monospace families found so far, with the

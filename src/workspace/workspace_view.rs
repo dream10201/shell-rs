@@ -27,19 +27,16 @@ use crate::app::ExplorerDispatch as _;
 use crate::app::{
     CenterTab, ClearTerminal, CloseActiveTab, CloseEditor, CloseExplorer, CloseLocalTerminal,
     CloseSettings, CloseTabs, CloseTerminal, CollapseAllGroups, ConnectGroup, ConnectHost,
-    CopyAgentSkill, CopyHostAddress, CopyHostId, CopyTerminal, DeleteGroup, DeleteHost,
-    DisconnectTerminal, DismissTerminalFind, DuplicateHost, DuplicateTerminal, EditHost,
-    ExpandAllGroups, ExplorerAction, ExplorerCommand, ExplorerShortcut, FindInTerminal,
-    FindNextInTerminal, FindPreviousInTerminal, FocusSearch, InstallAgentSkill, InstallCliCommand,
-    MaximizeWindow, MoveHostNode, NewChildGroup, NewGroup, NewHost, NewHostInGroup,
-    NewLocalTerminal, NewTemporaryConnection, OpenExplorer, OpenSettings, PasteTerminal,
-    QuickConnect, ReconnectTerminal, RefreshCliIntegration, RemoveAgentSkill, RemoveCliCommand,
-    RenameExplorer, RenameGroup, RenameTerminal, RestartLocalTerminal, RestoreWindow,
-    SelectAllTerminal, SendBreak, SetFileSizeFormat, ShowOrHideApp, ToggleHiddenFiles,
-    ToggleHostPanel, ToggleTheme, ToolKind, ZoomIn, ZoomOut, ZoomReset, ZoomTerminalIn,
-    ZoomTerminalOut, ZoomTerminalReset,
+    CopyHostAddress, CopyHostId, CopyTerminal, DeleteGroup, DeleteHost, DisconnectTerminal,
+    DismissTerminalFind, DuplicateHost, DuplicateTerminal, EditHost, ExpandAllGroups,
+    ExplorerAction, ExplorerCommand, ExplorerShortcut, FindInTerminal, FindNextInTerminal,
+    FindPreviousInTerminal, FocusSearch, MaximizeWindow, MoveHostNode, NewChildGroup, NewGroup,
+    NewHost, NewHostInGroup, NewLocalTerminal, NewTemporaryConnection, OpenExplorer, OpenSettings,
+    PasteTerminal, QuickConnect, ReconnectTerminal, RenameExplorer, RenameGroup, RenameTerminal,
+    RestartLocalTerminal, RestoreWindow, SelectAllTerminal, SendBreak, SetFileSizeFormat,
+    ShowOrHideApp, ToggleHiddenFiles, ToggleHostPanel, ToggleTheme, ToolKind, ZoomIn, ZoomOut,
+    ZoomReset, ZoomTerminalIn, ZoomTerminalOut, ZoomTerminalReset,
 };
-use crate::cli::{CliIntegration, CliServer, IntegrationPaths, SshCliBackend};
 use crate::connection::{
     ConnectionPrompt, ConnectionPromptField, ConnectionPromptKind, ConnectionPromptReply,
     ConnectionSecret, SharedConnectionTester,
@@ -60,6 +57,7 @@ use crate::host::{
     open_quick_connect_dialog, open_temporary_connection_dialog,
 };
 use crate::i18n::t;
+use crate::instance::InstanceServer;
 use crate::settings::{
     Appearance, DEFAULT_INTERFACE_FONT_SIZE, SettingsPanel, SettingsPanelEvent, SettingsStore,
     SettingsStoreEvent, WindowSettings,
@@ -194,14 +192,10 @@ pub struct Workspace {
     settings_tab: Option<Entity<SettingsPanel>>,
     /// What the settings tab edits; the workspace applies it to the window.
     settings: Entity<SettingsStore>,
-    /// Where the `shellrs` command and the agent skills go, and whether
-    /// they are there. No paths in UI tests, so nothing reaches the home
-    /// directory unless a test hands it a temporary one.
-    cli_integration: Entity<CliIntegration>,
-    /// Answers the `shellrs` command. Production only: UI tests never
+    /// Hears ShellRS being opened again. Production only: UI tests never
     /// listen on the real socket.
-    pub(super) cli_server: Option<CliServer>,
-    pub(super) locked_links: Vec<crate::cli::OpenLink>,
+    pub(super) instance_server: Option<InstanceServer>,
+    pub(super) locked_links: Vec<crate::instance::OpenLink>,
     /// Looks for, downloads and installs newer versions. Without services
     /// in UI tests, so it never reaches the network unless a test hands it
     /// fakes.
@@ -271,14 +265,14 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self::new_with_cli_server(store, settings, None, window, cx)
+        Self::new_with_instance_server(store, settings, None, window, cx)
     }
 
     /// Take over the activation listener reserved by the startup password gate.
-    pub fn new_with_cli_server(
+    pub fn new_with_instance_server(
         store: Entity<HostStore>,
         settings: Entity<SettingsStore>,
-        server: Option<CliServer>,
+        server: Option<InstanceServer>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -313,32 +307,8 @@ impl Workspace {
             cx,
         );
         this.ssh_dir = dirs::home_dir().map(|home| home.join(".ssh"));
-        this.cli_integration.update(cx, |integration, cx| {
-            integration.set_paths(IntegrationPaths::system(), cx);
-            integration.update_outdated(cx);
-        });
-        let secrets = this.store.read(cx).secrets();
-        let backend = Arc::new(SshCliBackend::new(connector, sftp, secrets));
-        let server = match server {
-            Some(server) => {
-                server.set_backend(backend);
-                Ok(server)
-            }
-            None => CliServer::start(crate::app::cli_socket_path(), backend),
-        };
-        match server {
-            Ok(server) => {
-                this.cli_server = Some(server);
-                this.serve_cli(window, cx);
-                this.serve_cli_runs(window, cx);
-            }
-            Err(error) => notify_once_open(
-                Notification::error(error.to_string()).title(t!("workspace.cli.start_failed")),
-                window,
-                cx,
-            ),
-        }
-        this.sync_cli_server(cx);
+        this.instance_server = server;
+        this.serve_reopening(window, cx);
         this.remember_window(crate::app::window_state_path(), window, cx);
         this.compose.update(cx, |pane, _| {
             pane.keep_history(crate::app::compose_history_path())
@@ -358,24 +328,6 @@ impl Workspace {
             this.count_automatic_forwards(cx);
         }
         this
-    }
-
-    /// Tell the CLI server what it may use: whether 启用外部 CLI is on, and
-    /// the hosts as they are now.
-    fn sync_cli_server(&self, cx: &App) {
-        if let Some(server) = &self.cli_server {
-            let ready =
-                crate::app_lock::AppLock::global(cx).is_none_or(|lock| lock.read(cx).is_ready());
-            server.set_enabled(
-                ready
-                    && self
-                        .settings
-                        .read(cx)
-                        .settings()
-                        .is_external_cli_allowed(crate::app_lock::is_locked(cx)),
-            );
-            server.set_hosts(self.store.read(cx));
-        }
     }
 
     /// Inject every filesystem and transport service; tests require neither a server nor a keychain.
@@ -482,7 +434,6 @@ impl Workspace {
                 }
             }),
             cx.observe_in(&store, window, |this, _, window, cx| {
-                this.sync_cli_server(cx);
                 // The system a host runs decides which tools it is offered.
                 this.sync_tool_sidebar(window, cx);
                 cx.notify()
@@ -511,7 +462,6 @@ impl Workspace {
                 if !settings.read(cx).settings().local_terminal.keep_output {
                     this.store.read(cx).forget_kept_outputs();
                 }
-                this.sync_cli_server(cx);
                 this.sync_updater(cx);
                 this.follow_sync_settings(cx);
                 this.sync_analytics(window, cx);
@@ -700,7 +650,6 @@ impl Workspace {
             lock.update(cx, |lock, cx| lock.record_activity(cx));
             Self::watch_idle_lock(lock.clone(), window, cx);
             subscriptions.push(cx.observe_in(&lock, window, |this, _, window, cx| {
-                this.sync_cli_server(cx);
                 if !crate::app_lock::is_locked(cx) {
                     for link in std::mem::take(&mut this.locked_links) {
                         this.open_link(link, window, cx);
@@ -730,8 +679,7 @@ impl Workspace {
             front_saved_terminal,
             settings_tab: None,
             settings,
-            cli_integration: cx.new(|_| CliIntegration::new(None)),
-            cli_server: None,
+            instance_server: None,
             locked_links: Vec::new(),
             updater,
             sync,
@@ -930,11 +878,6 @@ impl Workspace {
     /// The running port forwards, for tests.
     pub fn forwards(&self) -> &Entity<ForwardManager> {
         &self.forwards
-    }
-
-    /// Tests hand it a temporary home and bin directory.
-    pub fn cli_integration(&self) -> &Entity<CliIntegration> {
-        &self.cli_integration
     }
 
     pub fn updater(&self) -> &Entity<Updater> {
@@ -1536,12 +1479,9 @@ impl Workspace {
             return;
         }
         let store = self.settings.clone();
-        let integration = self.cli_integration.clone();
-        // Something may have been installed or removed since last time.
-        integration.update(cx, |integration, cx| integration.refresh(cx));
         let updater = self.updater.clone();
         let sync = self.sync.clone();
-        let panel = cx.new(|cx| SettingsPanel::new(store, integration, updater, sync, window, cx));
+        let panel = cx.new(|cx| SettingsPanel::new(store, updater, sync, window, cx));
         let subscription = cx.subscribe_in(
             &panel,
             window,
@@ -1568,116 +1508,6 @@ impl Workspace {
         self.dock_area.update(cx, |area, cx| {
             area.add_panel_view(panel_handle(panel), DockPlacement::Center, None, window, cx);
         });
-    }
-
-    fn on_install_cli_command(
-        &mut self,
-        _: &InstallCliCommand,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.change_cli_integration(
-            t!("workspace.cli.install_command_failed"),
-            crate::cli::install_binary,
-            window,
-            cx,
-        );
-    }
-
-    fn on_remove_cli_command(
-        &mut self,
-        _: &RemoveCliCommand,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.change_cli_integration(
-            t!("workspace.cli.remove_command_failed"),
-            crate::cli::remove_binary,
-            window,
-            cx,
-        );
-    }
-
-    fn on_install_agent_skill(
-        &mut self,
-        action: &InstallAgentSkill,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let agent = action.0;
-        self.change_cli_integration(
-            t!("workspace.cli.install_skill_failed"),
-            move |paths| crate::cli::install_skill(paths, agent),
-            window,
-            cx,
-        );
-    }
-
-    fn on_remove_agent_skill(
-        &mut self,
-        action: &RemoveAgentSkill,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let agent = action.0;
-        self.change_cli_integration(
-            t!("workspace.cli.remove_skill_failed"),
-            move |paths| crate::cli::remove_skill(paths, agent),
-            window,
-            cx,
-        );
-    }
-
-    fn on_refresh_cli_integration(
-        &mut self,
-        _: &RefreshCliIntegration,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.cli_integration
-            .update(cx, |integration, cx| integration.refresh(cx));
-    }
-
-    fn on_copy_agent_skill(
-        &mut self,
-        _: &CopyAgentSkill,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        cx.write_to_clipboard(ClipboardItem::new_string(crate::cli::SKILL.to_string()));
-        window.push_notification(Notification::success(t!("workspace.cli.skill_copied")), cx);
-    }
-
-    /// Install or remove part of the external CLI off the main thread, then
-    /// look again at what is there. Installing the command can wait on the
-    /// system's administrator prompt.
-    fn change_cli_integration(
-        &mut self,
-        failure: SharedString,
-        change: impl FnOnce(&IntegrationPaths) -> std::io::Result<()> + Send + 'static,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let integration = self.cli_integration.clone();
-        let Some(paths) = integration.read(cx).paths().cloned() else {
-            return;
-        };
-        cx.spawn_in(window, async move |_, cx| {
-            let result = cx.background_spawn(async move { change(&paths) }).await;
-            let _ = cx.update(|window, cx| {
-                match result {
-                    // The user closed the administrator prompt.
-                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                    Err(error) => window.push_notification(
-                        Notification::error(error.to_string()).title(failure),
-                        cx,
-                    ),
-                    Ok(()) => {}
-                }
-                integration.update(cx, |integration, cx| integration.refresh(cx));
-            });
-        })
-        .detach();
     }
 
     fn on_close_settings(
@@ -3095,13 +2925,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_disable_app_lock))
             .on_action(cx.listener(Self::on_lock_app))
             .on_action(cx.listener(Self::on_open_settings))
-            .on_action(cx.listener(Self::on_install_cli_command))
-            .on_action(cx.listener(Self::on_remove_cli_command))
-            .on_action(cx.listener(Self::on_install_agent_skill))
             .on_action(cx.listener(Self::on_set_file_size_format))
             .on_action(cx.listener(Self::on_toggle_hidden_files))
-            .on_action(cx.listener(Self::on_remove_agent_skill))
-            .on_action(cx.listener(Self::on_refresh_cli_integration))
             .on_action(cx.listener(Self::on_check_for_updates))
             .on_action(cx.listener(Self::on_download_update))
             .on_action(cx.listener(Self::on_show_update))
@@ -3119,7 +2944,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_change_sync_password))
             .on_action(cx.listener(Self::on_turn_off_sync))
             .on_action(cx.listener(Self::on_remove_sync_device))
-            .on_action(cx.listener(Self::on_copy_agent_skill))
             .on_action(cx.listener(Self::on_close_settings))
             .on_action(cx.listener(Self::on_close_active_tab))
             .on_action(cx.listener(Self::on_next_tab))

@@ -3,10 +3,10 @@
 //! and WinSCP: `ShellRS sftp://user@host:port`, or with
 //! `/sessionname=名称` in front.
 //!
-//! Only told apart from the `shellrs` command's arguments here; the link
-//! itself is read by the app (`host::SshLink`), which says what is wrong
+//! Only told apart from other arguments here; the link itself is read by
+//! the app (`host::SshLink`), which says what is wrong
 //! with it in a notification. Opened again, ShellRS hands the link to the
-//! one already running, inside [`super::Request::Activate`].
+//! one already running.
 
 use std::ffi::OsString;
 use std::fmt;
@@ -77,9 +77,8 @@ const WINSCP_SWITCHES: &[&str] = &[
 ];
 const SESSION_NAME: &str = "sessionname";
 
-/// The link `args` (without the program) open, or `None` when they are the
-/// `shellrs` command's. Only the first argument decides, so `shellrs exec
-/// web "curl http://x"` stays a command: a link launch starts with one of
+/// The link `args` (without the program) open, or `None` when they name
+/// none. Only the first argument decides: a link launch starts with one of
 /// Xshell's options, one of WinSCP's switches or the link itself.
 pub fn link_arguments(args: &[OsString]) -> Option<OpenLink> {
     let args: Vec<String> = args
@@ -242,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn the_commands_arguments_are_left_to_the_command() {
+    fn other_arguments_are_not_a_link() {
         for args in [
             &[][..],
             &["list"],

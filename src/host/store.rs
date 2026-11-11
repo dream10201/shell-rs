@@ -316,8 +316,8 @@ impl HostStore {
     }
 
     /// Run `change` and say what of it could not be written to the
-    /// database (or a key file deleted), for a caller that answers someone
-    /// who cannot see the notification: the external CLI. The failures are
+    /// database (or a key file deleted), for a caller that says so itself
+    /// rather than in a notification. The failures are
     /// reported as `PersistFailed` all the same, and the change stands in
     /// memory as it always does. Keychain writes are not among them: they
     /// finish later, and [`Self::write_secret`] says how.

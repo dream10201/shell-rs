@@ -8,7 +8,6 @@
 //! no single quote inside, and no `!` for csh to expand. What is written to
 //! the file goes as an argument of its own, encoded for `printf %b`.
 
-use super::run::encode_command;
 use crate::i18n::t;
 
 /// The line the setup is marked with, at its start and end, in the file it
@@ -199,6 +198,23 @@ pub fn installed(output: &str) -> Result<(), String> {
         .find(|line| !line.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| t!("tools.no_answer").to_string()))
+}
+
+/// `command` as `printf %b` reads it back, with nothing in it a shell's
+/// line editor or single quotes would take for their own: control
+/// characters, quotes, `\`, `!` (csh-style history) and every byte above
+/// ASCII (Meta keys to readline) as `\0NNN`. The rest reads as it is, for
+/// the user and a bastion host's command audit alike.
+fn encode_command(command: &[u8]) -> String {
+    let mut encoded = String::with_capacity(command.len());
+    for &byte in command {
+        if !(0x20..0x7f).contains(&byte) || matches!(byte, b'\'' | b'\\' | b'!' | b'"') {
+            encoded.push_str(&format!("\\0{byte:03o}"));
+        } else {
+            encoded.push(char::from(byte));
+        }
+    }
+    encoded
 }
 
 #[cfg(all(test, unix))]
@@ -425,5 +441,15 @@ mod tests {
         assert_eq!(setup.shell_name(), "zsh");
         assert_eq!(setup.file_label(), "~/.zshrc");
         assert_eq!(setup.source_line(), " source ~/.zshrc");
+    }
+
+    #[test]
+    fn the_encoded_command_has_nothing_a_line_editor_or_quotes_would_take() {
+        let encoded = encode_command("echo 'it''s' \"$HOME\" a\\b !x\t中\n".as_bytes());
+        assert!(encoded.bytes().all(|byte| (0x20..0x7f).contains(&byte)));
+        assert!(!encoded.contains(['\'', '"', '!']));
+        assert!(!encoded.contains("\\\\"));
+        assert!(encoded.starts_with("echo \\0047it"), "{encoded}");
+        assert!(encoded.contains("$HOME"));
     }
 }

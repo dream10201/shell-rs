@@ -661,7 +661,7 @@ fn open_link(
     url: &str,
     tab: Option<&str>,
 ) {
-    let link = shellrs::cli::OpenLink {
+    let link = shellrs::instance::OpenLink {
         url: url.into(),
         tab: tab.map(str::to_string),
     };

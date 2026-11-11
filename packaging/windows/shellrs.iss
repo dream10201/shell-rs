@@ -68,8 +68,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#BuildDir}\shellrs.exe"; DestDir: "{app}"; Flags: ignoreversion
-; The `shellrs` command: 设置 › 外部 CLI copies it onto the PATH.
-Source: "{#BuildDir}\shellrs-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+[InstallDelete]
+; The console program of versions up to 1.0.0.
+Type: files; Name: "{app}\shellrs-cli.exe"
 
 [Icons]
 ; The AppUserModelID ShellRS gives itself (`set_app_identity`, for its

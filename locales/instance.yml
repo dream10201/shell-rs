@@ -1,0 +1,5 @@
+_version: 2
+
+instance.another_app:
+  zh-CN: 另一个 ShellRS 正在使用这个数据目录
+  en: Another ShellRS is already using this data folder.

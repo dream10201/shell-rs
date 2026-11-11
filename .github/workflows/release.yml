@@ -214,7 +214,7 @@ jobs:
         shell: bash
         run: |
           export SHELLRS_BUILD_DATE=$(date -u +%Y-%m-%d)
-          cargo build --release --locked --bins
+          cargo build --release --locked --bin shellrs
       - name: Runtime
         shell: pwsh
         run: ./scripts/windows-runtime.ps1 target/release
@@ -230,22 +230,22 @@ jobs:
       - name: Portable
         shell: pwsh
         run: |
-          # The portable zip, also what a portable copy updates from: both
-          # programs at its root beside an empty data folder, which is what
+          # The portable zip, also what a portable copy updates from: the
+          # program at its root beside an empty data folder, which is what
           # makes a copy portable. 7-Zip keeps the empty folder;
           # Compress-Archive would drop it.
           $folder = Join-Path $env:RUNNER_TEMP "portable"
           New-Item -ItemType Directory -Force -Path (Join-Path $folder "data") | Out-Null
-          Copy-Item "target\release\shellrs.exe", "target\release\shellrs-cli.exe" $folder
+          Copy-Item "target\release\shellrs.exe" $folder
           $zip = "$env:GITHUB_WORKSPACE\dist\ShellRS-$env:VERSION-windows-x86_64-portable.zip"
           Push-Location $folder
-          7z a -tzip -mx=9 $zip shellrs.exe shellrs-cli.exe data
+          7z a -tzip -mx=9 $zip shellrs.exe data
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
           # The first path listed is the archive itself.
           $entries = 7z l -slt $zip | Select-String '^Path = ' |
             ForEach-Object { $_.Line.Substring(7) } | Select-Object -Skip 1
-          if (Compare-Object @($entries) @('data', 'shellrs-cli.exe', 'shellrs.exe')) {
+          if (Compare-Object @($entries) @('data', 'shellrs.exe')) {
             Write-Error "The portable zip holds: $($entries -join ', ')"
             exit 1
           }

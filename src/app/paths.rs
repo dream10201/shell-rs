@@ -10,13 +10,6 @@ const DATA_DIR_ENV: &str = "SHELLRS_DATA_DIR";
 /// data lives there instead of in the user's profile.
 pub const PORTABLE_DATA: &str = "data";
 
-/// The folder of a portable copy that its `shellrs` command is copied into,
-/// for the PATH (设置 › 外部 CLI).
-pub const PORTABLE_BIN: &str = "bin";
-
-/// The program a portable copy is started as.
-const PROGRAM: &str = "shellrs.exe";
-
 /// What the Windows setup program leaves beside the copy it installed. Its
 /// uninstaller deletes the whole folder, so a `data` folder there must not
 /// hold anything.
@@ -100,24 +93,24 @@ pub fn analytics_path() -> PathBuf {
     data_dir().join("analytics.json")
 }
 
-/// Where the running app listens for the `shellrs` command. The command
-/// and the app both ask here, so both follow `SHELLRS_DATA_DIR`.
-pub fn cli_socket_path() -> PathBuf {
-    cli_endpoint(&data_dir())
+/// Where the running app listens for a ShellRS opened again on the same
+/// data.
+pub fn instance_socket_path() -> PathBuf {
+    instance_endpoint(&data_dir())
 }
 
-/// Where an app keeping its data in `dir` listens for the `shellrs`
-/// command: a socket in that directory, or on Windows a named pipe.
+/// Where an app keeping its data in `dir` listens for one opened again: a
+/// socket in that directory, or on Windows a named pipe.
 ///
 /// Pipe names are one namespace for the whole machine, so the name is made
 /// from the data directory. That usually lives in the user's profile, so
 /// each user, each `SHELLRS_DATA_DIR` and each portable folder gets a pipe
 /// of its own; two users running one portable folder would share it.
-pub fn cli_endpoint(dir: &Path) -> PathBuf {
+pub fn instance_endpoint(dir: &Path) -> PathBuf {
     if cfg!(windows) {
         PathBuf::from(pipe_name(dir))
     } else {
-        dir.join("cli.sock")
+        dir.join("instance.sock")
     }
 }
 
@@ -131,7 +124,7 @@ pub fn portable_root() -> Option<&'static Path> {
             return None;
         }
         // The path as the system spells it: a short 8.3 name or another
-        // letter case would give the command on the PATH another pipe.
+        // letter case would give a copy opened again another pipe.
         let exe = std::env::current_exe().ok()?;
         let exe = dunce::canonicalize(&exe).unwrap_or(exe);
         portable_root_of(&exe)
@@ -140,25 +133,14 @@ pub fn portable_root() -> Option<&'static Path> {
 }
 
 /// The portable folder `exe` belongs to: its own folder when that has a
-/// `data` folder, or, for the `shellrs` command copied into a portable
-/// copy's `bin`, the folder above. Never a folder the setup program
-/// installed into.
+/// `data` folder. Never a folder the setup program installed into.
 pub(crate) fn portable_root_of(exe: &Path) -> Option<PathBuf> {
-    let folder = exe.parent()?;
-    let above = folder
-        .file_name()
-        .is_some_and(|name| name.eq_ignore_ascii_case(PORTABLE_BIN))
-        .then(|| folder.parent())
-        .flatten()
-        .filter(|above| above.join(PROGRAM).is_file());
-    [Some(folder), above]
-        .into_iter()
-        .flatten()
-        .find(|root| root.join(PORTABLE_DATA).is_dir() && !root.join(SETUP_UNINSTALLER).exists())
-        .map(Path::to_path_buf)
+    let root = exe.parent()?;
+    (root.join(PORTABLE_DATA).is_dir() && !root.join(SETUP_UNINSTALLER).exists())
+        .then(|| root.to_path_buf())
 }
 
-/// `\\.\pipe\shellrs-cli-` and a hash of the directory. Windows paths
+/// `\\.\pipe\shellrs-instance-` and a hash of the directory. Windows paths
 /// ignore case, so the hash does too.
 fn pipe_name(dir: &Path) -> String {
     use sha2::{Digest as _, Sha256};
@@ -169,7 +151,7 @@ fn pipe_name(dir: &Path) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    format!(r"\\.\pipe\shellrs-cli-{hex}")
+    format!(r"\\.\pipe\shellrs-instance-{hex}")
 }
 
 #[cfg(test)]
@@ -187,9 +169,6 @@ mod tests {
         assert_eq!(portable_root_of(&exe), None);
         fs::create_dir(root.path().join(PORTABLE_DATA)).unwrap();
         assert_eq!(portable_root_of(&exe).as_deref(), Some(root.path()));
-        // Its console program finds the same folder.
-        let cli = root.path().join("shellrs-cli.exe");
-        assert_eq!(portable_root_of(&cli).as_deref(), Some(root.path()));
     }
 
     #[test]
@@ -208,27 +187,10 @@ mod tests {
     }
 
     #[test]
-    fn the_command_copied_into_bin_finds_the_portable_data() {
-        let root = tempfile::tempdir().unwrap();
-        let bin = root.path().join("BIN");
-        fs::create_dir(&bin).unwrap();
-        fs::create_dir(root.path().join(PORTABLE_DATA)).unwrap();
-        let command = bin.join("shellrs.exe");
-        // Only beside the program it belongs to.
-        assert_eq!(portable_root_of(&command), None);
-        fs::write(root.path().join("shellrs.exe"), "").unwrap();
-        assert_eq!(portable_root_of(&command).as_deref(), Some(root.path()));
-        // Any other folder above is not looked at.
-        let other = root.path().join("tools");
-        fs::create_dir(&other).unwrap();
-        assert_eq!(portable_root_of(&other.join("shellrs.exe")), None);
-    }
-
-    #[test]
     fn each_data_directory_gets_a_pipe_of_its_own() {
         let pipe = pipe_name(Path::new("/Users/me/AppData/Roaming/shellrs"));
-        assert!(pipe.starts_with(r"\\.\pipe\shellrs-cli-"));
-        assert_eq!(pipe.len(), r"\\.\pipe\shellrs-cli-".len() + 16);
+        assert!(pipe.starts_with(r"\\.\pipe\shellrs-instance-"));
+        assert_eq!(pipe.len(), r"\\.\pipe\shellrs-instance-".len() + 16);
         assert_eq!(
             pipe,
             pipe_name(Path::new("/USERS/me/appdata/Roaming/SHELLRS"))

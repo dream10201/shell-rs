@@ -919,7 +919,7 @@ async fn a_link_after_the_launch_opens_its_terminal_in_front(cx: &mut TestAppCon
     );
     // As `main` does once the window is open.
     cx.update_window(handle.into(), |_, window, cx| {
-        let link = shellrs::cli::OpenLink {
+        let link = shellrs::instance::OpenLink {
             url: "ssh://root@10.0.0.9".into(),
             tab: None,
         };

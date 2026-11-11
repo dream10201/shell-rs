@@ -404,16 +404,14 @@ impl Zmodem {
         }
     }
 
-    /// Take a chunk of output. `detect` is false while something else
-    /// reads the output for markers (`exec --terminal`): no transfer
-    /// starts then.
-    pub(crate) fn feed(&mut self, bytes: &[u8], now: Instant, detect: bool) -> Fed {
+    /// Take a chunk of output.
+    pub(crate) fn feed(&mut self, bytes: &[u8], now: Instant) -> Fed {
         let mut fed = Fed::default();
-        self.run(bytes.to_vec(), now, detect, &mut fed);
+        self.run(bytes.to_vec(), now, &mut fed);
         fed
     }
 
-    fn run(&mut self, mut input: Vec<u8>, now: Instant, detect: bool, fed: &mut Fed) {
+    fn run(&mut self, mut input: Vec<u8>, now: Instant, fed: &mut Fed) {
         loop {
             match &mut self.state {
                 State::Idle => {
@@ -428,10 +426,6 @@ impl Zmodem {
                         return;
                     }
                     self.over_and_out = 0;
-                    if !detect {
-                        fed.output(&input);
-                        return;
-                    }
                     let (screen, found) = self.detector.scan(&input);
                     fed.output(&screen);
                     let Some((direction, session)) = found else {
@@ -521,12 +515,12 @@ impl Zmodem {
                 State::Draining { since_data, .. } => {
                     let shown = text_after_data(since_data).to_vec();
                     self.state = State::Idle;
-                    self.run(shown, now, true, &mut fed);
+                    self.run(shown, now, &mut fed);
                 }
                 State::Asking { .. } => self.decline(&mut fed),
                 State::Transfer(transfer) => {
                     transfer.abort(Note::Cancelled);
-                    self.run(Vec::new(), now, true, &mut fed);
+                    self.run(Vec::new(), now, &mut fed);
                 }
             },
             ZmodemControl::Reply(reply) => {
@@ -539,14 +533,14 @@ impl Zmodem {
                     // `rz` said it is ready: the sender takes that at once.
                     (ZmodemDirection::Upload, ZmodemReply::Files(files)) => {
                         self.state = Transfer::send(files, now, &mut fed);
-                        self.run(held, now, true, &mut fed);
+                        self.run(held, now, &mut fed);
                     }
                     // The receiver says it is ready itself. Answering the
                     // `sz` header held meanwhile too would say it twice,
                     // and `sz` would offer its first file twice.
                     (ZmodemDirection::Download, ZmodemReply::Folder(folder)) => {
                         self.state = Transfer::receive(folder, now, &mut fed);
-                        self.run(Vec::new(), now, true, &mut fed);
+                        self.run(Vec::new(), now, &mut fed);
                     }
                     _ => self.decline(&mut fed),
                 }
@@ -569,7 +563,7 @@ impl Zmodem {
         match &mut self.state {
             State::Transfer(transfer) if now >= transfer.next_tick => {
                 transfer.quiet(now);
-                self.run(Vec::new(), now, true, &mut fed);
+                self.run(Vec::new(), now, &mut fed);
             }
             // The sender has stopped: what text came last is for the
             // screen.
@@ -580,7 +574,7 @@ impl Zmodem {
             } if now >= *quiet_at => {
                 let shown = text_after_data(since_data).to_vec();
                 self.state = State::Idle;
-                self.run(shown, now, true, &mut fed);
+                self.run(shown, now, &mut fed);
             }
             _ => {}
         }

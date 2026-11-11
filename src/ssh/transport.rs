@@ -313,9 +313,9 @@ mod tests {
     use std::{path::Path, sync::Mutex};
 
     const TEST_PASSWORD: &str = "test-password";
-    /// What the external CLI's `exec` runs in these tests: output on both
+    /// What `run_command` runs in these tests: output on both
     /// streams, then an exit status that arrives after the EOF.
-    const CLI_COMMAND: &str = "printf out; printf err >&2; exit 3";
+    const EXEC_COMMAND: &str = "printf out; printf err >&2; exit 3";
 
     #[derive(Default)]
     struct ServerState {
@@ -527,7 +527,7 @@ mod tests {
                 .execs
                 .push(String::from_utf8_lossy(command).into_owned());
             session.channel_success(channel)?;
-            if command == CLI_COMMAND.as_bytes() {
+            if command == EXEC_COMMAND.as_bytes() {
                 session.data(channel, b"out".to_vec())?;
                 session.extended_data(channel, 1, b"err".to_vec())?;
                 // After the EOF, which servers are free to do.
@@ -1036,9 +1036,9 @@ mod tests {
         ))
     }
 
-    /// The CLI's `exec` against the test server, on a thread of its own so
+    /// The core's `run_command` against the test server, on a thread of its own so
     /// a login that waits instead of failing shows up as a timeout.
-    fn run_cli_command(
+    fn run_exec_command(
         host: &Host,
         known_hosts: &Path,
         keychain: Arc<InMemorySecretStore>,
@@ -1053,7 +1053,7 @@ mod tests {
         thread::spawn(move || {
             let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
             let result =
-                crate::ssh::run_command(&connector, &config, CLI_COMMAND, &mut |stream, bytes| {
+                crate::ssh::run_command(&connector, &config, EXEC_COMMAND, &mut |stream, bytes| {
                     match stream {
                         crate::ssh::ExecStream::Stdout => stdout.extend_from_slice(bytes),
                         crate::ssh::ExecStream::Stderr => stderr.extend_from_slice(bytes),
@@ -1094,7 +1094,7 @@ mod tests {
             .set(&host.password_secret(), TEST_PASSWORD)
             .unwrap();
 
-        let (result, stdout, stderr) = run_cli_command(&host, &known_hosts, keychain);
+        let (result, stdout, stderr) = run_exec_command(&host, &known_hosts, keychain);
         assert_eq!(result.unwrap(), crate::ssh::ExecExit::Code(3));
         assert_eq!(stdout, b"out");
         assert_eq!(stderr, b"err");
@@ -1104,7 +1104,7 @@ mod tests {
                 .lock()
                 .unwrap()
                 .execs
-                .contains(&CLI_COMMAND.to_string())
+                .contains(&EXEC_COMMAND.to_string())
         );
     }
 
@@ -1122,10 +1122,9 @@ mod tests {
             .set(&host.password_secret(), TEST_PASSWORD)
             .unwrap();
 
-        let (result, stdout, _) = run_cli_command(&host, &known_hosts, keychain);
+        let (result, stdout, _) = run_exec_command(&host, &known_hosts, keychain);
         let error = result.unwrap_err();
         assert_eq!(error.kind, crate::ssh::ExecErrorKind::HostKeyUnknown);
-        assert!(crate::ssh::describe_exec_error(&error).contains("请先在 ShellRS 中连接一次"));
         assert!(stdout.is_empty());
         // Nothing was trusted on the user's behalf.
         assert!(!known_hosts.exists());
@@ -1393,14 +1392,13 @@ mod tests {
         trust_server(server.port, &known_hosts);
         let host = password_host(server.port);
 
-        let (result, _, _) = run_cli_command(
+        let (result, _, _) = run_exec_command(
             &host,
             &known_hosts,
             Arc::new(InMemorySecretStore::default()),
         );
         let error = result.unwrap_err();
         assert_eq!(error.kind, crate::ssh::ExecErrorKind::MissingCredential);
-        assert!(crate::ssh::describe_exec_error(&error).contains("没有保存密码"));
     }
 
     #[test]
@@ -1949,19 +1947,14 @@ mod tests {
             keychain
         };
 
-        let (result, stdout, _) = run_cli_command(&host, &known_hosts, saved(Some(TEST_PASSWORD)));
+        let (result, stdout, _) = run_exec_command(&host, &known_hosts, saved(Some(TEST_PASSWORD)));
         assert_eq!(result.unwrap(), crate::ssh::ExecExit::Code(3));
         assert_eq!(stdout, b"out");
 
-        for (password, message) in [
-            (None, "没有保存密码"),
-            (Some("wrong"), "保存的密码被服务器拒绝"),
-        ] {
-            let (result, _, _) = run_cli_command(&host, &known_hosts, saved(password));
+        for password in [None, Some("wrong")] {
+            let (result, _, _) = run_exec_command(&host, &known_hosts, saved(password));
             let error = result.unwrap_err();
             assert_eq!(error.kind, crate::ssh::ExecErrorKind::MissingCredential);
-            let text = crate::ssh::describe_exec_error(&error);
-            assert!(text.contains(message), "{text}");
         }
     }
 

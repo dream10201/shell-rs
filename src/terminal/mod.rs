@@ -18,7 +18,6 @@ mod local_terminal_panel;
 mod model;
 mod mouse;
 mod notices;
-mod run;
 mod scrollbar;
 mod search;
 mod terminal_panel;
@@ -54,10 +53,6 @@ pub use model::{
     TerminalLifecycle, TerminalSize, TerminalStatus,
 };
 pub use notices::TerminalNotice;
-pub use run::{
-    BusyReason, RunContext, RunEvent, RunFailure, RunHandle, RunProgress, RunShell, RunTiming,
-    TerminalRun,
-};
 pub use search::{SearchDirection, SearchMark, SearchPosition};
 pub(crate) use terminal_panel::TerminalCopy;
 pub use terminal_panel::{TerminalPanel, TerminalPanelEvent};

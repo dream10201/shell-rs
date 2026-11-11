@@ -5,14 +5,56 @@
 
 use gpui_kit::component::{WindowExt as _, dock::DockPlacement, notification::Notification};
 use gpui_kit::*;
+use std::time::Duration;
 
-use crate::cli::OpenLink;
+use crate::app::ShowOrHideApp;
 use crate::host::{HostId, LinkKind, SshLink};
 use crate::i18n::t;
+use crate::instance::{InstanceServer, OpenLink};
 
 use super::workspace_view::Workspace;
 
+/// How often the app looks for what the instance server has heard.
+const REOPEN_POLL: Duration = Duration::from_millis(100);
+
 impl Workspace {
+    /// Bring the window forward whenever ShellRS is opened while it is
+    /// already running, and open the link it was opened with. The second
+    /// copy of ShellRS only passes the word on and exits: two of them on
+    /// one data directory would each keep their own copy of the hosts and
+    /// write over the other's changes.
+    ///
+    /// Asked on a timer, like every other worker: the thread that hears the
+    /// request never wakes the window itself. 显示或隐藏 ShellRS's system
+    /// key is asked for on the same timer.
+    pub(super) fn serve_reopening(&self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor().timer(REOPEN_POLL).await;
+                let served = this.update_in(cx, |this, window, cx| {
+                    if crate::app::take_system_hotkey_press() {
+                        this.on_show_or_hide_app(&ShowOrHideApp, window, cx);
+                    }
+                    let Some(links) = this
+                        .instance_server
+                        .as_ref()
+                        .and_then(InstanceServer::take_activation)
+                    else {
+                        return;
+                    };
+                    crate::app::bring_forward(window, cx);
+                    for link in links {
+                        this.open_link(link, window, cx);
+                    }
+                });
+                if served.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
     /// Connect to what `link` names in a tab of its own across the window,
     /// a terminal or an SFTP tab by the link's scheme, or say what is wrong
     /// with it.

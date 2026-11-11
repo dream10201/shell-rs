@@ -151,7 +151,7 @@ impl ImportDialog {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        // The external CLI changes the store while the dialog is up too.
+        // Sync changes the store while the dialog is up too.
         let store_changes = cx.observe(&store, |this, store, cx| {
             refresh_rows(&mut this.rows, store.read(cx));
             cx.notify();
@@ -533,7 +533,7 @@ impl ImportDialog {
         let row = &self.rows[ix];
         let theme = cx.theme();
         let muted = theme.muted_foreground;
-        // A row saved meanwhile (by the external CLI) keeps its inputs but
+        // A row saved meanwhile (by sync) keeps its inputs but
         // shows its values as text, like any other saved row.
         let editors = self.editors.get(&ix).filter(|_| !row.existing);
         let text = |id: &'static str, value: String| {

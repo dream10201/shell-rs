@@ -1,5 +1,5 @@
-//! The app's side of an SFTP worker: the events as the explorer and the
-//! external CLI take them, worded, and the provider that starts workers on
+//! The app's side of an SFTP worker: the events as the explorer takes
+//! them, worded, and the provider that starts workers on
 //! their own threads.
 
 use super::{

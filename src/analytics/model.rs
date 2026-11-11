@@ -95,19 +95,9 @@ pub enum Counter {
     NoticeProgram,
     NoticeBell,
     NoticeKeyword,
-    /// A `shellrs` command served.
-    CliExec,
-    CliExecTerminal,
-    CliUpload,
-    CliDownload,
-    CliSync,
-    CliHosts,
-    CliCredentials,
-    /// 关键字高亮 and 启用外部 CLI switched.
+    /// 关键字高亮 switched.
     HighlightOn,
     HighlightOff,
-    ExternalCliOn,
-    ExternalCliOff,
     /// Hosts imported from `~/.ssh/config`, once per import.
     ImportSshConfig,
     /// Hosts imported from `~/.ssh/known_hosts`, once per import.
@@ -118,7 +108,7 @@ pub enum Counter {
 }
 
 impl Counter {
-    pub const ALL: [Counter; 57] = [
+    pub const ALL: [Counter; 48] = [
         Self::Ssh,
         Self::SshJump,
         Self::SshProxy,
@@ -162,17 +152,8 @@ impl Counter {
         Self::NoticeProgram,
         Self::NoticeBell,
         Self::NoticeKeyword,
-        Self::CliExec,
-        Self::CliExecTerminal,
-        Self::CliUpload,
-        Self::CliDownload,
-        Self::CliSync,
-        Self::CliHosts,
-        Self::CliCredentials,
         Self::HighlightOn,
         Self::HighlightOff,
-        Self::ExternalCliOn,
-        Self::ExternalCliOff,
         Self::ImportSshConfig,
         Self::ImportKnownHosts,
         Self::ProjectTerminal,
@@ -223,17 +204,8 @@ impl Counter {
             Self::NoticeProgram => "notice_program",
             Self::NoticeBell => "notice_bell",
             Self::NoticeKeyword => "notice_keyword",
-            Self::CliExec => "cli_exec",
-            Self::CliExecTerminal => "cli_exec_terminal",
-            Self::CliUpload => "cli_upload",
-            Self::CliDownload => "cli_download",
-            Self::CliSync => "cli_sync",
-            Self::CliHosts => "cli_hosts",
-            Self::CliCredentials => "cli_credentials",
             Self::HighlightOn => "highlight_on",
             Self::HighlightOff => "highlight_off",
-            Self::ExternalCliOn => "external_cli_on",
-            Self::ExternalCliOff => "external_cli_off",
             Self::ImportSshConfig => "import_ssh_config",
             Self::ImportKnownHosts => "import_known_hosts",
             Self::ProjectTerminal => "project_terminal",
@@ -259,7 +231,6 @@ pub struct Snapshot {
     pub dark_theme: &'static str,
     pub ui_follows_theme: bool,
     pub highlight: bool,
-    pub external_cli: bool,
     pub auto_update: bool,
     /// `stable` or `beta`.
     pub update_channel: &'static str,
@@ -288,7 +259,6 @@ impl Snapshot {
             ("dark_theme", self.dark_theme),
             ("ui_follows_theme", switch(self.ui_follows_theme)),
             ("highlight", switch(self.highlight)),
-            ("external_cli", switch(self.external_cli)),
             ("auto_update", switch(self.auto_update)),
             ("update_channel", self.update_channel),
             (

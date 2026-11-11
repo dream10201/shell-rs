@@ -1,4 +1,4 @@
-//! 设置: the tab, 外观, 外部 CLI and the title bar's theme switch.
+//! 设置: the tab, 外观 and the title bar's theme switch.
 
 use crate::support::*;
 
@@ -129,145 +129,6 @@ fn settings_open_from_the_host_list_as_one_tab(cx: &mut TestAppContext) {
 
 /// The label of one dropdown in the 外观 page's 常规 group. `Settings` names
 /// its groups, items and dropdown buttons by position.
-/// Open the settings tab on 外部 CLI, the sixth category.
-fn open_external_cli_settings(cx: &mut TestAppContext, handle: WindowHandle<Root>) {
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        window.click("open-settings", cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        window.within("settings").click("0-5", cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-}
-
-#[gpui_kit::test]
-fn the_external_cli_switch_is_off_until_turned_on(cx: &mut TestAppContext) {
-    let (handle, workspace) = open_workspace(cx);
-    let enabled = |cx: &mut TestAppContext| {
-        workspace.read_with(cx, |workspace, cx| {
-            workspace
-                .settings()
-                .read(cx)
-                .settings()
-                .external_cli
-                .enabled
-        })
-    };
-    open_external_cli_settings(cx, handle);
-    assert!(!enabled(cx));
-
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        // 访问控制 › 启用外部 CLI.
-        let switch = window
-            .within("settings")
-            .within("group-0")
-            .within("item-0")
-            .find("check");
-        assert_eq!(switch.checked(), Some(false));
-        window
-            .within("settings")
-            .within("group-0")
-            .within("item-0")
-            .click("check", cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-    assert!(enabled(cx));
-}
-
-#[gpui_kit::test]
-fn without_a_home_to_install_into_the_external_cli_offers_nothing(cx: &mut TestAppContext) {
-    let (handle, _) = open_workspace(cx);
-    open_external_cli_settings(cx, handle);
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        assert_eq!(
-            window.find("skill-status-codex").label(),
-            Some("此系统暂不支持安装")
-        );
-        assert!(window.try_find("skill-codex").is_none());
-        assert!(window.try_find("cli-binary").is_none());
-        // Copying the skill needs no home directory.
-        window.click("copy-agent-skill", cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-    assert_eq!(
-        cx.read_from_clipboard().and_then(|item| item.text()),
-        Some(shellrs::cli::SKILL.to_string())
-    );
-}
-
-#[gpui_kit::test]
-fn agent_skills_install_where_each_agent_looks_and_come_off_again(cx: &mut TestAppContext) {
-    let (handle, workspace) = open_workspace(cx);
-    let root = tempfile::tempdir().unwrap();
-    let exe = root.path().join("app").join("shellrs");
-    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
-    std::fs::write(&exe, "binary").unwrap();
-    let paths = IntegrationPaths {
-        home: root.path().join("home"),
-        bin_link: root.path().join("bin").join("shellrs"),
-        exe,
-        user_path: None,
-    };
-    let codex = paths.skill_file(AgentKind::Codex);
-    workspace.update(cx, |workspace, cx| {
-        workspace.cli_integration().update(cx, |integration, cx| {
-            integration.set_paths(Some(paths.clone()), cx)
-        })
-    });
-    open_external_cli_settings(cx, handle);
-
-    let status = |cx: &mut TestAppContext, id: &'static str| {
-        cx.update_window(handle.into(), |_, window, cx| {
-            window.render_frame(cx);
-            window.find(id).label().map(str::to_string)
-        })
-        .unwrap()
-    };
-    assert_eq!(
-        status(cx, "skill-status-codex").as_deref(),
-        Some(format!("未安装（{}）", codex.display()).as_str())
-    );
-
-    // The row's button dispatches the install.
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        window.click("skill-codex", cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-    assert_eq!(
-        std::fs::read_to_string(&codex).unwrap(),
-        shellrs::cli::SKILL
-    );
-    assert_eq!(
-        status(cx, "skill-status-codex").as_deref(),
-        Some(format!("已安装于 {}", codex.display()).as_str())
-    );
-    // Only Codex's.
-    assert!(!paths.skill_file(AgentKind::ClaudeCode).exists());
-
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.dispatch_action(Box::new(RemoveAgentSkill(AgentKind::Codex)), cx);
-        window.dispatch_action(Box::new(InstallCliCommand), cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-    assert!(!codex.exists());
-    assert_eq!(
-        status(cx, "cli-binary-status").as_deref(),
-        Some(format!("已安装于 {}", paths.bin_link.display()).as_str())
-    );
-}
-
 /// Menus are not driven here: a dropdown's item writes the settings store,
 /// so the test writes it the same way and checks what follows.
 #[gpui_kit::test]
@@ -456,7 +317,7 @@ fn the_window_settings_are_on_until_turned_off(cx: &mut TestAppContext) {
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
     // 应用 comes right before 关于.
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-7", cx)
+        window.within("settings").click("0-6", cx)
     });
     let switch = |item: usize| {
         move |window: &mut gpui_kit::Window| {
@@ -488,7 +349,7 @@ fn closing_to_the_tray_is_off_and_offered_only_on_windows(cx: &mut TestAppContex
     let (handle, workspace) = open_workspace(cx);
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-7", cx);
+        window.within("settings").click("0-6", cx);
     });
     in_frame(cx, handle, |window, _| {
         let offered = gpui_kit::base::test_support::snapshots(window)

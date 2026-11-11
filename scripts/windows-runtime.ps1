@@ -1,9 +1,9 @@
-# Fails when shellrs.exe or shellrs-cli.exe in the given folder needs a DLL
+# Fails when shellrs.exe in the given folder needs a DLL
 # of the Visual C++ runtime, which Windows leaves to the Redistributable:
-# LTSC editions and fresh installs without it cannot start them. The C
-# runtime goes into the programs instead (`+crt-static` in
+# LTSC editions and fresh installs without it cannot start it. The C
+# runtime goes into the program instead (`+crt-static` in
 # .cargo/config.toml). Run by the windows and release workflows after they
-# build, with the folder the programs are in.
+# build, with the folder the program is in.
 param([Parameter(Mandatory)] [string] $Folder)
 
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -15,7 +15,7 @@ if (-not $dumpbin) {
 }
 
 $failed = $false
-foreach ($program in "shellrs.exe", "shellrs-cli.exe") {
+foreach ($program in @("shellrs.exe")) {
   $path = Join-Path $Folder $program
   $dlls = @(& $dumpbin /nologo /dependents $path |
     ForEach-Object { $_.Trim() } | Where-Object { $_ -match '\.dll$' })

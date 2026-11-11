@@ -1,7 +1,8 @@
-//! The Win32 calls behind the CLI's named pipe. The pipe's name belongs to
+//! The Win32 calls behind the instance's named pipe. The pipe's name belongs to
 //! the whole machine rather than to a folder of the user's, so both ends
 //! make sure of each other: the app's pipe lets only the same user in, and
-//! the command talks only to a pipe that user (or an administrator) owns.
+//! a ShellRS opened again talks only to a pipe that user (or an
+//! administrator) owns.
 
 use std::{
     ffi::OsStr,
@@ -42,10 +43,9 @@ use windows_sys::Win32::{
     },
 };
 
-/// Each direction's buffer. Output larger than this simply waits for the
-/// command to read it.
+/// Each direction's buffer.
 const BUFFER: u32 = 64 * 1024;
-/// How many times the command waits for a free instance before giving up.
+/// How many times the caller waits for a free instance before giving up.
 const BUSY_RETRIES: u32 = 5;
 /// How long each of those waits may take, in milliseconds.
 const BUSY_WAIT: u32 = 1000;
@@ -105,7 +105,7 @@ pub(super) fn wait_for_client(pipe: &OwnedHandle) -> io::Result<()> {
     Err(error)
 }
 
-/// The command's end: open the app's pipe, waiting briefly while every
+/// The caller's end: open the app's pipe, waiting briefly while every
 /// instance is busy. Identification only, so a program that took the name
 /// cannot act as the caller.
 pub(super) fn open(name: &Path) -> io::Result<File> {

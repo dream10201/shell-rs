@@ -16,7 +16,6 @@ use super::Workspace;
 pub(super) struct Reporting {
     analytics: Analytics,
     highlight: bool,
-    external_cli: bool,
 }
 
 impl Workspace {
@@ -32,7 +31,6 @@ impl Workspace {
         self.analytics = Some(Reporting {
             analytics,
             highlight: settings.terminal_highlight.enabled,
-            external_cli: settings.external_cli.enabled,
         });
         // The system's event, not a timer: a window left in front across
         // midnight misses that day, which is close enough.
@@ -169,15 +167,6 @@ impl Workspace {
                 Counter::HighlightOff
             });
         }
-        let external_cli = settings.external_cli.enabled;
-        if external_cli != reporting.external_cli {
-            reporting.external_cli = external_cli;
-            reporting.analytics.count(if external_cli {
-                Counter::ExternalCliOn
-            } else {
-                Counter::ExternalCliOff
-            });
-        }
         if turned_on && window.is_window_active() {
             reporting.analytics.window_active(snapshot);
         }
@@ -196,7 +185,6 @@ impl Workspace {
             dark_theme: settings.terminal_theme.theme(ThemeMode::Dark).key(),
             ui_follows_theme: settings.terminal_theme.app_follows,
             highlight: settings.terminal_highlight.enabled,
-            external_cli: settings.external_cli.enabled,
             auto_update: settings.update.automatic,
             update_channel: settings.update.channel.key(),
             custom_shortcuts: settings.shortcuts != ShortcutOverrides::default(),

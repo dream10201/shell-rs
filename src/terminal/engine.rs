@@ -32,7 +32,6 @@ use super::highlight::{
 };
 use super::links::{LinkMarker, url_search, visible_links};
 use super::notices::{NoticeScanner, ProgramNotice, TerminalNotice};
-use super::run::{BusyReason, RunFailure, RunHandle};
 use super::search::{MatchMarker, SearchDirection, SearchMark, SearchPosition, TerminalSearch};
 use super::zmodem::{Fed, Shown, Zmodem, ZmodemControl, ZmodemDirection, ZmodemReply};
 use super::{
@@ -640,35 +639,6 @@ impl TerminalEngine {
         self.runtime.exec(command)
     }
 
-    /// Take up an `exec --terminal` run (see [`super::TerminalRun`]): ^C to
-    /// whatever has the terminal, the rest as the output comes. Refused
-    /// while a full-screen program has the screen, which ^C does not end
-    /// and the command line would be keys to, and while another run has
-    /// the terminal, which the ^C would end.
-    pub fn run_command(&self, run: RunHandle) -> Result<(), RunFailure> {
-        if !self.lifecycle.accepts_input() {
-            return Err(RunFailure::NotConnected);
-        }
-        if self.mode().contains(TermMode::ALT_SCREEN) {
-            return Err(RunFailure::Busy(BusyReason::FullScreen));
-        }
-        if self.runtime.transferring() {
-            return Err(RunFailure::Busy(BusyReason::Transfer));
-        }
-        {
-            let mut slot = lock_run(&self.runtime.run);
-            if slot.as_ref().is_some_and(RunHandle::is_active) {
-                return Err(RunFailure::Busy(BusyReason::AnotherRun));
-            }
-            if !run.accept(self.runtime.commands.clone()) {
-                return Ok(());
-            }
-            *slot = Some(run);
-        }
-        self.send_user_input(b"\x03".to_vec());
-        Ok(())
-    }
-
     /// What the user chose for the transfer [`TerminalEvent::ZmodemAsk`]
     /// asked about.
     pub fn zmodem_reply(&self, reply: ZmodemReply) {
@@ -878,9 +848,6 @@ struct TerminalRuntime {
     commands: mpsc::Sender<TerminalTransportCommand>,
     size: Arc<Mutex<TerminalSize>>,
     wakeup_pending: Arc<AtomicBool>,
-    /// The `exec --terminal` run this connection carries, which the parser
-    /// thread reads the output for. Given up with the connection.
-    run: Arc<Mutex<Option<RunHandle>>>,
     /// What the user says to the parser thread's ZMODEM.
     zmodem: async_channel::Sender<ZmodemControl>,
     /// A ZMODEM transfer has the terminal (see [`Zmodem::active`]): the
@@ -915,7 +882,6 @@ impl TerminalRuntime {
         let config = terminal_config(interaction);
         let term = Arc::new(FairMutex::new(AlacrittyTerm::new(config, &size, proxy)));
 
-        let run: Arc<Mutex<Option<RunHandle>>> = Arc::default();
         let (zmodem, zmodem_controls) = async_channel::unbounded();
         let transferring = Arc::new(AtomicBool::new(false));
         let mut parser = Parser {
@@ -925,7 +891,6 @@ impl TerminalRuntime {
             watcher: LineWatcher::new(current(&highlights)),
             highlights,
             proxy: parser_proxy,
-            run: run.clone(),
             zmodem: Zmodem::default(),
             transferring: transferring.clone(),
         };
@@ -980,12 +945,7 @@ impl TerminalRuntime {
                                 let fed = parser.zmodem.control(control, Instant::now());
                                 parser.transfer(fed);
                             }
-                            // `exec --terminal` reads the output for its
-                            // markers: no transfer starts under it.
-                            let detect = !lock_run(&parser.run)
-                                .as_ref()
-                                .is_some_and(RunHandle::is_active);
-                            let fed = parser.zmodem.feed(&bytes, Instant::now(), detect);
+                            let fed = parser.zmodem.feed(&bytes, Instant::now());
                             parser.transfer(fed);
                             parser.proxy.wakeup();
                         }
@@ -1044,9 +1004,6 @@ impl TerminalRuntime {
                         }
                     }
                 }
-                if let Some(run) = lock_run(&parser.run).take() {
-                    run.disconnected();
-                }
             })
             .expect("terminal parser thread");
 
@@ -1066,7 +1023,6 @@ impl TerminalRuntime {
             commands,
             size: shared_size,
             wakeup_pending,
-            run,
             zmodem,
             transferring,
         }
@@ -1363,7 +1319,6 @@ struct Parser {
     watcher: LineWatcher,
     highlights: SharedHighlights,
     proxy: TerminalEventProxy,
-    run: Arc<Mutex<Option<RunHandle>>>,
     /// Takes the output first: `rz` and `sz`'s is not for the screen.
     zmodem: Zmodem,
     transferring: Arc<AtomicBool>,
@@ -1399,7 +1354,7 @@ impl Parser {
     }
 
     /// Output for the emulator, and for what reads it beside: 关键字高亮,
-    /// the programs' notifications and folders, an `exec --terminal` run.
+    /// the programs' notifications and folders.
     fn output(&mut self, bytes: &[u8]) {
         self.watcher.sync(current(&self.highlights));
         // The lines are only read under the lock; the rules match them
@@ -1427,23 +1382,7 @@ impl Parser {
         if let Some(directory) = self.notices.take_directory() {
             self.proxy.send(TerminalUiEventKind::Directory(directory));
         }
-        feed_run(&self.run, bytes);
     }
-}
-
-/// Hand output to the run the connection carries, and let it go once it
-/// is over.
-fn feed_run(run: &Mutex<Option<RunHandle>>, bytes: &[u8]) {
-    let mut slot = lock_run(run);
-    if let Some(handle) = slot.as_ref()
-        && !handle.feed(bytes)
-    {
-        *slot = None;
-    }
-}
-
-fn lock_run(run: &Mutex<Option<RunHandle>>) -> std::sync::MutexGuard<'_, Option<RunHandle>> {
-    run.lock().unwrap_or_else(|error| error.into_inner())
 }
 
 /// Draw what an open synchronized update has held back, if its time is up.

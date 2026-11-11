@@ -10,7 +10,6 @@ use shellrs_sync::DeviceId;
 use super::{CatalogIcon, DOCKER_ICON};
 use crate::i18n::t;
 use crate::{
-    cli::AgentKind,
     docker::{ContainerCommand, ContainerSubject, DockerObject},
     editor::EditorId,
     explorer::{ExplorerId, FileSizeFormat, PaneSide},
@@ -216,14 +215,6 @@ gpui_kit::actions!(
         FitPreview,
         /// Show the previewed image at its own size (100%).
         ActualSizePreview,
-        /// Put the `shellrs` command on the PATH.
-        InstallCliCommand,
-        /// Take the `shellrs` command off the PATH.
-        RemoveCliCommand,
-        /// Look again at what of the external CLI is installed.
-        RefreshCliIntegration,
-        /// Copy the agent skill's text to the clipboard.
-        CopyAgentSkill,
         /// Look for a newer ShellRS now.
         CheckForUpdates,
         /// Download the newer ShellRS that was found.
@@ -335,11 +326,6 @@ id_actions! {
     /// Ask first, then take a device out of sync: its file in the folder
     /// goes.
     RemoveSyncDevice(DeviceId);
-
-    /// Install (or update) the agent skill for one agent.
-    InstallAgentSkill(AgentKind);
-    /// Remove the agent skill of one agent.
-    RemoveAgentSkill(AgentKind);
 
     /// Show the SFTP 大小 column in another format, from its title's menu.
     SetFileSizeFormat(FileSizeFormat);

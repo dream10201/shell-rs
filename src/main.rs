@@ -9,23 +9,17 @@ use shellrs::host::{HostDatabase, HostStore};
 use shellrs::settings::{SettingsProblem, SettingsStore};
 
 fn main() {
-    let args = shellrs::cli::command_line_arguments().unwrap_or_default();
+    let args = shellrs::instance::command_line_arguments();
     // `ShellRS ssh://user@host:port` or `ShellRS -url … -newtab 名称`: a
     // bastion host opening ShellRS the way it opens Xshell. On every build,
     // a Windows release build above all, where bastion hosts run it.
-    let link = shellrs::cli::link_arguments(&args);
-    // `shellrs hosts list`, `shellrs exec …`: the command, not the app. Not in a
-    // Windows release build, which has nowhere to print: there the command
-    // is `shellrs-cli.exe`, which 设置 → 外部 CLI puts on the PATH.
-    #[cfg(any(not(windows), debug_assertions))]
-    if link.is_none() && !args.is_empty() {
-        std::process::exit(shellrs::cli::main(args));
-    }
+    let link = shellrs::instance::link_arguments(&args);
     // One ShellRS per data directory. Each keeps the hosts in memory and
     // writes its changes through, so a second one would write over the
     // first one's; opened again, ShellRS brings the running one forward
     // and hands it the link.
-    if shellrs::cli::activate_running_app(&shellrs::app::cli_socket_path(), link.clone()) {
+    if shellrs::instance::activate_running_app(&shellrs::app::instance_socket_path(), link.clone())
+    {
         return;
     }
     let app = gpui_kit::application().with_assets(shellrs::app::AppAssets);
@@ -83,27 +77,26 @@ fn main() {
                     });
                     shellrs::app_lock::AppLock::install(lock.clone(), cx);
                     shellrs::settings::apply(settings.settings(), window, cx);
-                    let server =
-                        match shellrs::cli::CliServer::reserve(shellrs::app::cli_socket_path()) {
-                            Ok(server) => server,
-                            Err(error) => {
-                                let failure =
-                                    cx.new(|_| shellrs::workspace::StartupFailure::new(&error));
-                                return cx.new(|cx| Root::new(failure, window, cx));
-                            }
-                        };
-                    let background_cli = settings.settings().is_external_cli_allowed(true);
+                    let server = match shellrs::instance::InstanceServer::reserve(
+                        shellrs::app::instance_socket_path(),
+                    ) {
+                        Ok(server) => server,
+                        Err(error) => {
+                            let failure =
+                                cx.new(|_| shellrs::workspace::StartupFailure::new(&error));
+                            return cx.new(|cx| Root::new(failure, window, cx));
+                        }
+                    };
                     let shell = cx.new(|cx| {
                         shellrs::workspace::AppShell::new(
                             lock,
                             Some(server),
-                            background_cli,
                             move |server, pending_links, window, cx| {
                                 let (store, problem) = open_store();
                                 let store = cx.new(|_| store);
                                 let settings = cx.new(|_| settings);
                                 let workspace = cx.new(|cx| {
-                                    shellrs::workspace::Workspace::new_with_cli_server(
+                                    shellrs::workspace::Workspace::new_with_instance_server(
                                         store, settings, server, window, cx,
                                     )
                                 });

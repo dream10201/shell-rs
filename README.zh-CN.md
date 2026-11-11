@@ -27,7 +27,7 @@
 
 ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SFTP 文件管理、SSH 端口转发放进同一个跨平台应用，JumpServer 等堡垒机也可以像调用 Xshell、WinSCP 一样调用它。它用 Rust 编写，界面基于 Zed 编辑器的 GPU 加速 UI 框架 GPUI（通过 [gpui-kit](https://gpui-kit.com)），不依赖 Electron 或 JVM。
 
-主机、分组、凭据和转发规则保存在本地的 SQLite 数据库里。密码和私钥口令只存进系统钥匙串（macOS 钥匙串、Windows 凭据管理器、Linux Secret Service），数据库里没有任何秘密。ShellRS 还带一个 `shellrs` 命令，让 Claude Code、Codex 等 AI Agent 用你保存的主机执行命令、传输文件，不用把密码交给它们。
+主机、分组、凭据和转发规则保存在本地的 SQLite 数据库里。密码和私钥口令只存进系统钥匙串（macOS 钥匙串、Windows 凭据管理器、Linux Secret Service），数据库里没有任何秘密。
 
 ## 功能
 
@@ -36,7 +36,7 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 - 分组可以任意层级嵌套，支持拖动整理和搜索。
 - 连上主机后自动识别远程系统，在主机树和标签上显示对应的系统徽章（各 Linux 发行版、BSD、macOS、Windows）。
 - 认证方式三选一：密码、无密码（依次尝试服务器免认证、SSH Agent 和 `~/.ssh` 下的默认私钥）、使用凭据。
-- 连接方式三选一：直接连接、多级 SSH 跳板、HTTP / SOCKS5 代理。终端、SFTP、端口转发和外部 CLI 都按它连接。
+- 连接方式三选一：直接连接、多级 SSH 跳板、HTTP / SOCKS5 代理。终端、SFTP 和端口转发都按它连接。
 - 「测试连接」会真实登录一次，失败时写明原因。
 - 除了 SSH，还有 Telnet 主机（交换机、串口服务器、实验环境的设备），按设备的提示自动登录，同样可以走跳板和代理；以及本机的串口，接 Console 线和调试口。
 
@@ -85,11 +85,6 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 
 - 密码、密钥、SSH Agent 三种凭据，多台主机可以共用一条；改凭据，用它的主机一起变。
 - 密钥可以引用本机文件、直接粘贴，或当场生成 Ed25519 / RSA 4096，并复制公钥。
-
-**给 AI Agent 用的 CLI**
-
-- `shellrs hosts` / `credentials` / `exec` / `upload` / `download` / `sync`：管理主机和凭据、执行命令、传输和同步文件。由正在运行的 ShellRS 代为登录，命令本身不读密码和私钥。
-- 在设置页一键把 `shellrs` 放进 PATH，并为 Claude Code、Codex、OpenCode、WorkBuddy 安装 Agent Skill。
 
 **安全与更新**
 
@@ -143,20 +138,6 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 4. 标题栏「ShellRS」后面的三个图标切换侧栏：主机、端口转发、凭据。
 5. ⌘T（Ctrl+T）打开本地终端。把标签拖到中间区域的上、下、左、右边缘，就能分栏。
 
-## 给 AI Agent 用
-
-在「设置 › 外部 CLI」里打开「启用外部 CLI」，安装 `shellrs` 命令和 Agent Skills。之后 Agent 就能直接用你保存的主机：
-
-```sh
-shellrs hosts list -q web                          # 列出主机和它们的 ID
-shellrs exec <ID> "uptime && df -h"                # 执行命令，退出码就是远程命令的退出码
-shellrs upload <ID> ./dist/app.tar.gz /opt/app/    # 上传
-shellrs download <ID> /var/log/syslog ./logs/      # 下载
-shellrs sync <ID> ./dist /opt/app --delete         # 同步目录，没变的文件跳过
-```
-
-命令把请求交给正在运行的 ShellRS，由它用保存的配置和钥匙串登录。遇到陌生主机或缺少密码时，命令直接失败、返回稳定的错误码，不会弹框卡住 Agent。详见[使用手册](docs/manual.zh.md#外部-cli)。
-
 ## 从源码构建
 
 需要先装 [rustup](https://rustup.rs)。仓库里的 `rust-toolchain.toml` 固定了 Rust 1.98.1，第一次构建时会自动安装。
@@ -183,7 +164,6 @@ cargo run
 - SFTP 的目录同步、过滤、查找文件和目录树
 - Dock 布局在重启后保留
 - 跳板和代理叠加使用、HTTPS 代理
-- 通过外部 CLI 管理端口转发和凭据
 - Windows 安装程序的代码签名
 
 ## 参与贡献

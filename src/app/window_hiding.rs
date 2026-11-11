@@ -1,7 +1,7 @@
 //! On macOS the window's close button hides ShellRS instead of closing it.
 //!
 //! ShellRS has one main window, and the workspace in it owns everything that
-//! runs: connections, transfers, port forwards, the external CLI. Closing
+//! runs: connections, transfers, port forwards. Closing
 //! it would stop all of that yet leave the app in the Dock with no window,
 //! and the Dock icon could not bring one back. So, like Mac terminals,
 //! closing hides the app: the Dock icon, ⌘Tab or opening ShellRS again

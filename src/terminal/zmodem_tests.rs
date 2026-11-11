@@ -257,7 +257,7 @@ fn converse(
     let mut to_us = first;
     for _ in 0..10_000 {
         now += Duration::from_millis(1);
-        let fed = zmodem.feed(&to_us, now, true);
+        let fed = zmodem.feed(&to_us, now);
         let ask = fed.ask;
         let mut to_remote = shown.take(fed);
         if ask.is_some()
@@ -490,7 +490,7 @@ fn upload_over(rate: f64, content: &[u8]) -> (Rz, Talk, Vec<u8>, usize) {
     let mut now = Instant::now();
     let mut to_us = rz.start();
     for _ in 0..100_000 {
-        let fed = zmodem.feed(&to_us, now, true);
+        let fed = zmodem.feed(&to_us, now);
         let ask = fed.ask;
         let mut to_remote = shown.take(fed);
         if ask.is_some() {
@@ -589,7 +589,7 @@ fn files_dropped_go_to_the_rz_typed_for_them_without_asking() {
 fn declining_cancels_the_other_end() {
     let mut zmodem = Zmodem::default();
     let now = Instant::now();
-    let fed = zmodem.feed(&Sz::new(&[("a", b"a")]).start(), now, true);
+    let fed = zmodem.feed(&Sz::new(&[("a", b"a")]).start(), now);
     assert_eq!(fed.ask, Some(ZmodemDirection::Download));
     assert!(zmodem.active());
 
@@ -604,7 +604,7 @@ fn declining_cancels_the_other_end() {
 fn halfway(zmodem: &mut Zmodem, folder: &std::path::Path, content: &[u8]) -> (Sz, Instant) {
     let mut sz = Sz::new(&[("half", content)]);
     let now = Instant::now();
-    zmodem.feed(&sz.start(), now, true);
+    zmodem.feed(&sz.start(), now);
     let fed = zmodem.control(
         ZmodemControl::Reply(ZmodemReply::Folder(folder.to_path_buf())),
         now,
@@ -613,7 +613,7 @@ fn halfway(zmodem: &mut Zmodem, folder: &std::path::Path, content: &[u8]) -> (Sz
     // A few rounds: the file is started, part of it is written.
     for _ in 0..3 {
         let to_us = sz.pump(&to_remote);
-        to_remote = zmodem.feed(&to_us, now, true).wire;
+        to_remote = zmodem.feed(&to_us, now).wire;
     }
     assert!(folder.join("half").exists());
     (sz, now)
@@ -631,13 +631,13 @@ fn ctrl_c_cancels_and_swallows_what_the_sender_streams_on() {
 
     // lrzsz's `sz` streams on a while: its data is swallowed.
     let streamed = [&[0; 1000][..], b"\x18h\x01\x02\x03\x04", &[0; 100]].concat();
-    let fed = zmodem.feed(&streamed, now, true);
+    let fed = zmodem.feed(&streamed, now);
     assert!(fed.shown.is_empty() && fed.wire.is_empty());
     // Its last, then the shell's prompt, split between chunks: the CRC (a
     // byte of it escaped) and what came before is data.
-    let fed = zmodem.feed(&[&[0; 1000][..], b"\x18i\x18"].concat(), now, true);
+    let fed = zmodem.feed(&[&[0; 1000][..], b"\x18i\x18"].concat(), now);
     assert!(fed.shown.is_empty());
-    let fed = zmodem.feed(b"Q\xffU:STOPPED\r\n$ ", now, true);
+    let fed = zmodem.feed(b"Q\xffU:STOPPED\r\n$ ", now);
     assert!(fed.shown.is_empty());
     assert!(zmodem.active());
     let fed = zmodem.tick(now + DRAIN_QUIET);
@@ -652,7 +652,7 @@ fn text_after_the_sender_stops_shows_once_it_is_quiet() {
     let mut zmodem = Zmodem::default();
     let (_, now) = halfway(&mut zmodem, folder.path(), &data(500_000, 9));
     zmodem.control(ZmodemControl::Cancel, now);
-    let fed = zmodem.feed(b"$ ", now, true);
+    let fed = zmodem.feed(b"$ ", now);
     assert!(fed.shown.is_empty());
     assert_eq!(zmodem.deadline(), Some(now + DRAIN_QUIET));
     let fed = zmodem.tick(now + DRAIN_QUIET);
@@ -684,7 +684,7 @@ fn ctrl_c_again_stops_waiting_for_the_sender() {
     let (_, now) = halfway(&mut zmodem, folder.path(), &data(500_000, 8));
     zmodem.control(ZmodemControl::Cancel, now);
     assert!(zmodem.active());
-    zmodem.feed(b"$ ", now, true);
+    zmodem.feed(b"$ ", now);
     let fed = zmodem.control(ZmodemControl::Cancel, now);
     assert_eq!(screen(&fed), b"$ ");
     assert!(!zmodem.active());
@@ -695,7 +695,7 @@ fn the_other_end_cancelling_ends_it() {
     let folder = tempfile::tempdir().unwrap();
     let mut zmodem = Zmodem::default();
     let (_, now) = halfway(&mut zmodem, folder.path(), &data(500_000, 4));
-    let fed = zmodem.feed(&[&ABORT[..], b"$ "].concat(), now, true);
+    let fed = zmodem.feed(&[&ABORT[..], b"$ "].concat(), now);
     assert_eq!(notes(&fed), [Note::Failed(Failure::Peer)]);
     // The backspaces after the CANs, then the prompt.
     assert_eq!(screen(&fed), b"\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08$ ");
@@ -708,7 +708,7 @@ fn an_other_end_that_says_nothing_is_given_up_on() {
     let folder = tempfile::tempdir().unwrap();
     let mut zmodem = Zmodem::default();
     let mut now = Instant::now();
-    zmodem.feed(b"**\x18B00000000000000\r\x8a\x11", now, true);
+    zmodem.feed(b"**\x18B00000000000000\r\x8a\x11", now);
     let fed = zmodem.control(
         ZmodemControl::Reply(ZmodemReply::Folder(folder.path().to_path_buf())),
         now,
@@ -741,16 +741,6 @@ fn a_connection_lost_ends_it_and_the_file_half_received() {
     assert_eq!(notes(&fed), [Note::Failed(Failure::Disconnected)]);
     assert!(!zmodem.active());
     assert!(!folder.path().join("half").exists());
-}
-
-#[test]
-fn nothing_starts_while_detection_is_off() {
-    let mut zmodem = Zmodem::default();
-    let header = b"**\x18B00000000000000\r\x8a\x11";
-    let fed = zmodem.feed(header, Instant::now(), false);
-    assert_eq!(screen(&fed), header);
-    assert_eq!(fed.ask, None);
-    assert!(!zmodem.active());
 }
 
 #[test]
@@ -810,7 +800,7 @@ fn the_lines_show_between_the_output_around_them() {
     zmodem.control(ZmodemControl::Dropped(vec![path]), now);
 
     // The text before the header, then the transfer's first line.
-    let fed = zmodem.feed(&Rz::new(None).start(), now, true);
+    let fed = zmodem.feed(&Rz::new(None).start(), now);
     assert_eq!(
         fed.shown[..2],
         [
@@ -819,7 +809,7 @@ fn the_lines_show_between_the_output_around_them() {
         ]
     );
     // Its last line, then the prompt after it.
-    let fed = zmodem.feed(&[&ABORT[..5], b"$ "].concat(), now, true);
+    let fed = zmodem.feed(&[&ABORT[..5], b"$ "].concat(), now);
     assert_eq!(
         fed.shown,
         [
@@ -913,7 +903,7 @@ mod lrzsz {
             );
             let now = Instant::now();
             let mut fed = match pty.output.recv_timeout(Duration::from_millis(10)) {
-                Ok(bytes) => zmodem.feed(&bytes, now, true),
+                Ok(bytes) => zmodem.feed(&bytes, now),
                 Err(_) => zmodem.tick(now),
             };
             loop {
@@ -1160,7 +1150,7 @@ mod lrzsz {
                 );
                 let now = Instant::now();
                 let mut fed = match received.try_recv() {
-                    Ok(TerminalTransportEvent::Output(bytes)) => zmodem.feed(&bytes, now, true),
+                    Ok(TerminalTransportEvent::Output(bytes)) => zmodem.feed(&bytes, now),
                     Ok(TerminalTransportEvent::Failed(why)) => panic!("{why}"),
                     Ok(_) => continue,
                     Err(_) => {

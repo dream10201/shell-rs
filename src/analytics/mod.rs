@@ -19,8 +19,8 @@
 //!
 //! Only release builds report; a development build does with
 //! `SHELLRS_ANALYTICS_DEBUG` set, as debug events, summed by the minute and
-//! retried after ten seconds. The external CLI, a second copy passing its
-//! links on, and the UI tests never start it.
+//! retried after ten seconds. A second copy passing its links on and the UI
+//! tests never start it.
 
 mod client;
 mod model;

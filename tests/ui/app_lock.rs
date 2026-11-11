@@ -35,7 +35,6 @@ fn open_locked_workspace_with_settings(
         AppLock::install(lock.clone(), cx);
         lock
     });
-    let background_cli = settings.settings().is_external_cli_allowed(true);
     let settings = cx.update(|cx| cx.new(|_| settings));
     let initial_settings = settings.clone();
     let created = Rc::new(Cell::new(0));
@@ -46,7 +45,6 @@ fn open_locked_workspace_with_settings(
             AppShell::new(
                 gate,
                 None,
-                background_cli,
                 move |_, _, window, cx| {
                     count.set(count.get() + 1);
                     let store = cx.new(|_| HostStore::empty());
@@ -86,7 +84,7 @@ fn app_settings(cx: &mut TestAppContext, handle: WindowHandle<Root>) {
         window.dispatch_action(Box::new(OpenSettings), cx)
     });
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-7", cx)
+        window.within("settings").click("0-6", cx)
     });
 }
 
@@ -309,110 +307,6 @@ fn app_lock_idle_timeout_tracks_input_and_restarts_after_unlock(cx: &mut TestApp
     assert!(!locked(cx), "setting zero disables the timeout again");
 }
 
-#[gpui_kit::test]
-fn app_lock_allows_background_cli_only_when_explicitly_enabled(cx: &mut TestAppContext) {
-    let records = Arc::new(InMemoryLockStore::default());
-    let mut configured = settings_store();
-    configured.update_unnotified(|settings| settings.external_cli.enabled = true);
-    let (handle, lock, _, settings) =
-        open_locked_workspace_with_settings(cx, records.clone(), configured);
-    app_settings(cx, handle);
-    in_frame(cx, handle, |window, cx| window.click("app-lock-enable", cx));
-    in_frame(cx, handle, |window, cx| {
-        enter(window, "app-lock-new-password", "background password", cx);
-        enter(
-            window,
-            "app-lock-repeat-password",
-            "background password",
-            cx,
-        );
-        window.click("app-lock-commit", cx);
-    });
-    wait_for_password(cx, &lock);
-    in_frame(cx, handle, |window, cx| {
-        let mut row = window.within("settings");
-        let mut group = row.within("group-1");
-        assert_eq!(group.within("item-2").find("check").checked(), Some(false));
-        group.within("item-2").click("check", cx);
-    });
-    cx.update(|cx| assert!(settings.read(cx).settings().app_lock_allow_cli));
-    in_frame(cx, handle, |window, cx| window.click("app-lock-now", cx));
-    in_frame(cx, handle, |window, cx| {
-        assert!(window.find("app-lock-screen").visible());
-        window.dispatch_action(Box::new(OpenSettings), cx);
-        assert!(window.try_find("settings").is_none());
-    });
-    cx.update(|cx| {
-        assert!(lock.read(cx).is_locked());
-        assert!(settings.read(cx).settings().is_external_cli_allowed(true));
-    });
-    in_frame(cx, handle, |window, cx| {
-        enter(window, "app-lock-password", "background password", cx);
-        window.click("app-lock-unlock", cx);
-    });
-    wait_for_password(cx, &lock);
-    in_frame(cx, handle, |window, cx| {
-        window
-            .within("settings")
-            .within("group-1")
-            .within("item-2")
-            .click("check", cx)
-    });
-    in_frame(cx, handle, |window, cx| window.click("app-lock-now", cx));
-    cx.update(|cx| {
-        assert!(lock.read(cx).is_locked());
-        assert!(!settings.read(cx).settings().is_external_cli_allowed(true));
-    });
-
-    // With both permissions saved, startup can prepare the background
-    // workspace while keeping its entire interface behind the password gate.
-    let configured = || {
-        let mut settings = settings_store();
-        settings.update_unnotified(|settings| {
-            settings.external_cli.enabled = true;
-            settings.app_lock_allow_cli = true;
-        });
-        settings
-    };
-    let (restarted, restart_lock, created, _) =
-        open_locked_workspace_with_settings(cx, records.clone(), configured());
-    assert_eq!(created.get(), 1);
-    cx.update(|cx| assert!(restart_lock.read(cx).is_locked()));
-    in_frame(cx, restarted, |window, cx| {
-        assert!(window.find("app-lock-screen").visible());
-        assert!(window.try_find("host-search").is_none());
-        assert_eq!(window.find("app-lock-password").focused(), Some(true));
-        window.dispatch_action(Box::new(OpenSettings), cx);
-        assert!(window.try_find("settings").is_none());
-    });
-    in_frame(cx, restarted, |window, cx| {
-        enter(window, "app-lock-password", "background password", cx);
-        window.click("app-lock-unlock", cx);
-    });
-    wait_for_password(cx, &restart_lock);
-    app_settings(cx, restarted);
-    in_frame(cx, restarted, |window, _| {
-        assert!(window.find("settings").visible())
-    });
-    let mut cli_off = configured();
-    cli_off.update_unnotified(|settings| settings.external_cli.enabled = false);
-    let (_, _, created, _) = open_locked_workspace_with_settings(cx, records, cli_off);
-    assert_eq!(
-        created.get(),
-        0,
-        "the global CLI switch still applies at startup"
-    );
-
-    let corrupt = Arc::new(InMemoryLockStore::default());
-    corrupt.write("broken").unwrap();
-    let (_, _, created, _) = open_locked_workspace_with_settings(cx, corrupt, configured());
-    assert_eq!(
-        created.get(),
-        0,
-        "an unreadable lock never authorizes background startup"
-    );
-}
-
 #[derive(Default)]
 struct UnavailableKeychain {
     denied: std::sync::atomic::AtomicBool,
@@ -433,12 +327,7 @@ impl LockRecordStore for UnavailableKeychain {
 }
 
 #[gpui_kit::test]
-fn app_lock_keychain_failure_blocks_background_startup_and_retry_recovers(cx: &mut TestAppContext) {
-    let mut settings = settings_store();
-    settings.update_unnotified(|settings| {
-        settings.external_cli.enabled = true;
-        settings.app_lock_allow_cli = true;
-    });
+fn app_lock_keychain_failure_blocks_startup_and_retry_recovers(cx: &mut TestAppContext) {
     let records = Arc::new(UnavailableKeychain::default());
     let (prepared, prepared_lock, _, _) =
         open_locked_workspace_with_settings(cx, records.clone(), settings_store());
@@ -456,7 +345,7 @@ fn app_lock_keychain_failure_blocks_background_startup_and_retry_recovers(cx: &m
         .denied
         .store(true, std::sync::atomic::Ordering::SeqCst);
     let (handle, lock, created, _) =
-        open_locked_workspace_with_settings(cx, records.clone(), settings);
+        open_locked_workspace_with_settings(cx, records.clone(), settings_store());
     assert_eq!(created.get(), 0);
     cx.update(|cx| {
         assert!(lock.read(cx).is_locked());
@@ -472,7 +361,7 @@ fn app_lock_keychain_failure_blocks_background_startup_and_retry_recovers(cx: &m
         .denied
         .store(false, std::sync::atomic::Ordering::SeqCst);
     in_frame(cx, handle, |window, cx| window.click("app-lock-retry", cx));
-    assert_eq!(created.get(), 1);
+    assert_eq!(created.get(), 0);
     cx.update(|cx| {
         assert!(lock.read(cx).is_ready());
         assert!(lock.read(cx).is_locked());
@@ -483,6 +372,7 @@ fn app_lock_keychain_failure_blocks_background_startup_and_retry_recovers(cx: &m
         window.click("app-lock-unlock", cx);
     });
     wait_for_password(cx, &lock);
+    assert_eq!(created.get(), 1);
     in_frame(cx, handle, |window, _| {
         assert!(window.find("host-search").visible());
         assert!(window.try_find("app-lock-screen").is_none());

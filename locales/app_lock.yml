@@ -102,13 +102,6 @@ app_lock.idle_description:
   zh-CN: 单位为分钟，设为 0 时不自动锁定。
   en: In minutes. Set to 0 to turn off automatic locking.
 
-app_lock.allow_cli:
-  zh-CN: 锁定时允许外部 CLI 访问
-  en: Allow external CLI access while locked
-app_lock.allow_cli_description:
-  zh-CN: 需先启用外部 CLI。界面锁定时后台 Agent 仍可通过 CLI 工作。
-  en: Requires external CLI to be enabled. Lets background agents use the CLI while the interface is locked.
-
 app_lock.loading:
   zh-CN: 正在读取系统钥匙串…
   en: Reading the system keychain…

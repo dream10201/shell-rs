@@ -206,28 +206,6 @@ workspace.auth.continue:
   zh-CN: 继续
   en: Continue
 
-# 外部 CLI.
-workspace.cli.start_failed:
-  zh-CN: 外部 CLI 无法启动
-  en: The external CLI couldn’t start
-workspace.cli.install_command_failed:
-  zh-CN: 无法安装 shellrs 命令
-  en: Couldn’t install the shellrs command
-workspace.cli.remove_command_failed:
-  zh-CN: 无法移除 shellrs 命令
-  en: Couldn’t remove the shellrs command
-workspace.cli.install_skill_failed:
-  zh-CN: 无法安装 skill
-  en: Couldn’t install the skill
-workspace.cli.remove_skill_failed:
-  zh-CN: 无法移除 skill
-  en: Couldn’t remove the skill
-workspace.cli.skill_copied:
-  zh-CN: 已复制 shellrs skill
-  en: Copied the shellrs skill
-
-# Changes not saved yet, which a close or a quit would lose. `files` is
-# one of the workspace.files phrases.
 workspace.files.single:
   zh-CN: “%{name}”
   en: “%{name}”

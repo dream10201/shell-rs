@@ -1,33 +1,30 @@
 //! Own the startup boundary: no workspace (and no automatic connections,
-//! sync or saved terminals) is created until the password is accepted,
-//! unless the user explicitly allows background CLI access while locked.
+//! sync or saved terminals) is created until the password is accepted.
 use crate::app_lock::{AppLock, UnlockScreen};
-use crate::cli::{CliServer, OpenLink};
+use crate::instance::{InstanceServer, OpenLink};
 use gpui_kit::*;
 use std::time::Duration;
 
 type WorkspaceFactory =
-    Box<dyn FnOnce(Option<CliServer>, Vec<OpenLink>, &mut Window, &mut App) -> AnyView>;
+    Box<dyn FnOnce(Option<InstanceServer>, Vec<OpenLink>, &mut Window, &mut App) -> AnyView>;
 
 pub struct AppShell {
     lock: Entity<AppLock>,
     unlock: Entity<UnlockScreen>,
     content: Option<AnyView>,
     factory: Option<WorkspaceFactory>,
-    server: Option<CliServer>,
+    server: Option<InstanceServer>,
     pending_links: Vec<OpenLink>,
     previous_focus: Option<FocusHandle>,
     was_locked: bool,
-    background_cli: bool,
     _subscription: Subscription,
 }
 
 impl AppShell {
     pub fn new(
         lock: Entity<AppLock>,
-        server: Option<CliServer>,
-        background_cli: bool,
-        factory: impl FnOnce(Option<CliServer>, Vec<OpenLink>, &mut Window, &mut App) -> AnyView
+        server: Option<InstanceServer>,
+        factory: impl FnOnce(Option<InstanceServer>, Vec<OpenLink>, &mut Window, &mut App) -> AnyView
         + 'static,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -45,7 +42,6 @@ impl AppShell {
             pending_links: Vec::new(),
             previous_focus: None,
             was_locked: locked,
-            background_cli,
             _subscription: subscription,
         };
         this.sync(window, cx);
@@ -103,11 +99,8 @@ impl AppShell {
         let lock = self.lock.read(cx);
         let locked = lock.is_locked();
         let ready = lock.is_ready();
-        if ready && self.content.is_none() && (!locked || self.background_cli) {
+        if ready && self.content.is_none() && !locked {
             self.create_workspace(window, cx);
-            if locked {
-                self.previous_focus = window.focused(cx);
-            }
         }
         if locked {
             if !self.was_locked {
