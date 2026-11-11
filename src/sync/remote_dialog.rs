@@ -26,7 +26,7 @@ use super::sync_dialog::{JoinReason, PasswordDialog, open_password_dialog};
 use super::{JobError, LoginError, S3Form, SyncLocation, SyncService, WebDavForm};
 use crate::host::ErrorMessage as _;
 use crate::i18n::t;
-use crate::shared::{dismiss_form_error, form_error_notification};
+use crate::shared::{dismiss_form_error, show_form_error};
 
 /// Which kind of place.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -195,7 +195,7 @@ impl RemoteForm {
         let (location, login) = match self.login(cx) {
             Ok(login) => login,
             Err(error) => {
-                window.push_notification(form_error_notification(error.message()), cx);
+                show_form_error(error.message(), window, cx);
                 return;
             }
         };
@@ -225,7 +225,7 @@ impl RemoteForm {
         let (location, login) = match self.login(cx) {
             Ok(login) => login,
             Err(error) => {
-                window.push_notification(form_error_notification(error.message()), cx);
+                show_form_error(error.message(), window, cx);
                 return false;
             }
         };
@@ -267,9 +267,7 @@ impl RemoteForm {
                             open_password_dialog(service, dialog, Some(login), window, cx);
                         }
                     }
-                    Err(error) => {
-                        window.push_notification(form_error_notification(error.message()), cx)
-                    }
+                    Err(error) => show_form_error(error.message(), window, cx),
                 }
             })
             .ok();

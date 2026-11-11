@@ -10,7 +10,7 @@ use gpui_kit::*;
 use super::host_dialog::join_sentences;
 use super::{DeleteHandler, Dependents, GroupDraft, GroupId, HostStore, group_options};
 use crate::i18n::{join_list, t, tn};
-use crate::shared::{commit_footer, confirm_delete, dismiss_form_error, form_error_notification};
+use crate::shared::{commit_footer, confirm_delete, dismiss_form_error, show_form_error};
 
 /// The body of the new/rename group dialog. Owns the field states and
 /// validates on commit; the store is only touched when validation passes.
@@ -95,7 +95,7 @@ impl GroupForm {
             None
         };
         if let Some(error) = error {
-            window.push_notification(form_error_notification(error), cx);
+            show_form_error(error, window, cx);
             return false;
         }
 
@@ -108,10 +108,7 @@ impl GroupForm {
             }
         });
         if !committed {
-            window.push_notification(
-                form_error_notification(t!("host.group_dialog.into_itself")),
-                cx,
-            );
+            show_form_error(t!("host.group_dialog.into_itself"), window, cx);
             return false;
         }
         true

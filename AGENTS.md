@@ -4,7 +4,7 @@ Git 提交信息一律使用英文。
 
 ## 项目是什么
 
-ShellRS（crate 与二进制都叫 `shellrs`）是一个类似 Xshell 的 SSH 主机管理工具，基于 `gpui-kit` 0.6.6（GPUI + gpui-base + gpui-component）。界面文案有简体中文和英文两种（中文是源语言，文案在 `locales/`，经 `crate::i18n::t!`），标识符用英文。
+ShellRS（crate 与二进制都叫 `shellrs`）是一个类似 Xshell 的 SSH 主机管理工具，基于 `gpui-kit` 0.9.1（GPUI + gpui-base + gpui-component）。界面文案有简体中文和英文两种（中文是源语言，文案在 `locales/`，经 `crate::i18n::t!`），标识符用英文。
 
 **保存的一项叫「主机」，代码里叫 `Host`。** 左侧列表里保存的一项（地址、端口、用户、认证方式）在界面上叫「主机」，量词用「台」，代码和数据库里一律叫 host（`Host`、`HostId`、`HostStore`、`host/` 模块、`hosts` 表）。它以前叫「会话」/ `Session`，界面、代码和表名都已改掉，新写的文案和标识符不要再用「会话」/ session 指它。填 IP / 域名的那个字段叫「地址」（`Host.address`、`hosts.address`），不叫「主机」（「主机密钥」「首次连接此主机」这些照旧）。SSH 协议里的 session 不在此列：「SSH 会话通道」、russh 的 `client::Session` / `server::Session`、`channel_open_session` 照旧。
 
@@ -12,7 +12,7 @@ ShellRS（crate 与二进制都叫 `shellrs`）是一个类似 Xshell 的 SSH �
 
 已确认的产品决定：没有 SFTP、编辑器和预览（1.0.2 起去掉，不要加回来），文件只做上传和下载；暂不做 Dock 布局持久化；首次启动是空库，不预置任何分组或主机；分组支持任意层级嵌套，主机也可以不属于任何分组（渲染在树的根层级）；删除分组会连同其子分组和里面的主机一起删，删除前确认并写明数量。
 
-做 UI 之前先读 `gpui-kit` 与 `gpui-kit-design-guides` 两个技能（其中的 Coding Guides 和 Design Guides 在本仓库是规范，不是参考）。不要凭记忆臆造 gpui-kit API：以 `~/.cargo/registry/src/*/gpui-component-0.6.6/`、`gpui-base-0.6.6/` 的源码或 `https://gpui-kit.com/component/<name>.md` 为准。
+做 UI 之前先读 `gpui-kit` 与 `gpui-kit-design-guides` 两个技能（其中的 Coding Guides 和 Design Guides 在本仓库是规范，不是参考）。不要凭记忆臆造 gpui-kit API：以 `~/.cargo/registry/src/*/gpui-component-0.9.1/`、`gpui-base-0.9.1/` 的源码或 `https://gpui-kit.com/component/<name>.md` 为准。
 
 ## 常用命令
 
@@ -64,7 +64,8 @@ Cargo workspace：根包是桌面应用 `shellrs`，单个二进制 crate，带 
 - **状态经由 store 流动。** 面板和对话框拿到 `Entity<HostStore>` 的克隆，通过它的方法修改（方法内部会 `notify`），消费方用 `cx.observe(&store, ..)`。状态栏得知当前主机的路径是 `BasePanel::set_active` → `store.set_active`；`on_removed` 负责复位状态并发出 `TerminalPanelEvent::Closed`，工作区据此清理注册表。
 - **Dock 面板**需实现 `EventEmitter<PanelEvent> + Focusable + Render + BasePanel + Panel`，一律用 `panel_handle(...)` 包装；`tab_name` 保持 `None`，由 `title` 返回富元素——标签页的图标和「×」关闭按钮就是这样来的（`ClosableTabTitle` 的「×」只派发面板的关闭动作，见下一条）。`panel_name()` 是持久化键，一经选定不可更改。
 - **标签页全部可关。** `TabGroup::close_panel` 会拒绝关闭区域内最后一个面板，所以关闭不走 tab group：「×」派发 `CloseTerminal`，⌘W 派发 `CloseActiveTab`（关工作区记录的最近显示的中间标签，面板在 `set_active(true)` 时发出 `Activated` 事件告知），处理器一律用 `DockArea::remove_panel` 移除。中间区空了就显示最近连接列表：`HostStore::recent_hosts()` 按「最近一次变为已连接」的顺序给出，`set_state` 变为 Connected 时把主机移到最前。
-- **焦点规则。** `window.dispatch_action` 只能到达焦点元素路径上的处理器，所以工作区内部必须有东西持有焦点（启动时聚焦主机面板）。永远不要聚焦工作区根节点的 handle：对话框层是它的子元素，祖先持有焦点会让对话框的焦点陷阱拿不到焦点，导致「取消 / 创建」无响应。标题栏和开始页的按钮改用工作区 handle 上的 `FocusHandle::dispatch_action` 派发。对话框打开后焦点停在对话框宿主上，直到用户点击某个字段；延迟或下一帧的聚焦请求不会生效。
+- **焦点规则。** `window.dispatch_action` 只能到达焦点元素路径上的处理器，所以工作区内部必须有东西持有焦点（启动时聚焦主机面板）。永远不要聚焦工作区根节点的 handle：祖先持有焦点会让对话框的焦点陷阱拿不到焦点，导致「取消 / 创建」无响应。标题栏和开始页的按钮改用工作区 handle 上的 `FocusHandle::dispatch_action` 派发。对话框打开后焦点停在对话框宿主上，直到用户点击某个字段；延迟或下一帧的聚焦请求不会生效。
+- **对话框**：都要 `.overlay_closable(false)`；表单错误用 `show_form_error`（工作区自己画的一层，盖在对话框上面；通知层在对话框遮罩下面），`on_close` 里 `dismiss_form_error`。对话框由 `Root` 画，不在工作区的元素树里：里面派发的动作到不了 `Workspace`，要经工作区的 focus handle 转；自己的页脚按钮从对话框里面的 focus handle 派发 `Confirm` / `Cancel`，不用 `window.dispatch_action`（焦点在下拉框上时到不了对话框）。应用锁上时关掉所有对话框和通知，解锁界面是最上面的一层。
 - **树的语义。** 树行的左键按下会同时选中并切换展开（无法抑制）；双击打开靠 `ListItem` 上的 `ClickEvent::click_count() == 2`。`TreeState::set_items` 会清空选择，`HostPanel::rebuild_tree` 按 id 恢复选择，展开状态由它自己的 `expanded` 集合维护。对话框新建出来的节点靠 `HostPanel` 比对 `known_groups` / `seen_hosts` 快照来发现，然后展开祖先链并选中——对话框不需要回调面板。
 - **对话框关闭后焦点会丢。** 这是 gpui-component 的既有行为，不是本仓库引入的：关掉对话框后 `window.dispatch_action` 没有落点，要先点一下面板里的东西。UI 测试里同理（见 `groups_and_hosts_are_read_back_from_the_database`）。
 - **要彩色就不能用 `Icon`。** GPUI 的 `svg()` 走 `Window::paint_svg`，签名只收一个颜色，整张图当遮罩上色，所以彩色 SVG 塞进 `Icon` 会变成一坨纯色。真要彩色只能走 `img()`（`ImageSource`），那条路把 SVG 光栅化成 RGBA，颜色能留住，代价是变位图。系统徽章因此是「主题色的圆底 + 单色遮罩 logo」，不是一张彩图。

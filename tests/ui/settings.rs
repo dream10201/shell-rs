@@ -433,11 +433,12 @@ fn terminal_cursor_settings_apply_to_open_and_restarted_terminals(cx: &mut TestA
     in_frame(cx, handle, |window, cx| {
         let position = window.find("terminal-font-preview").bounds().center();
         window.dispatch_event(
-            gpui_kit::ScrollWheelEvent {
+            gpui_kit::ScrollEvent {
                 position,
                 delta: gpui_kit::ScrollDelta::Pixels(point(px(0.), px(-450.))),
                 modifiers: gpui_kit::Modifiers::default(),
                 touch_phase: gpui_kit::TouchPhase::Moved,
+                ..Default::default()
             }
             .to_platform_input(),
             cx,
@@ -631,11 +632,12 @@ fn scroll_to_highlight_rules(cx: &mut TestAppContext, handle: WindowHandle<Root>
     in_frame(cx, handle, |window, cx| {
         let position = window.find("highlight-preview").bounds().center();
         window.dispatch_event(
-            gpui_kit::ScrollWheelEvent {
+            gpui_kit::ScrollEvent {
                 position,
                 delta: gpui_kit::ScrollDelta::Pixels(point(px(0.), px(-600.))),
                 modifiers: gpui_kit::Modifiers::default(),
                 touch_phase: gpui_kit::TouchPhase::Moved,
+                ..Default::default()
             }
             .to_platform_input(),
             cx,

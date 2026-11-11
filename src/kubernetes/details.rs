@@ -2464,7 +2464,14 @@ impl Render for KubernetesDetails {
             .id("k8s-details")
             .test_support()
             .when(self.editing, |body| {
-                body.key_context(super::YAML_KEY_CONTEXT)
+                // A dialog is drawn beside the workspace, not inside it:
+                // what its keys dispatch goes on to the workspace from here.
+                let workspace = self.dispatch.clone();
+                body.key_context(super::YAML_KEY_CONTEXT).on_action(
+                    move |action: &KubernetesAction, window, cx| {
+                        defer_dispatch(&workspace, action, window, cx)
+                    },
+                )
             })
             .gap_3()
             .min_w_0()

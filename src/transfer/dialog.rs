@@ -14,7 +14,7 @@ use gpui_kit::*;
 
 use crate::app::{StartDownload, StartUpload};
 use crate::i18n::{t, tn};
-use crate::shared::{commit_footer, dismiss_form_error, form_error_notification};
+use crate::shared::{commit_footer, dismiss_form_error, show_form_error};
 use crate::terminal::RemoteTerminalId;
 
 struct UploadForm {
@@ -124,7 +124,7 @@ impl DownloadForm {
         };
         let (None, Some(into)) = (&error, self.into.clone()) else {
             let error = error.unwrap_or_else(|| t!("transfer.download.choose_folder"));
-            window.push_notification(form_error_notification(error), cx);
+            show_form_error(error, window, cx);
             return false;
         };
         let action = StartDownload {

@@ -21,7 +21,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::i18n::{UiLocale, t, tn};
-use crate::shared::{dismiss_form_error, form_error_notification};
+use crate::shared::{dismiss_form_error, show_form_error};
 
 use super::super::host_dialog::credential_option;
 use super::super::{HostStore, join_sentences};
@@ -270,7 +270,7 @@ impl ImportDialog {
         let plan = match plan_import(&self.rows, self.store.read(cx)) {
             Ok(plan) => plan,
             Err(error) => {
-                window.push_notification(form_error_notification(error.message()), cx);
+                show_form_error(error.message(), window, cx);
                 return false;
             }
         };

@@ -2,8 +2,12 @@
 //! sync or saved terminals) is created until the password is accepted.
 use crate::app_lock::{AppLock, UnlockScreen};
 use crate::instance::{InstanceServer, OpenLink};
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::*;
 use std::time::Duration;
+
+/// Paint order of the unlock screen: over dialogs, notifications and menus.
+const LOCK_PRIORITY: usize = gpui_kit::base::POPUP_PRIORITY + 1000;
 
 type WorkspaceFactory =
     Box<dyn FnOnce(Option<InstanceServer>, Vec<OpenLink>, &mut Window, &mut App) -> AnyView>;
@@ -104,7 +108,18 @@ impl AppShell {
         }
         if locked {
             if !self.was_locked {
-                self.previous_focus = window.focused(cx);
+                // What the root draws above the content would show over
+                // the unlock screen, and a dialog keeps the keyboard.
+                let covered = window.has_active_dialog(cx);
+                window.close_all_dialogs(cx);
+                if window.has_active_sheet(cx) {
+                    window.close_sheet(cx);
+                }
+                window.clear_notifications(cx);
+                crate::shared::dismiss_form_error(window, cx);
+                // What a dialog held goes with it: unlocking then leaves
+                // the keyboard to the workspace to place.
+                self.previous_focus = (!covered).then(|| window.focused(cx)).flatten();
             }
             self.unlock
                 .update(cx, |screen, cx| screen.focus(window, cx));
@@ -119,9 +134,29 @@ impl AppShell {
 }
 
 impl Render for AppShell {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let content = if self.lock.read(cx).is_locked() {
-            self.unlock.clone().into_any_element()
+            // The keyboard stays on the unlock screen: a dialog closed by
+            // locking gives it back to what had it before.
+            if !self.unlock.read(cx).contains_focus(window, cx) {
+                cx.defer_in(window, |this, window, cx| {
+                    if this.lock.read(cx).is_locked() {
+                        this.unlock
+                            .update(cx, |screen, cx| screen.focus(window, cx));
+                    }
+                });
+            }
+            // Above whatever the root still draws over the content: a
+            // dialog on its way out, a notification that comes while locked.
+            deferred(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .occlude()
+                    .child(self.unlock.clone()),
+            )
+            .with_priority(LOCK_PRIORITY)
+            .into_any_element()
         } else {
             self.content
                 .clone()

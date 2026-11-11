@@ -237,7 +237,7 @@ fn wheel_scrolls_tabs(tabs: AnyElement) -> Div {
                 window.dispatch_action(Box::new(NewLocalTerminal), cx);
             }
         })
-        .on_scroll_wheel(|event, window, cx| {
+        .on_scroll(|event, window, cx| {
             let ScrollDelta::Lines(lines) = event.delta else {
                 return;
             };
@@ -245,7 +245,7 @@ fn wheel_scrolls_tabs(tabs: AnyElement) -> Div {
                 return;
             }
             cx.stop_propagation();
-            let sideways = ScrollWheelEvent {
+            let sideways = ScrollEvent {
                 delta: ScrollDelta::Lines(point(lines.y, 0.)),
                 ..event.clone()
             };

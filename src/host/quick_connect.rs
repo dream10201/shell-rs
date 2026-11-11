@@ -360,7 +360,11 @@ impl ListDelegate for QuickConnectList {
 fn key_hint(keys: &str, label: SharedString) -> impl IntoElement {
     h_flex()
         .gap_1p5()
-        .children(Keystroke::parse(keys).ok().map(Kbd::new))
+        .children(
+            Keystroke::parse_with_os(keys, crate::app::HOST_OS)
+                .ok()
+                .map(Kbd::new),
+        )
         .child(label)
 }
 

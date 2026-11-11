@@ -20,7 +20,7 @@ use crate::host::{
     HostId, HostStore, KindLabel as _, join_sentences,
 };
 use crate::i18n::t;
-use crate::shared::{commit_footer, dismiss_form_error, form_error_notification, parse_port};
+use crate::shared::{commit_footer, dismiss_form_error, parse_port, show_form_error};
 
 /// The dialog's width in rems: room for the three stops of the diagram side
 /// by side, and for three kind cards that each hold their line of purpose
@@ -241,7 +241,7 @@ impl ForwardForm {
         let draft = match draft {
             Ok(draft) => draft,
             Err(error) => {
-                window.push_notification(form_error_notification(error), cx);
+                show_form_error(error, window, cx);
                 return false;
             }
         };
@@ -252,7 +252,7 @@ impl ForwardForm {
         });
         if !saved {
             // The host, or the rule itself, was deleted meanwhile.
-            window.push_notification(form_error_notification(t!("forward.dialog.host_gone")), cx);
+            show_form_error(t!("forward.dialog.host_gone"), window, cx);
             return false;
         }
         true

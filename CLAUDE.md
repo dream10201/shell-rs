@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目是什么
 
-ShellRS（crate 与二进制都叫 `shellrs`）是 Xshell 式的 SSH 主机管理工具，基于 `gpui-kit` 0.6.6（GPUI + gpui-base + gpui-component）。界面有简体中文和英文（中文是源语言），标识符用英文。功能说明见使用手册 `docs/manual.zh.md` / `docs/manual.md`；开源首页 `README.md`（英文）/ `README.zh-CN.md`；截图在 `docs/screenshots/`。本仓库（`dream10201/shell-rs`）fork 自 `since2006/shell-rs`，发布、升级都只用本仓库的 GitHub。
+ShellRS（crate 与二进制都叫 `shellrs`）是 Xshell 式的 SSH 主机管理工具，基于 `gpui-kit` 0.9.1（GPUI + gpui-base + gpui-component）。界面有简体中文和英文（中文是源语言），标识符用英文。功能说明见使用手册 `docs/manual.zh.md` / `docs/manual.md`；开源首页 `README.md`（英文）/ `README.zh-CN.md`；截图在 `docs/screenshots/`。本仓库（`dream10201/shell-rs`）fork 自 `since2006/shell-rs`，发布、升级都只用本仓库的 GitHub。
 
 - **术语**：保存的一项叫「主机」（量词「台」），代码里叫 host（`Host`、`HostStore`、`hosts` 表）；以前叫「会话」/ `Session`，别再用。IP / 域名字段叫「地址」。SSH 协议层的 session 照旧叫 session。
 - **两种不保存的连接**：「外部连接」是堡垒机用 `ssh://` / `-url` 拉起 ShellRS，只开一个标签；「临时连接」从标题栏打开，功能齐全。代码里统称 temporary。
 - **全是真的**：SQLite（默认在系统数据目录，`SHELLRS_DATA_DIR` 可覆盖，Windows 便携版在 exe 旁的 `data`）、本地终端、SSH（`russh`）、Telnet（自己写）、串口（`serial2`）、文件传输、端口转发、凭据、右侧栏工具、在线升级、匿名统计。密码和口令只进系统钥匙串，**数据库里永远不出现秘密**。
 
-做 UI 之前先读 `gpui-kit` 与 `gpui-kit-design-guides` 两个技能，里面的 Coding Guides 和 Design Guides 在本仓库是规范。不要凭记忆臆造 gpui-kit API，以 `~/.cargo/registry/src/*/gpui-component-0.6.6/`、`gpui-base-0.6.6/` 的源码为准。
+做 UI 之前先读 `gpui-kit` 与 `gpui-kit-design-guides` 两个技能，里面的 Coding Guides 和 Design Guides 在本仓库是规范。不要凭记忆臆造 gpui-kit API，以 `~/.cargo/registry/src/*/gpui-component-0.9.1/`、`gpui-base-0.9.1/` 的源码为准。
 
 ## 已定的产品决定
 
@@ -137,7 +137,7 @@ Cargo workspace，`cargo` 命令覆盖全部四个包：
 - **焦点**：`dispatch_action` 只到焦点路径上的处理器，工作区里必须有东西持有焦点；不要聚焦工作区根节点；中间区面板在 `set_active(true)` 里收下焦点；对话框关掉后焦点为空，要经工作区的 focus handle 派发。焦点监听器里改状态要 `defer_in`。
 - **后台线程不直接唤醒前台任务**，由 UI 定时轮询事件。
 - **渲染回调不读取实体**（树行、表格单元），只传快照。窗口还没挂上 `Root` 时不能弹通知（用 `notify_once_open`）。
-- **对话框**：都要 `.overlay_closable(false)`；表单错误用 `form_error_notification`。
+- **对话框**：都要 `.overlay_closable(false)`；表单错误用 `show_form_error`（工作区自己画的一层，盖在对话框上面；通知层在对话框遮罩下面），`on_close` 里 `dismiss_form_error`。对话框由 `Root` 画，不在工作区的元素树里：里面派发的动作到不了 `Workspace`，要经工作区的 focus handle 转；自己的页脚按钮从对话框里面的 focus handle 派发 `Confirm` / `Cancel`，不用 `window.dispatch_action`（焦点在下拉框上时到不了对话框）。应用锁上时关掉所有对话框和通知，解锁界面是最上面的一层。
 - **右键菜单挂在容器上，不挂在行上**；滚动条挂在不滚动的外层上；`Select` 要放进有尺寸的容器；`uniform_list` 的行必须等高。
 - **按上一帧的尺寸重排**：render 拿不到布局尺寸，用 `canvas` 在 prepaint 记下、变了再重画。
 - **颜色**：用主题 token 和 rem，`px` 只用在 API 要 `Pixels` 的地方；要彩色图标就不能用 `Icon`（它是单色遮罩）。

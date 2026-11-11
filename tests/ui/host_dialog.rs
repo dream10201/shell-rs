@@ -363,11 +363,12 @@ async fn a_host_behind_a_proxy_keeps_the_proxys_password_in_the_keychain(cx: &mu
         // The proxy's login is below the window's fold.
         let position = window.find("host-proxy-port").bounds().center();
         window.dispatch_event(
-            gpui_kit::ScrollWheelEvent {
+            gpui_kit::ScrollEvent {
                 position,
                 delta: gpui_kit::ScrollDelta::Pixels(point(px(0.), px(-300.))),
                 modifiers: gpui_kit::Modifiers::default(),
                 touch_phase: gpui_kit::TouchPhase::Moved,
+                ..Default::default()
             }
             .to_platform_input(),
             cx,
@@ -722,9 +723,10 @@ async fn new_host_dialog_validates_then_inserts(cx: &mut TestAppContext) {
     cx.update_window(handle.into(), |_, window, cx| {
         window.render_frame(cx);
         assert!(window.find("commit").visible());
-        // The error pops up as a notification over the dialog, not as a line
-        // at the bottom of the form.
-        assert_eq!(window.notifications(cx).len(), 1);
+        // The error pops up over the dialog, not as a line at the bottom
+        // of the form, and not among the window's notifications, which
+        // are drawn under the dialog.
+        assert!(window.notifications(cx).is_empty());
         assert_eq!(window.find("form-error").label(), Some("请输入地址"));
         window.click("commit", cx);
     })
@@ -733,7 +735,7 @@ async fn new_host_dialog_validates_then_inserts(cx: &mut TestAppContext) {
     cx.update_window(handle.into(), |_, window, cx| {
         window.render_frame(cx);
         // Trying again replaces it instead of stacking another.
-        assert_eq!(window.notifications(cx).len(), 1);
+        assert_eq!(window.find("form-error").label(), Some("请输入地址"));
 
         window.click("host-name", cx);
         window.input("db-02", cx);

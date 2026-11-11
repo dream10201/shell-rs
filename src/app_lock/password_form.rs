@@ -258,6 +258,8 @@ pub fn open_password_dialog(
 pub struct UnlockScreen {
     service: Entity<AppLock>,
     form: Entity<PasswordForm>,
+    /// Around everything on the screen that takes the keyboard.
+    scope: FocusHandle,
     _subscription: Subscription,
 }
 
@@ -269,12 +271,18 @@ impl UnlockScreen {
         Self {
             service,
             form,
+            scope: cx.focus_handle(),
             _subscription: subscription,
         }
     }
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.form.update(cx, |form, cx| form.focus(window, cx));
+    }
+
+    /// Whether the keyboard is on the screen, not on what it covers.
+    pub fn contains_focus(&self, window: &Window, cx: &App) -> bool {
+        self.scope.contains_focused(window, cx)
     }
 }
 
@@ -289,6 +297,7 @@ impl Render for UnlockScreen {
         v_flex()
             .id("app-lock-screen")
             .test_support()
+            .track_focus(&self.scope)
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)

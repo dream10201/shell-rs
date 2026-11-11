@@ -120,7 +120,8 @@ impl ShortcutsEditor {
                     key: keystroke.key.clone(),
                     key_char: None,
                 };
-                let message = refusal.message(&key_text(&pressed.unparse(), false));
+                let message =
+                    refusal.message(&key_text(&pressed.unparse(crate::app::HOST_OS), false));
                 window.push_notification(Notification::warning(message), cx);
             }
         }

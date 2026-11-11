@@ -15,7 +15,7 @@ use crate::host::{
     SnippetScope,
 };
 use crate::i18n::t;
-use crate::shared::{commit_footer, dismiss_form_error, form_error_notification};
+use crate::shared::{commit_footer, dismiss_form_error, show_form_error};
 
 /// How wide the snippet dialog is: room for a command of a fair length on
 /// one line.
@@ -122,7 +122,7 @@ impl SnippetForm {
                 ..draft.with_run_on_click(self.run_on_click)
             },
             Err(error) => {
-                window.push_notification(form_error_notification(error.message()), cx);
+                show_form_error(error.message(), window, cx);
                 return false;
             }
         };
@@ -327,7 +327,7 @@ impl CategoryForm {
             None
         };
         if let Some(error) = error {
-            window.push_notification(form_error_notification(error), cx);
+            show_form_error(error, window, cx);
             return false;
         }
         let draft = SnippetCategoryDraft::new(name, parent);
@@ -339,10 +339,7 @@ impl CategoryForm {
             }
         });
         if !committed {
-            window.push_notification(
-                form_error_notification(t!("snippets.category.into_itself")),
-                cx,
-            );
+            show_form_error(t!("snippets.category.into_itself"), window, cx);
         }
         committed
     }

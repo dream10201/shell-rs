@@ -648,11 +648,12 @@ fn the_mouse_wheel_scrolls_the_tabs(cx: &mut TestAppContext) {
 
     cx.update_window(handle.into(), |_, window, cx| {
         window.dispatch_event(
-            gpui_kit::ScrollWheelEvent {
+            gpui_kit::ScrollEvent {
                 position: bar.center(),
                 delta: gpui_kit::ScrollDelta::Lines(point(0., 3.)),
                 modifiers: gpui_kit::Modifiers::default(),
                 touch_phase: gpui_kit::TouchPhase::Moved,
+                ..Default::default()
             }
             .to_platform_input(),
             cx,
@@ -926,7 +927,7 @@ async fn a_click_beside_a_dialog_does_not_close_it(cx: &mut TestAppContext) {
 /// not in a line under its form, and takes the notification with it when it
 /// closes.
 #[gpui_kit::test]
-async fn a_dialog_says_what_is_wrong_in_a_notification_that_goes_with_it(cx: &mut TestAppContext) {
+async fn a_dialog_says_what_is_wrong_over_itself_and_takes_that_with_it(cx: &mut TestAppContext) {
     let (handle, _) = open_workspace_with_forwards(
         cx,
         HostStore::seed(),
@@ -968,7 +969,6 @@ async fn a_dialog_says_what_is_wrong_in_a_notification_that_goes_with_it(cx: &mu
         .await;
         in_frame(cx, handle, |window, cx| {
             assert_eq!(window.find("form-error").label(), Some(error), "{open}");
-            assert_eq!(window.notifications(cx).len(), 1, "{open}");
             assert!(window.try_find("commit").is_some(), "{open}: still open");
             window.click(field, cx);
             window.press("escape", cx);

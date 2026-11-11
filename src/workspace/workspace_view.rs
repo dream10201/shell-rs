@@ -7,7 +7,7 @@ use std::{
 };
 
 use gpui_kit::component::{
-    ActiveTheme as _, Root, Sizable as _, TitleBar, WindowExt as _,
+    ActiveTheme as _, Sizable as _, TitleBar, WindowExt as _,
     button::ButtonVariant,
     dialog::DialogButtonProps,
     dock::{DockArea, DockEvent, DockLayout, DockPlacement, PanelId, TabGroup, panel_handle},
@@ -86,12 +86,6 @@ const DOCK_ID: &str = "shellrs-dock";
 const DOCK_VERSION: usize = 1;
 /// How far the zoom keys move 界面字号 a press, in pixels.
 const INTERFACE_ZOOM_STEP: f32 = 2.;
-/// Paint order of the notification layer. gpui-base draws a dialog, backdrop
-/// and all, deferred at priority `10 + its layer` (the dock skin's start page
-/// at 0); anything lower lands under the backdrop, dimmed, and a click on it
-/// hits the backdrop. Just below popups (`POPUP_PRIORITY`) keeps a
-/// notification above any stack of dialogs without covering an open menu.
-const NOTIFICATION_PRIORITY: usize = gpui_kit::base::POPUP_PRIORITY - 1;
 /// Show a notification from code that runs while the window is still being
 /// built: loading what is on disk, starting the services.
 ///
@@ -628,6 +622,13 @@ impl Workspace {
                     for link in std::mem::take(&mut this.locked_links) {
                         this.open_link(link, window, cx);
                     }
+                    // Unlocked with the keyboard nowhere (what had it went
+                    // with a dialog the lock closed): back to the center.
+                    cx.defer_in(window, |this, window, cx| {
+                        if !crate::app_lock::is_locked(cx) && window.focused(cx).is_none() {
+                            this.focus_center(window, cx);
+                        }
+                    });
                 }
             }));
         }
@@ -2238,7 +2239,7 @@ fn new_local_terminal_panel(
 }
 
 impl Render for Workspace {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let status = match self.active_tab {
             // A terminal tells its own connection, to the host as it took it.
             Some(CenterTab::Terminal(id)) => match self.terminals.get(&id) {
@@ -2468,11 +2469,6 @@ impl Render for Workspace {
                 transfers: self.transfers.read(cx).status(),
                 dispatch: self.focus_handle.clone(),
             })
-            .children(Root::render_sheet_layer(window, cx))
-            .children(Root::render_dialog_layer(window, cx))
-            .children(
-                Root::render_notification_layer(window, cx)
-                    .map(|layer| deferred(layer).with_priority(NOTIFICATION_PRIORITY)),
-            )
+            .children(crate::shared::form_error_layer(cx))
     }
 }

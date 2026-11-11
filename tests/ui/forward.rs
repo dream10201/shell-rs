@@ -446,7 +446,7 @@ async fn a_forward_question_is_answered_in_a_dialog_and_declining_stops_the_forw
 async fn stopping_a_forward_takes_its_open_question_with_it(cx: &mut TestAppContext) {
     let (store, id) = store_with_forward();
     let provider = Arc::new(FakeForwardProvider::with_script(ForwardScript::AsksTrust));
-    let (handle, _) = open_workspace_with_forwards(cx, store, provider.clone());
+    let (handle, workspace) = open_workspace_with_forwards(cx, store, provider.clone());
     cx.run_until_parked();
     show_forwards(cx, handle).await;
     in_frame(cx, handle, |window, cx| {
@@ -457,8 +457,10 @@ async fn stopping_a_forward_takes_its_open_question_with_it(cx: &mut TestAppCont
     })
     .await;
     // Stopped from elsewhere while the question is up.
-    in_frame(cx, handle, |window, cx| {
-        window.dispatch_action(Box::new(StopForward(id)), cx);
+    workspace.update(cx, |workspace, cx| {
+        workspace
+            .forwards()
+            .update(cx, |forwards, cx| forwards.stop(id, cx))
     });
     cx.wait_for(handle.into(), Duration::from_secs(2), |window, _| {
         window.try_find("cancel").is_none()

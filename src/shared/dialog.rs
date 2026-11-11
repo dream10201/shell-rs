@@ -1,12 +1,13 @@
 //! The pieces every form dialog is put together from.
 
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui_kit::component::{
-    WindowExt as _,
+    ActiveTheme as _, Icon, IconName, WindowExt as _,
     button::{Button, ButtonVariant, ButtonVariants as _},
     dialog::{DialogAction, DialogButtonProps, DialogClose, DialogFooter},
-    notification::{Notification, NotificationType},
+    h_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -20,37 +21,94 @@ pub fn commit_footer(id: &'static str, label: impl Into<SharedString>) -> Dialog
         .child(DialogAction::new().child(Button::new(id).primary().label(label)))
 }
 
-/// Marks the notification a form's error is shown in, so a newer error
-/// replaces the last one rather than stacking under it.
-struct FormErrorNotification;
+/// How long a form's error stays when nobody puts it away.
+const FORM_ERROR_TIME: Duration = Duration::from_secs(6);
 
-/// Why a form was not accepted, as an error notification over the dialog:
-/// every add and edit dialog says it this way, not in a line under the form.
-/// Its text has the `form-error` id, with the message as its label. A click
-/// puts it away, and so does the dialog when it closes (each dialog calls
-/// `dismiss_form_error` from its `on_close`).
-pub fn form_error_notification(error: impl Into<SharedString>) -> Notification {
-    let error = error.into();
-    Notification::new()
-        .with_type(NotificationType::Error)
-        .id::<FormErrorNotification>()
-        // Clicking a notification dismisses it once it has a click handler.
-        .on_click(|_, _, _| {})
-        .content(move |_, _, _| {
+/// The error of the form in front, until it is put away; `shown` tells one
+/// showing from the next.
+#[derive(Default)]
+struct FormError {
+    message: Option<SharedString>,
+    shown: usize,
+}
+
+impl Global for FormError {}
+
+/// Say why a form was not accepted, over the dialog: every add and edit
+/// dialog says it this way, not in a line under the form. Its text has the
+/// `form-error` id, with the message as its label. A newer error takes the
+/// last one's place; a click puts it away, so does the dialog when it
+/// closes (each dialog calls `dismiss_form_error` from its `on_close`), and
+/// so does time.
+///
+/// Not one of the window's notifications: those are drawn under a dialog's
+/// backdrop, where an error about the dialog would be dimmed and out of
+/// reach. The window's content draws this one with [`form_error_layer`].
+pub fn show_form_error(error: impl Into<SharedString>, window: &mut Window, cx: &mut App) {
+    let state = cx.default_global::<FormError>();
+    state.message = Some(error.into());
+    state.shown += 1;
+    let shown = state.shown;
+    window.refresh();
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(FORM_ERROR_TIME).await;
+        cx.update(|cx| {
+            let state = cx.default_global::<FormError>();
+            if state.shown == shown && state.message.take().is_some() {
+                cx.refresh_windows();
+            }
+        });
+    })
+    .detach();
+}
+
+/// Take a form's error away once its dialog has closed: the error is about
+/// a form that is gone.
+pub fn dismiss_form_error(window: &mut Window, cx: &mut App) {
+    if cx.default_global::<FormError>().message.take().is_some() {
+        window.refresh();
+    }
+}
+
+/// The form error that is showing, for the window's content to draw: above
+/// any dialog, below an open menu.
+pub fn form_error_layer(cx: &App) -> Option<impl IntoElement + use<>> {
+    let error = cx.try_global::<FormError>()?.message.clone()?;
+    let theme = cx.theme();
+    let toast = h_flex()
+        .id("form-error-toast")
+        .occlude()
+        .items_start()
+        .gap_2()
+        .w(rems(22.))
+        .p_3()
+        .rounded(theme.radius_lg)
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.popover)
+        .text_color(theme.popover_foreground)
+        .shadow_md()
+        .cursor_pointer()
+        .on_click(|_, window, cx| dismiss_form_error(window, cx))
+        .child(
+            Icon::new(IconName::CircleX)
+                .text_color(theme.danger)
+                .mt_0p5(),
+        )
+        .child(
             div()
                 .id("form-error")
                 .test_support()
                 .aria_label(error.clone())
+                .flex_1()
+                .min_w_0()
                 .text_sm()
-                .child(error.clone())
-                .into_any_element()
-        })
-}
-
-/// Take a form's error notification away once its dialog has closed: the
-/// error is about a form that is gone.
-pub fn dismiss_form_error(window: &mut Window, cx: &mut App) {
-    window.remove_notification::<FormErrorNotification>(cx);
+                .child(error),
+        );
+    Some(
+        deferred(div().absolute().top_4().right_4().child(toast))
+            .with_priority(gpui_kit::base::POPUP_PRIORITY - 1),
+    )
 }
 
 /// A port field's value, when it is one: a number from 1 to 65535.

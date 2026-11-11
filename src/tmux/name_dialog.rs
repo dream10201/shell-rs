@@ -11,7 +11,7 @@ use gpui_kit::*;
 
 use super::model::valid_name;
 use crate::i18n::t;
-use crate::shared::{commit_footer, dismiss_form_error, form_error_notification};
+use crate::shared::{commit_footer, dismiss_form_error, show_form_error};
 
 /// What the dialog names.
 pub enum SessionName {
@@ -49,7 +49,7 @@ impl NameForm {
             None
         };
         if let Some(error) = error {
-            window.push_notification(form_error_notification(error), cx);
+            show_form_error(error, window, cx);
             return false;
         }
         // Once the dialog is gone: the terminal takes the keyboard after.

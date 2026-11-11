@@ -281,8 +281,10 @@ fn app_lock_idle_timeout_tracks_input_and_restarts_after_unlock(cx: &mut TestApp
         window.click("app-lock-unlock", cx);
     });
     wait_for_password(cx, &lock);
+    // The dialog that was open went with the lock.
     in_frame(cx, handle, |window, _| {
-        assert!(window.find("app-lock-new-password").visible())
+        assert!(window.try_find("app-lock-new-password").is_none());
+        assert!(window.find("settings").visible());
     });
     advance(59, cx);
     assert!(!locked(cx), "unlock starts a full new interval");

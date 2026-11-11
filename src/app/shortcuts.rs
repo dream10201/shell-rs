@@ -17,6 +17,21 @@ use super::*;
 use crate::i18n::t;
 use crate::terminal::{TERMINAL_FIND_KEY_CONTEXT, TERMINAL_KEY_CONTEXT, terminal_key_bindings};
 
+/// The system this build runs on, which names the platform key in what is
+/// saved and reads `secondary-`.
+pub const HOST_OS: OperatingSystem = if cfg!(target_os = "macos") {
+    OperatingSystem::Mac
+} else if cfg!(windows) {
+    OperatingSystem::Windows
+} else {
+    OperatingSystem::Linux
+};
+
+/// `keys` as written in the settings or in a shortcut's defaults.
+pub(super) fn parse_keys(keys: &str) -> Result<Keystroke, InvalidKeystrokeError> {
+    Keystroke::parse_with_os(keys, HOST_OS)
+}
+
 /// The groups of 设置 › 键盘快捷键, in the order the page shows them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShortcutGroup {
@@ -417,7 +432,7 @@ impl Shortcut {
 
     /// Each keystroke it is bound to under `keys`: one, or one per digit.
     fn keystrokes(&self, keys: &str) -> Vec<(Keystroke, usize)> {
-        let Ok(keystroke) = Keystroke::parse(keys) else {
+        let Ok(keystroke) = parse_keys(keys) else {
             return Vec::new();
         };
         if !self.numbered {
@@ -432,7 +447,7 @@ impl Shortcut {
             .collect()
     }
 
-    fn bindings(&self, overrides: &ShortcutOverrides) -> Vec<KeyBinding> {
+    fn bindings(&self, overrides: &ShortcutOverrides, cx: &App) -> Vec<KeyBinding> {
         let Some(keys) = overrides.keys(self).filter(|_| !self.system_wide) else {
             return Vec::new();
         };
@@ -448,12 +463,12 @@ impl Shortcut {
                     .and_then(|context| KeyBindingContextPredicate::parse(context).ok())
                     .map(Rc::new);
                 if let Ok(binding) = KeyBinding::load(
-                    &keystroke.unparse(),
+                    &keystroke.unparse(HOST_OS),
                     (self.action)(digit),
                     predicate,
                     false,
                     None,
-                    &DummyKeyboardMapper,
+                    cx,
                 ) {
                     bindings.push(binding);
                 }
@@ -478,7 +493,7 @@ impl<'de> Deserialize<'de> for ShortcutOverrides {
                 .into_iter()
                 .filter_map(|(id, value)| match value {
                     serde_json::Value::Null => Some((id, None)),
-                    serde_json::Value::String(keys) if Keystroke::parse(&keys).is_ok() => {
+                    serde_json::Value::String(keys) if parse_keys(&keys).is_ok() => {
                         Some((id, Some(keys)))
                     }
                     _ => None,
@@ -525,7 +540,7 @@ impl ShortcutOverrides {
 }
 
 fn same_keys(a: &str, b: &str) -> bool {
-    match (Keystroke::parse(a), Keystroke::parse(b)) {
+    match (parse_keys(a), parse_keys(b)) {
         (Ok(a), Ok(b)) => same_keystroke(&a, &b),
         _ => false,
     }
@@ -607,7 +622,7 @@ pub fn check(
     {
         return Err(Refusal::NeedsModifier);
     }
-    let keys = keystroke.unparse();
+    let keys = keystroke.unparse(HOST_OS);
     let pressed = shortcut.keystrokes(&keys);
     for other in SHORTCUTS.iter() {
         if std::ptr::eq(other, shortcut) || !other.shares_scope(shortcut) {
@@ -665,7 +680,7 @@ fn is_editing_key(key: &str) -> bool {
 /// on macOS, Ctrl Alt Shift Win elsewhere. A numbered shortcut's key
 /// shows as 1…9.
 pub fn key_caps(keys: &str, numbered: bool) -> Vec<SharedString> {
-    let Ok(keystroke) = Keystroke::parse(keys) else {
+    let Ok(keystroke) = parse_keys(keys) else {
         return Vec::new();
     };
     let modifiers = keystroke.modifiers;
@@ -731,7 +746,8 @@ pub fn apply_shortcuts(overrides: &ShortcutOverrides, cx: &mut App) {
         .unwrap_or_default();
     cx.clear_key_bindings();
     cx.bind_keys(kit);
-    cx.bind_keys(key_bindings(overrides));
+    let ours = key_bindings(overrides, cx);
+    cx.bind_keys(ours);
     super::system_hotkey::take(overrides.keys(system_wide()).as_deref(), cx);
     cx.set_global(AppliedShortcuts(overrides.clone()));
 }
@@ -768,19 +784,19 @@ pub fn fixed_bindings(cx: &App) -> Vec<KeyBinding> {
 /// Ours: the shortcuts, then the keys that stay. The ones that work
 /// anywhere come first: for one key, a key context's binding added later
 /// wins there, as the terminal's ⌘K and the preview's ⌘= do.
-fn key_bindings(overrides: &ShortcutOverrides) -> Vec<KeyBinding> {
+fn key_bindings(overrides: &ShortcutOverrides, cx: &App) -> Vec<KeyBinding> {
     let mut bindings: Vec<KeyBinding> = SHORTCUTS
         .iter()
         .filter(|shortcut| shortcut.is_global())
-        .flat_map(|shortcut| shortcut.bindings(overrides))
+        .flat_map(|shortcut| shortcut.bindings(overrides, cx))
         .collect();
     bindings.extend(fixed_global_bindings());
-    bindings.extend(shell_keys_in_terminal(&bindings));
+    bindings.extend(shell_keys_in_terminal(&bindings, cx));
     bindings.extend(
         SHORTCUTS
             .iter()
             .filter(|shortcut| !shortcut.is_global())
-            .flat_map(|shortcut| shortcut.bindings(overrides)),
+            .flat_map(|shortcut| shortcut.bindings(overrides, cx)),
     );
     bindings.extend(fixed_context_bindings());
     bindings
@@ -789,7 +805,7 @@ fn key_bindings(overrides: &ShortcutOverrides) -> Vec<KeyBinding> {
 /// Ctrl with a letter is the shell's in a terminal (tmux's Ctrl+B,
 /// readline's Ctrl+W and Ctrl+K), so a shortcut that works anywhere leaves
 /// it there. The terminal's own shortcuts, bound after, still win in it.
-fn shell_keys_in_terminal(anywhere: &[KeyBinding]) -> Vec<KeyBinding> {
+fn shell_keys_in_terminal(anywhere: &[KeyBinding], cx: &App) -> Vec<KeyBinding> {
     anywhere
         .iter()
         .filter_map(|binding| {
@@ -806,12 +822,18 @@ fn shell_keys_in_terminal(anywhere: &[KeyBinding]) -> Vec<KeyBinding> {
                 && !modifiers.shift
                 && !modifiers.platform)
                 .then(|| {
-                    KeyBinding::new(
-                        &keystroke.unparse(),
-                        NoAction {},
-                        Some(TERMINAL_KEY_CONTEXT),
+                    let terminal = KeyBindingContextPredicate::parse(TERMINAL_KEY_CONTEXT).ok();
+                    KeyBinding::load(
+                        &keystroke.unparse(HOST_OS),
+                        Box::new(NoAction {}),
+                        terminal.map(Rc::new),
+                        false,
+                        None,
+                        cx,
                     )
+                    .ok()
                 })
+                .flatten()
         })
         .collect()
 }
@@ -831,14 +853,13 @@ fn fixed_global_bindings() -> Vec<KeyBinding> {
 
 fn fixed_context_bindings() -> Vec<KeyBinding> {
     #[cfg(target_os = "macos")]
-    const PRIMARY: &str = "cmd";
+    const SAVE: &str = "cmd-s";
     #[cfg(not(target_os = "macos"))]
-    const PRIMARY: &str = "ctrl";
+    const SAVE: &str = "ctrl-s";
 
-    let primary = |key: &str| format!("{PRIMARY}-{key}");
     let mut bindings = vec![
         KeyBinding::new(
-            &primary("s"),
+            SAVE,
             KubernetesAction(crate::kubernetes::KubernetesCommand::SaveYaml),
             Some(crate::kubernetes::YAML_KEY_CONTEXT),
         ),
@@ -870,11 +891,11 @@ fn fixed_context_bindings() -> Vec<KeyBinding> {
 
 #[cfg(test)]
 mod tests {
-    use gpui_kit::{Action as _, KeyBinding, Keystroke, NoAction};
+    use gpui_kit::{Action as _, KeyBinding, Keystroke, NoAction, TestAppContext};
 
     use super::{
-        Refusal, SHORTCUTS, Shortcut, ShortcutOverrides, check, key_bindings, key_caps,
-        shell_keys_in_terminal,
+        HOST_OS, Refusal, SHORTCUTS, Shortcut, ShortcutOverrides, check, key_bindings, key_caps,
+        parse_keys, shell_keys_in_terminal,
     };
     use crate::app::CloseActiveTab;
 
@@ -883,7 +904,7 @@ mod tests {
     }
 
     fn keys(text: &str) -> Keystroke {
-        Keystroke::parse(text).unwrap()
+        parse_keys(text).unwrap()
     }
 
     /// cmd on macOS, ctrl elsewhere, as the defaults are.
@@ -902,7 +923,7 @@ mod tests {
             .iter()
             .map(|binding| {
                 (
-                    binding.keystrokes()[0].inner().unparse(),
+                    binding.keystrokes()[0].inner().unparse(HOST_OS),
                     binding.action().name().to_string(),
                     binding.predicate().map(|predicate| predicate.to_string()),
                 )
@@ -930,11 +951,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_defaults_bind_each_shortcut_once_and_a_context_wins_its_own_key() {
-        let bindings = described(&key_bindings(&ShortcutOverrides::default()));
+    #[gpui_kit::test]
+    fn the_defaults_bind_each_shortcut_once_and_a_context_wins_its_own_key(
+        cx: &mut TestAppContext,
+    ) {
+        let bindings = cx.update(|cx| described(&key_bindings(&ShortcutOverrides::default(), cx)));
         assert!(bindings.contains(&(
-            keys(&primary("n")).unparse(),
+            keys(&primary("n")).unparse(HOST_OS),
             "shellrs::NewHost".into(),
             None
         )));
@@ -965,19 +988,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_change_rebinds_turns_off_or_goes_back() {
+    #[gpui_kit::test]
+    fn a_change_rebinds_turns_off_or_goes_back(cx: &mut TestAppContext) {
         let new_host = shortcut("new-host");
         let mut overrides = ShortcutOverrides::default();
         overrides.set(new_host, primary("j"));
-        let bindings = described(&key_bindings(&overrides));
+        let bindings = cx.update(|cx| described(&key_bindings(&overrides, cx)));
         assert_eq!(
             bindings[position(&bindings, "shellrs::NewHost")].0,
-            keys(&primary("j")).unparse()
+            keys(&primary("j")).unparse(HOST_OS)
         );
         overrides.disable(new_host);
         assert!(overrides.is_disabled(new_host));
-        let bindings = described(&key_bindings(&overrides));
+        let bindings = cx.update(|cx| described(&key_bindings(&overrides, cx)));
         assert!(
             !bindings
                 .iter()
@@ -1003,13 +1026,13 @@ mod tests {
         assert!(overrides.is_default(shortcut("close-tab")));
     }
 
-    #[test]
-    fn ctrl_with_a_letter_stays_the_shells_in_a_terminal() {
+    #[gpui_kit::test]
+    fn ctrl_with_a_letter_stays_the_shells_in_a_terminal(cx: &mut TestAppContext) {
         let mut overrides = ShortcutOverrides::default();
         overrides.set(shortcut("new-local-terminal"), "ctrl-t".into());
         overrides.set(shortcut("toggle-sidebar"), "ctrl-shift-b".into());
         overrides.set(shortcut("terminal-copy"), "ctrl-c".into());
-        let bindings = described(&key_bindings(&overrides));
+        let bindings = cx.update(|cx| described(&key_bindings(&overrides, cx)));
         let in_terminal = |keys: &str| {
             bindings.iter().position(|(bound, name, context)| {
                 bound == keys
@@ -1025,17 +1048,21 @@ mod tests {
         assert!(position(&bindings, "shellrs::CopyTerminal") > in_terminal("ctrl-t").unwrap());
     }
 
-    #[test]
-    fn a_tab_closes_from_a_terminal_with_the_default_keys_everywhere() {
+    #[gpui_kit::test]
+    fn a_tab_closes_from_a_terminal_with_the_default_keys_everywhere(cx: &mut TestAppContext) {
         let close = shortcut("close-tab");
         for keys in [close.mac, close.other] {
             let binding = KeyBinding::new(keys, CloseActiveTab, None);
-            assert!(shell_keys_in_terminal(&[binding]).is_empty(), "{keys}");
+            assert!(
+                cx.update(|cx| shell_keys_in_terminal(&[binding], cx))
+                    .is_empty(),
+                "{keys}"
+            );
         }
     }
 
-    #[test]
-    fn the_system_wide_shortcut_has_no_key_until_one_is_chosen() {
+    #[gpui_kit::test]
+    fn the_system_wide_shortcut_has_no_key_until_one_is_chosen(cx: &mut TestAppContext) {
         let show = shortcut("show-hide-app");
         let mut overrides = ShortcutOverrides::default();
         assert_eq!(overrides.keys(show), None);
@@ -1044,7 +1071,7 @@ mod tests {
         assert_eq!(overrides.keys(show).as_deref(), Some("alt-space"));
         // The system hears it, not the keymap.
         assert!(
-            !described(&key_bindings(&overrides))
+            !cx.update(|cx| described(&key_bindings(&overrides, cx)))
                 .iter()
                 .any(|(_, name, _)| name == "shellrs::ShowOrHideApp")
         );
@@ -1066,7 +1093,7 @@ mod tests {
                 let default = window.default_keys();
                 assert_eq!(
                     check(window, &keys(default), &ShortcutOverrides::default(), &[]),
-                    Ok(keys(default).unparse())
+                    Ok(keys(default).unparse(HOST_OS))
                 );
             } else {
                 assert_eq!(ShortcutOverrides::default().keys(window), None);
@@ -1077,7 +1104,11 @@ mod tests {
     #[test]
     fn keys_need_a_modifier_and_must_be_free_where_they_work() {
         let overrides = ShortcutOverrides::default();
-        let fixed = [KeyBinding::new(&primary("z"), NoAction, Some("Input"))];
+        #[cfg(target_os = "macos")]
+        const UNDO: &str = "cmd-z";
+        #[cfg(not(target_os = "macos"))]
+        const UNDO: &str = "ctrl-z";
+        let fixed = [KeyBinding::new(UNDO, NoAction, Some("Input"))];
         let new_host = shortcut("new-host");
         let check = |shortcut, pressed: &str| check(shortcut, &keys(pressed), &overrides, &fixed);
 
@@ -1114,7 +1145,7 @@ mod tests {
         let find = shortcut("terminal-find");
         assert_eq!(
             check(new_host, find.default_keys()),
-            Ok(keys(find.default_keys()).unparse())
+            Ok(keys(find.default_keys()).unparse(HOST_OS))
         );
         // Two of the terminal's own cannot share one.
         let clear = shortcut("terminal-clear");

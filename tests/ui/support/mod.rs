@@ -16,7 +16,7 @@ pub use shellrs::app::{
     DeleteCredential, DeleteForward, DeleteGroup, DeleteHost, DisconnectTerminal, EditCredential,
     EditForward, EditHost, ExpandAllGroups, FindInTerminal, FindNextInTerminal,
     FindPreviousInTerminal, FocusSearch, NewHostInGroup, NewLocalTerminal, OpenSettings,
-    ReconnectTerminal, RenameGroup, RenameTerminal, StartForward, StopForward, ToggleHostPanel,
+    ReconnectTerminal, RenameGroup, RenameTerminal, StartForward, ToggleHostPanel,
     ToggleToolSidebar,
 };
 pub use shellrs::connection::{
@@ -126,7 +126,14 @@ pub fn appearance_dropdown(window: &mut gpui_kit::Window, item: usize) -> Option
         .within(format!("item-{item}"))
         .find("btn")
         .label()
+        .map(dropdown_value)
         .map(str::to_string)
+}
+
+/// What a settings dropdown shows as chosen: its label is the setting's
+/// name, then the choice.
+pub fn dropdown_value(label: &str) -> &str {
+    label.split_once(": ").map_or(label, |(_, value)| value)
 }
 
 /// A left click at a point, for places without an element of their own.

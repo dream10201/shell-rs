@@ -23,7 +23,7 @@ use super::{
 };
 use crate::host::ErrorMessage as _;
 use crate::i18n::t;
-use crate::shared::{commit_footer, dismiss_form_error, form_error_notification};
+use crate::shared::{commit_footer, dismiss_form_error, show_form_error};
 
 /// What a password dialog does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -169,7 +169,7 @@ impl PasswordForm {
             None => check_password(&password),
         };
         if let Err(error) = checked {
-            window.push_notification(form_error_notification(error.message()), cx);
+            show_form_error(error.message(), window, cx);
             return false;
         }
         let (dialog, login) = (self.dialog.clone(), self.login.clone());
@@ -221,7 +221,7 @@ fn finish(result: Result<(), JobError>, window: &mut Window, cx: &mut App) {
             dismiss_form_error(window, cx);
             window.close_dialog(cx);
         }
-        Err(error) => window.push_notification(form_error_notification(error.message()), cx),
+        Err(error) => show_form_error(error.message(), window, cx),
     }
 }
 

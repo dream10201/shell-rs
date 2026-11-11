@@ -41,11 +41,12 @@ fn scroll_to_tab_shortcuts(cx: &mut TestAppContext, handle: WindowHandle<Root>) 
     in_frame(cx, handle, |window, cx| {
         let position = window.find("shortcut-keys-new-host").bounds().center();
         window.dispatch_event(
-            gpui_kit::ScrollWheelEvent {
+            gpui_kit::ScrollEvent {
                 position,
                 delta: gpui_kit::ScrollDelta::Pixels(point(px(0.), px(-600.))),
                 modifiers: gpui_kit::Modifiers::default(),
                 touch_phase: gpui_kit::TouchPhase::Moved,
+                ..Default::default()
             }
             .to_platform_input(),
             cx,
@@ -117,7 +118,9 @@ fn a_shortcut_takes_the_keys_pressed_for_it(cx: &mut TestAppContext) {
     in_frame(cx, handle, |window, _| {
         assert!(window.try_find("shortcut-recorder-next-tab").is_none());
     });
-    let pressed = Keystroke::parse(&primary("j")).unwrap().unparse();
+    let pressed = Keystroke::parse_with_os(&primary("j"), shellrs::app::HOST_OS)
+        .unwrap()
+        .unparse(shellrs::app::HOST_OS);
     assert_eq!(
         overrides(&workspace, cx),
         serde_json::json!({ "next-tab": pressed })

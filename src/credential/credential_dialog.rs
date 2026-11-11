@@ -21,7 +21,7 @@ use crate::host::{
 use crate::i18n::{t, tn};
 use crate::secrets::SecretRef;
 use crate::shared::{
-    Segment, SegmentedControl, commit_footer, dismiss_form_error, form_error_notification,
+    Segment, SegmentedControl, commit_footer, dismiss_form_error, show_form_error,
 };
 
 /// Where the SSH agent is found, as the form explains it.
@@ -487,7 +487,7 @@ impl CredentialForm {
     /// Say what stands in the way of saving. Returns `false`, so the
     /// dialog stays open.
     fn fail(&self, error: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> bool {
-        window.push_notification(form_error_notification(error), cx);
+        show_form_error(error, window, cx);
         false
     }
 

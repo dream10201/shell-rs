@@ -38,8 +38,7 @@ use super::{
 };
 pub use crate::shared::DeleteHandler;
 use crate::shared::{
-    Segment, SegmentedControl, confirm_delete, dismiss_form_error, form_error_notification,
-    parse_port,
+    Segment, SegmentedControl, confirm_delete, dismiss_form_error, parse_port, show_form_error,
 };
 
 /// Where the dialog's top sits and how tall it may grow, as fractions of
@@ -225,6 +224,9 @@ pub struct HostForm {
     /// A 临时连接's form: no group, route or notes, a name it may leave out,
     /// and a commit that saves nothing.
     temporary: bool,
+    /// Where the footer's buttons dispatch from: inside the dialog, whatever
+    /// holds the focus.
+    footer_anchor: FocusHandle,
     name: Entity<InputState>,
     protocol: ProtocolKind,
     /// Why an edit cannot change the protocol, if anything holds it.
@@ -644,6 +646,7 @@ impl HostForm {
             store,
             editing,
             temporary: false,
+            footer_anchor: cx.focus_handle(),
             name,
             protocol,
             protocol_lock,
@@ -716,6 +719,9 @@ impl HostForm {
     ) -> Self {
         let mut form = Self::new(None, false, None, store, tester, window, cx);
         form.temporary = true;
+        for fields in [&form.fields, &form.telnet_fields] {
+            fields.update(cx, |fields, _| fields.keep_in_memory());
+        }
         form.name.update(cx, |input, cx| {
             input.set_placeholder(t!("host.dialog.temporary_name_placeholder"), window, cx)
         });
@@ -1248,7 +1254,7 @@ impl HostForm {
             let draft = match self.serial_draft(self.selected_group(cx), cx) {
                 Ok(draft) => draft,
                 Err(error) => {
-                    window.push_notification(form_error_notification(error), cx);
+                    show_form_error(error, window, cx);
                     return false;
                 }
             };
@@ -1275,7 +1281,7 @@ impl HostForm {
         let ((host, port), login, route) = match checked {
             Ok(checked) => checked,
             Err(error) => {
-                window.push_notification(form_error_notification(error), cx);
+                show_form_error(error, window, cx);
                 return false;
             }
         };
@@ -1342,7 +1348,7 @@ impl HostForm {
         let (draft, route) = match checked {
             Ok(checked) => checked,
             Err(error) => {
-                window.push_notification(form_error_notification(error), cx);
+                show_form_error(error, window, cx);
                 return false;
             }
         };
@@ -1393,7 +1399,7 @@ impl HostForm {
             let draft = match self.telnet_draft(None, cx) {
                 Ok(draft) => draft,
                 Err(error) => {
-                    window.push_notification(form_error_notification(error), cx);
+                    show_form_error(error, window, cx);
                     return None;
                 }
             };
@@ -1410,7 +1416,7 @@ impl HostForm {
             let draft = match self.serial_draft(None, cx) {
                 Ok(draft) => draft,
                 Err(error) => {
-                    window.push_notification(form_error_notification(error), cx);
+                    show_form_error(error, window, cx);
                     return None;
                 }
             };
@@ -1426,7 +1432,7 @@ impl HostForm {
         let ((host, port), login) = match checked {
             Ok(checked) => checked,
             Err(error) => {
-                window.push_notification(form_error_notification(error), cx);
+                show_form_error(error, window, cx);
                 return None;
             }
         };
@@ -2380,9 +2386,11 @@ pub fn open_host_dialog(
 /// The host form's footer: 「测试连接」 on the left, 「取消」 and the
 /// commit on the right. The new-host, edit-host and 临时连接 dialogs share it.
 fn form_footer(form: &Entity<HostForm>, commit_label: SharedString, cx: &App) -> DialogFooter {
+    let anchor = form.read(cx).footer_anchor.clone();
     DialogFooter::new()
         .w_full()
         .justify_between()
+        .child(div().absolute().size_0().track_focus(&anchor))
         .child(
             Button::new("test-connection")
                 .label(t!("host.dialog.test_connection"))
@@ -2403,8 +2411,9 @@ fn form_footer(form: &Entity<HostForm>, commit_label: SharedString, cx: &App) ->
                     Button::new("cancel")
                         .label(t!("common.cancel"))
                         .small()
-                        .on_click(|_, window, cx| {
-                            window.dispatch_action(Box::new(Cancel), cx);
+                        .on_click({
+                            let anchor = anchor.clone();
+                            move |_, window, cx| anchor.dispatch_action(&Cancel, window, cx)
                         }),
                 )
                 .child(
@@ -2412,8 +2421,8 @@ fn form_footer(form: &Entity<HostForm>, commit_label: SharedString, cx: &App) ->
                         .primary()
                         .label(commit_label)
                         .small()
-                        .on_click(|_, window, cx| {
-                            window.dispatch_action(Box::new(Confirm { secondary: false }), cx);
+                        .on_click(move |_, window, cx| {
+                            anchor.dispatch_action(&Confirm { secondary: false }, window, cx)
                         }),
                 ),
         )

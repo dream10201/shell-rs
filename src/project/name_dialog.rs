@@ -9,7 +9,7 @@ use gpui_kit::*;
 use crate::host::{HostStore, SavedTerminalId, TerminalGroupId};
 use crate::i18n::{t, tn};
 use crate::shared::{
-    DeleteHandler, commit_footer, confirm_delete, dismiss_form_error, form_error_notification,
+    DeleteHandler, commit_footer, confirm_delete, dismiss_form_error, show_form_error,
 };
 
 /// What the one-field dialog of 项目 names.
@@ -91,7 +91,7 @@ impl NameForm {
             None
         };
         if let Some(error) = error {
-            window.push_notification(form_error_notification(error), cx);
+            show_form_error(error, window, cx);
             return false;
         }
         let dialog = self.dialog;

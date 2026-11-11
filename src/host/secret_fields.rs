@@ -39,6 +39,8 @@ pub struct SecretFields {
     /// committing early never deletes anything.
     password_loaded: bool,
     passphrase_loaded: bool,
+    /// What is typed stays in memory (临时连接), so no keychain is needed.
+    in_memory: bool,
     _key_path_subscription: Subscription,
 }
 
@@ -86,14 +88,20 @@ impl SecretFields {
             secrets,
             password_loaded: false,
             passphrase_loaded: false,
+            in_memory: false,
             _key_path_subscription: key_path_subscription,
         }
     }
 
-    /// Whether secrets can be saved on this machine at all. Without a
-    /// keychain the secret fields are disabled.
+    /// Whether what is typed here has somewhere to go: the keychain, or
+    /// for a 临时连接 memory. Without either the secret fields are disabled.
     pub fn keychain_available(&self) -> bool {
-        self.secrets.is_available()
+        self.in_memory || self.secrets.is_available()
+    }
+
+    /// Keep what is typed in memory only, as a 临时连接 does.
+    pub fn keep_in_memory(&mut self) {
+        self.in_memory = true;
     }
 
     /// Read what the keychain holds for the login being edited, off the UI
