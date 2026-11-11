@@ -42,10 +42,6 @@ cargo fmt --check
 
 开发构建（`cargo run`）不检查更新。要在本机走一遍更新流程，用 debug 构建加环境变量 `SHELLRS_UPDATE_CHANNEL=beta` 编译，运行时用 `SHELLRS_UPDATE_URL=http://127.0.0.1:8000/{channel}.json` 指向本地的静态服务器（`python3 -m http.server`），清单用 `packaging/make-manifest.sh` 和自己生成的测试密钥签名，测试公钥放在环境变量 `SHELLRS_UPDATE_PUBLIC_KEY` 里。release 构建不认这两个环境变量。
 
-## Kubernetes
-
-Kubernetes 工具的模块边界、kubectl 查询范围、RBAC 与注入测试见 [Kubernetes 开发与测试](kubernetes.md#开发与测试)。
-
 ## README 截图
 
 `docs/screenshots/` 里的截图来自真实窗口（macOS 的 `screencapture -o -l <窗口号>`，2 倍分辨率）。截图时不要用自己的数据：把数据目录复制一份，改掉分组、主机的名称和地址，用 `SHELLRS_DATA_DIR` 指向这份副本启动 ShellRS；钥匙串里的密码按「用户@地址:端口」保存，所以副本里没改地址的主机照样能真实连接。截好后检查状态栏、对话框和终端输出里有没有真实的 IP、主机名或业务信息，有就打码。

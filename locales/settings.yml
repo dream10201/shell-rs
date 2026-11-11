@@ -185,12 +185,6 @@ settings.sidebar_tools.history:
 settings.sidebar_tools.tmux:
   zh-CN: 主机上的 tmux 会话：新建、连接、退出、重命名和结束。
   en: The host’s tmux sessions, to start, attach, detach, rename and end.
-settings.sidebar_tools.docker:
-  zh-CN: 容器、卷、镜像和网络。
-  en: Containers, volumes, images and networks.
-settings.sidebar_tools.kubernetes:
-  zh-CN: 用主机上的 kubectl 浏览集群资源、关联关系和容器日志。
-  en: Cluster resources, how they relate and container logs, through kubectl on the host.
 settings.sidebar_tools.services:
   zh-CN: systemd 服务的状态和启停。
   en: systemd services, and starting and stopping them.
@@ -203,15 +197,12 @@ settings.sidebar_tools.connections:
 settings.sidebar_tools.monitor:
   zh-CN: CPU、内存、网络和磁盘。
   en: CPU, memory, network and disks.
-settings.sidebar_tools.gpu:
-  zh-CN: AI 主机的 GPU 和 NPU：利用率、显存、温度和计算进程。支持 NVIDIA 和华为昇腾。
-  en: An AI host’s GPUs and NPUs, with their utilization, memory, temperature and compute processes. NVIDIA and Huawei Ascend.
 settings.sidebar_tools.projects:
   zh-CN: 本地终端旁的分组：把本地终端分组保存，退出时开着的下次启动在原来的文件夹重新打开。
   en: Beside local terminals, groups to keep local terminals in. Those open when you quit come back in their folders next launch.
 settings.sidebar_tools.keywords:
-  zh-CN: 侧栏,右侧栏,工具,显示,隐藏,显卡,GPU,NPU,项目
-  en: sidebar,tools,show,hide,GPU,NPU,projects
+  zh-CN: 侧栏,右侧栏,工具,显示,隐藏,项目
+  en: sidebar,tools,show,hide,projects
 
 settings.notifications.title:
   zh-CN: 通知
@@ -376,15 +367,6 @@ settings.about.automatic:
 settings.about.automatic_description:
   zh-CN: 检测到新版本后自动下载，下载完成后点击「重启并安装」完成更新。
   en: A new version downloads by itself. Once it’s ready, click Restart to update.
-settings.about.privacy:
-  zh-CN: 隐私
-  en: Privacy
-settings.about.analytics:
-  zh-CN: 发送匿名使用统计
-  en: Send anonymous usage statistics
-settings.about.analytics_description:
-  zh-CN: 发送应用版本、操作系统/架构，用于评估安装量、版本分布，用于改进 ShellRS。不会发送任何主机、凭据、命令或会话内容。
-  en: Sends the app version, operating system and architecture, to count installs and versions and to improve ShellRS. No host, credential, command or session content is ever sent.
 settings.about.website:
   zh-CN: 官网
   en: Website

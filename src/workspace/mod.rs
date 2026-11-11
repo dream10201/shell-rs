@@ -2,7 +2,6 @@
 //! the right sidebar's tools, status bar, and the start page (recent hosts)
 //! the center shows while no tab is open.
 
-mod analytics;
 mod app_lock;
 mod app_shell;
 mod compose;

@@ -1,4 +1,4 @@
-//! Resource indicators shared by system monitoring and Kubernetes.
+//! Resource indicators of system monitoring.
 use super::{format_bytes, format_percent};
 use gpui_kit::component::{
     ActiveTheme as _, Icon, Sizable as _,

@@ -252,13 +252,10 @@ pub(super) fn description(tool: ToolKind) -> SharedString {
         ToolKind::Snippets => t!("settings.sidebar_tools.snippets"),
         ToolKind::History => t!("settings.sidebar_tools.history"),
         ToolKind::Tmux => t!("settings.sidebar_tools.tmux"),
-        ToolKind::Docker => t!("settings.sidebar_tools.docker"),
-        ToolKind::Kubernetes => t!("settings.sidebar_tools.kubernetes"),
         ToolKind::Services => t!("settings.sidebar_tools.services"),
         ToolKind::Processes => t!("settings.sidebar_tools.processes"),
         ToolKind::Connections => t!("settings.sidebar_tools.connections"),
         ToolKind::Monitor => t!("settings.sidebar_tools.monitor"),
-        ToolKind::Gpu => t!("settings.sidebar_tools.gpu"),
         ToolKind::Projects => t!("settings.sidebar_tools.projects"),
     }
 }

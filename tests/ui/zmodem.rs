@@ -5,8 +5,6 @@
 use crate::support::*;
 use std::path::PathBuf;
 
-use shellrs::analytics::{Analytics, Counter, Signal};
-
 const TERMINAL: RemoteTerminalId = RemoteTerminalId(INITIAL_WEB_TERMINAL);
 
 /// The seeded workspace, its web-01 terminal running `rz` when it is typed.
@@ -16,19 +14,11 @@ fn open(
     WindowHandle<Root>,
     Entity<Workspace>,
     Arc<FakeTerminalFactory>,
-    mpsc::Receiver<Signal>,
 ) {
     let factory = Arc::new(FakeTerminalFactory::rz());
     let (handle, workspace) =
         open_workspace_with_remote_factory(cx, HostStore::seed(), factory.clone());
-    let (sender, signals) = mpsc::channel();
-    cx.update_window(handle.into(), |_, window, cx| {
-        workspace.update(cx, |workspace, cx| {
-            workspace.set_analytics(Analytics::new(sender, true), window, cx)
-        });
-    })
-    .unwrap();
-    (handle, workspace, factory, signals)
+    (handle, workspace, factory)
 }
 
 fn screen(workspace: &Entity<Workspace>, cx: &App) -> String {
@@ -40,19 +30,6 @@ fn screen(workspace: &Entity<Workspace>, cx: &App) -> String {
         .terminal()
         .read(cx)
         .screen_text(cx)
-}
-
-/// ZMODEM counted, the seeded terminals' connections aside.
-fn counted(signals: &mpsc::Receiver<Signal>) -> Vec<Counter> {
-    signals
-        .try_iter()
-        .filter_map(|signal| match signal {
-            Signal::Count(counter @ (Counter::ZmodemUpload | Counter::ZmodemDownload)) => {
-                Some(counter)
-            }
-            _ => None,
-        })
-        .collect()
 }
 
 async fn running(
@@ -108,7 +85,7 @@ async fn rz_asks_for_the_files_to_upload_and_takes_only_ctrl_c(cx: &mut TestAppC
     let folder = tempfile::tempdir().unwrap();
     let file = folder.path().join("notes.txt");
     std::fs::write(&file, b"hello").unwrap();
-    let (handle, workspace, factory, signals) = open(cx);
+    let (handle, workspace, factory) = open(cx);
     start_rz(cx, handle, &workspace).await;
     cx.simulate_path_prompt_response(|options| {
         assert!(options.files && options.multiple && !options.directories);
@@ -120,7 +97,6 @@ async fn rz_asks_for_the_files_to_upload_and_takes_only_ctrl_c(cx: &mut TestAppC
             && screen(&workspace, cx).contains("正在用 ZMODEM 上传，按 Ctrl+C 取消")
     })
     .await;
-    assert_eq!(counted(&signals), [Counter::ZmodemUpload]);
 
     // Keys would land in the transfer: only Ctrl+C means anything.
     let typed = factory.written_text();
@@ -140,7 +116,7 @@ async fn rz_asks_for_the_files_to_upload_and_takes_only_ctrl_c(cx: &mut TestAppC
 
 #[gpui_kit::test]
 async fn choosing_nothing_cancels_rz(cx: &mut TestAppContext) {
-    let (handle, workspace, factory, signals) = open(cx);
+    let (handle, workspace, factory) = open(cx);
     start_rz(cx, handle, &workspace).await;
     cx.simulate_path_prompt_response(|_| None);
     cx.wait_for(handle.into(), Duration::from_secs(2), |_, cx| {
@@ -148,7 +124,6 @@ async fn choosing_nothing_cancels_rz(cx: &mut TestAppContext) {
     })
     .await;
     assert!(factory.data().starts_with(&[0x18; 10]));
-    assert!(counted(&signals).is_empty());
 }
 
 /// Drop `paths` on web-01's terminal.
@@ -174,7 +149,7 @@ async fn files_dropped_on_a_remote_terminal_go_up_without_asking(cx: &mut TestAp
     let folder = tempfile::tempdir().unwrap();
     let file = folder.path().join("dropped.txt");
     std::fs::write(&file, b"dropped").unwrap();
-    let (handle, workspace, factory, signals) = open(cx);
+    let (handle, workspace, factory) = open(cx);
     running(cx, handle, &workspace).await;
 
     // A folder alone is refused: ZMODEM sends files.
@@ -192,5 +167,4 @@ async fn files_dropped_on_a_remote_terminal_go_up_without_asking(cx: &mut TestAp
     .await;
     assert_eq!(factory.written_text(), "rz\r");
     assert!(!cx.did_prompt_for_paths());
-    assert_eq!(counted(&signals), [Counter::ZmodemUpload]);
 }

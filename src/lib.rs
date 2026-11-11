@@ -3,24 +3,20 @@
 //! Modules are organized by capability so they can become crates later:
 //! `host` (主机管理), `terminal` (终端), `ssh` (SSH 连接), `transfer`
 //! (文件传输), `forward` (端口转发), `credential`
-//! (凭据), `docker` (Docker), `kubernetes` (Kubernetes), `monitor` (系统监控), `services` (系统服务), `processes` (进程管理),
+//! (凭据), `monitor` (系统监控), `services` (系统服务), `processes` (进程管理),
 //! `netstat` (网络连接), `history` (历史命令), `snippets` (命令片段),
-//! `secrets` (系统钥匙串), `settings` (设置), `instance` (单实例与外部连接的链接), `update` (在线升级), `analytics`
-//! (匿名使用统计), `connection` 与 `shared` (跨模块共用), `i18n` (多语言), `workspace` (窗口壳), `app` (动作、快捷键、资源).
+//! `secrets` (系统钥匙串), `settings` (设置), `instance` (单实例与外部连接的链接), `update` (在线升级),
+//! `connection` 与 `shared` (跨模块共用), `i18n` (多语言), `workspace` (窗口壳), `app` (动作、快捷键、资源).
 
-pub mod analytics;
 pub mod app;
 pub mod app_lock;
 pub mod connection;
 pub mod credential;
-pub mod docker;
 pub mod forward;
-pub mod gpu;
 pub mod history;
 pub mod host;
 pub mod i18n;
 pub mod instance;
-pub mod kubernetes;
 pub mod monitor;
 pub mod netstat;
 pub mod processes;

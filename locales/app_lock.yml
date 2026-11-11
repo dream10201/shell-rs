@@ -88,8 +88,8 @@ app_lock.load_failed:
   zh-CN: 无法读取系统钥匙串中的应用锁，暂时无法进入。请允许钥匙串访问后重试：%{error}
   en: "Could not read app lock from the system keychain. Allow keychain access and retry: %{error}"
 app_lock.keywords:
-  zh-CN: 应用锁,密码,安全,启动,解锁,锁定
-  en: app lock,password,security,startup,unlock,lock
+  zh-CN: 应用锁,密码,安全,启动,解锁,锁定,锁屏
+  en: app lock,password,security,startup,unlock,lock,lock screen
 
 app_lock.start_failed:
   zh-CN: 无法启动 ShellRS。请检查是否已有 ShellRS 正在运行，以及数据目录的访问权限，然后重新启动：%{error}
@@ -101,6 +101,13 @@ app_lock.idle_title:
 app_lock.idle_description:
   zh-CN: 单位为分钟，设为 0 时不自动锁定。
   en: In minutes. Set to 0 to turn off automatic locking.
+
+app_lock.screen_title:
+  zh-CN: 电脑锁屏时锁定
+  en: Lock when the computer locks
+app_lock.screen_description:
+  zh-CN: 电脑锁屏后，ShellRS 也一起锁定。
+  en: ShellRS locks as soon as this computer’s screen is locked.
 
 app_lock.loading:
   zh-CN: 正在读取系统钥匙串…

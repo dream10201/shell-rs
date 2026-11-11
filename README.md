@@ -52,12 +52,9 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 
 - They follow the current remote terminal and read and run on that terminal's own connection, with no second login. ⌘⌥B (Ctrl+Alt+B elsewhere) shows or hides them.
 - System monitor: system details, CPU (per core too), memory, network rates and disk use, refreshed every 2 seconds.
-- Network connections, processes and services: search and filter, process details, ending processes, starting, stopping and restarting systemd services, switching them on at boot, and their logs. These three and the monitor are for Linux only.
-- Docker: containers grouped by compose project, with start, stop, restart, details and logs, plus volumes, images and networks. When not root, passwordless sudo is used (for services as well).
-- Kubernetes: select a cluster from the host's kubeconfig, filter resources by namespace, inspect workloads and services, browse related pods, search container logs and copy kubectl commands. Off by default; turn it on in the settings. See the [user manual](docs/manual.md#kubernetes).
+- Network connections, processes and services: search and filter, process details, ending processes, starting, stopping and restarting systemd services, switching them on at boot, and their logs; when not root, passwordless sudo is used. These three and the monitor are for Linux only.
 - Command history reads `~/.bash_history` on the host, and snippets, shared by every host, can be sorted into categories; click one to type it into the terminal, or run it straight away.
 - tmux: the host's tmux sessions, with the one the terminal is in marked; start one, attach the terminal to one or detach it, rename and end them.
-- GPU/NPU: an AI host's NVIDIA GPUs and Huawei Ascend NPUs, laid out for eight: totals, each device's utilization, memory, temperature, power and health, and the compute processes, which you can end. Off by default; turn it on in the settings, where the other tools can be hidden too.
 
 **File transfer**
 
@@ -86,13 +83,12 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 
 - Secrets stay in the system keychain. Host keys are recorded in ShellRS's own `known_hosts`, never in `~/.ssh`.
 - In-app updates: the update manifest is minisign-signed and each package is checked against its SHA-256. Updates download in the background and install on restart or quit. There are stable and beta channels, and an update check sends only the version, OS and CPU architecture.
-- Anonymous usage statistics: sent to Aptabase with only the version, OS, CPU architecture and how often each feature is used, never hosts, credentials, commands or any identifier. Turn them off in Settings › About.
 
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/en/tools.png" alt="Five right sidebar tools side by side: Monitor, Processes, Services, Docker and Network"><br>
-  <em>Right sidebar tools: Monitor, Processes, Services, Docker and Network</em>
+  <img src="docs/screenshots/en/tools.png" alt="Three right sidebar tools side by side: Monitor, Processes and Services"><br>
+  <em>Right sidebar tools: Monitor, Processes and Services</em>
 </p>
 
 <p align="center">
@@ -170,7 +166,7 @@ cargo test
 - [russh](https://github.com/Eugeny/russh): SSH
 - [alacritty_terminal](https://crates.io/crates/alacritty_terminal) and [portable-pty](https://crates.io/crates/portable-pty): terminal emulation and local PTYs
 - [keyring](https://crates.io/crates/keyring): the system keychain
-- [Simple Icons](https://simpleicons.org): the OS logos on host badges and the Docker logo in the right sidebar (CC0)
+- [Simple Icons](https://simpleicons.org): the OS logos on host badges (CC0)
 - [Termark](https://www.termark.app/) and Xshell: the interaction designs ShellRS follows
 
 ## License

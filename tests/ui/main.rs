@@ -7,20 +7,15 @@
 
 mod support;
 
-mod analytics;
 mod app_lock;
 mod compose;
 mod connection;
 mod credential;
-mod docker;
-
 mod forward;
-mod gpu;
 mod history;
 mod host_dialog;
 mod host_import;
 mod host_tree;
-mod kubernetes;
 mod monitor;
 mod netstat;
 mod processes;

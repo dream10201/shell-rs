@@ -172,7 +172,7 @@ mod tests {
             settings.terminal_interaction.cursor_blinking = false;
             settings
                 .sidebar_tools
-                .set(crate::app::ToolKind::Kubernetes, true);
+                .set(crate::app::ToolKind::Tmux, false);
         });
         assert!(matches!(written, Some(Ok(()))));
 
@@ -188,23 +188,11 @@ mod tests {
         );
         assert!(!reloaded.settings().terminal_interaction.cursor_blinking);
         assert!(
-            reloaded
+            !reloaded
                 .settings()
                 .sidebar_tools
-                .shows(crate::app::ToolKind::Kubernetes)
+                .shows(crate::app::ToolKind::Tmux)
         );
-    }
-
-    #[test]
-    fn kubernetes_is_hidden_until_turned_on() {
-        for json in [r#"{}"#, r#"{"sidebar_tools":{}}"#] {
-            let settings: AppSettings = serde_json::from_str(json).unwrap();
-            assert!(
-                !settings
-                    .sidebar_tools
-                    .shows(crate::app::ToolKind::Kubernetes)
-            );
-        }
     }
 
     #[test]

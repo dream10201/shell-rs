@@ -3,7 +3,6 @@
 
 use std::path::{Path, PathBuf};
 
-use shellrs::analytics::{Analytics, Counter, Signal};
 use shellrs::app::{ImportKnownHosts, ImportSshConfig};
 
 use crate::support::*;
@@ -21,23 +20,6 @@ fn ssh_home(files: &[(&str, &str)]) -> tempfile::TempDir {
 
 fn ssh_dir(home: &tempfile::TempDir) -> PathBuf {
     home.path().join(".ssh")
-}
-
-/// Have the workspace report to a channel the test reads.
-fn report(
-    cx: &mut TestAppContext,
-    handle: WindowHandle<Root>,
-    workspace: &Entity<Workspace>,
-) -> mpsc::Receiver<Signal> {
-    let (sender, receiver) = mpsc::channel();
-    cx.update_window(handle.into(), |_, window, cx| {
-        workspace.update(cx, |workspace, cx| {
-            workspace.set_analytics(Analytics::new(sender, true), window, cx)
-        });
-    })
-    .unwrap();
-    cx.run_until_parked();
-    receiver
 }
 
 /// Point 导入 at `dir`, open the dialog with `action` and wait for it to
@@ -105,7 +87,6 @@ Host *
         None,
     ));
     let (handle, workspace) = open_workspace_with_store(cx, store);
-    let signals = report(cx, handle, &workspace);
     open_import(
         cx,
         handle,
@@ -202,14 +183,6 @@ Host *
         assert_eq!(window.notifications(cx).len(), 1);
     })
     .unwrap();
-    let counted: Vec<Counter> = signals
-        .try_iter()
-        .filter_map(|signal| match signal {
-            Signal::Count(counter) => Some(counter),
-            _ => None,
-        })
-        .collect();
-    assert!(counted.contains(&Counter::ImportSshConfig), "{counted:?}");
 }
 
 #[gpui_kit::test]

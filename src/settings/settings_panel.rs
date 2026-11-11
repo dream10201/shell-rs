@@ -922,16 +922,33 @@ fn app_lock_group(store: &Entity<SettingsStore>, cx: &App) -> SettingGroup {
             .disabled(busy)
             .keywords(keywords(t!("app_lock.keywords"))),
         );
+        let (reader, writer) = (store.clone(), store.clone());
+        items.push(
+            SettingItem::new(
+                t!("app_lock.screen_title"),
+                SettingField::switch(
+                    move |cx| reader.read(cx).settings().app_lock_with_screen,
+                    move |on, cx| {
+                        writer.update(cx, |store, cx| {
+                            store.update(|settings| settings.app_lock_with_screen = on, cx)
+                        });
+                    },
+                )
+                .default_value(false),
+            )
+            .description(t!("app_lock.screen_description"))
+            .disabled(busy)
+            .keywords(keywords(t!("app_lock.keywords"))),
+        );
     }
     SettingGroup::new().title(t!("app_lock.title")).items(items)
 }
 
 /// 关于: 应用更新, as three rows: the version with where updating stands,
-/// the channel, and 自动升级; then 隐私, whether usage statistics are sent.
+/// the channel, and 自动升级.
 fn about_groups(panel: &SettingsPanel, cx: &App) -> Vec<SettingGroup> {
     let snapshot = panel.updater.read(cx).snapshot();
     let (reader, writer) = (panel.store.clone(), panel.store.clone());
-    let (analytics_reader, analytics_writer) = (panel.store.clone(), panel.store.clone());
     vec![
         SettingGroup::new()
             .title(t!("settings.about.updates"))
@@ -960,21 +977,6 @@ fn about_groups(panel: &SettingsPanel, cx: &App) -> Vec<SettingGroup> {
                 )
                 .description(t!("settings.about.automatic_description")),
             ]),
-        SettingGroup::new()
-            .title(t!("settings.about.privacy"))
-            .items([SettingItem::new(
-                t!("settings.about.analytics"),
-                SettingField::switch(
-                    move |cx| analytics_reader.read(cx).settings().analytics.enabled,
-                    move |enabled, cx| {
-                        analytics_writer.update(cx, |store, cx| {
-                            store.update(|settings| settings.analytics.enabled = enabled, cx)
-                        });
-                    },
-                )
-                .default_value(true),
-            )
-            .description(t!("settings.about.analytics_description"))]),
         SettingGroup::new()
             .title("ShellRS")
             .items([SettingItem::new(

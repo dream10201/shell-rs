@@ -852,17 +852,7 @@ fn fixed_global_bindings() -> Vec<KeyBinding> {
 }
 
 fn fixed_context_bindings() -> Vec<KeyBinding> {
-    #[cfg(target_os = "macos")]
-    const SAVE: &str = "cmd-s";
-    #[cfg(not(target_os = "macos"))]
-    const SAVE: &str = "ctrl-s";
-
     let mut bindings = vec![
-        KeyBinding::new(
-            SAVE,
-            KubernetesAction(crate::kubernetes::KubernetesCommand::SaveYaml),
-            Some(crate::kubernetes::YAML_KEY_CONTEXT),
-        ),
         KeyBinding::new("enter", ConnectSelected, Some(HOST_PANEL_CONTEXT)),
         KeyBinding::new("enter", ConnectSelected, Some(RECENT_HOSTS_CONTEXT)),
         KeyBinding::new("enter", ToggleSelectedForward, Some(FORWARD_PANEL_CONTEXT)),

@@ -49,8 +49,6 @@ pub struct AppSettings {
     /// 同步.
     pub sync: SyncSettings,
     pub update: UpdateSettings,
-    /// 关于 → 隐私.
-    pub analytics: AnalyticsSettings,
     /// 终端 → 通知.
     pub notifications: NotificationSettings,
     /// 关键字高亮.
@@ -59,6 +57,8 @@ pub struct AppSettings {
     pub window: WindowSettings,
     /// 应用 → 应用锁: zero disables locking after inactivity.
     pub app_lock_idle_minutes: u32,
+    /// 应用 → 应用锁 → 电脑锁屏时锁定.
+    pub app_lock_with_screen: bool,
     /// 键盘快捷键: what the user changed of them.
     pub shortcuts: ShortcutOverrides,
 }
@@ -115,10 +115,9 @@ impl SidebarWidths {
 }
 
 /// 终端 → 侧栏功能: the tools the user offers in the right sidebar or takes
-/// out of it, by `ToolKind::key`; a tool not in it has its default. So a
-/// tool added later comes with its own default, and a key this version does
-/// not know (a newer one's tool) is kept for the version that does. A value
-/// that is not a yes or no is dropped on its own.
+/// out of it, by `ToolKind::key`; a tool not in it is offered. A key this
+/// version does not know (another one's tool) is kept for the version that
+/// does. A value that is not a yes or no is dropped on its own.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct SidebarTools(BTreeMap<String, bool>);
 
@@ -136,29 +135,24 @@ impl<'de> Deserialize<'de> for SidebarTools {
 
 impl SidebarTools {
     pub fn shows(&self, tool: ToolKind) -> bool {
-        self.0
-            .get(tool.key())
-            .copied()
-            .unwrap_or(tool.shown_by_default())
+        self.0.get(tool.key()).copied().unwrap_or(true)
     }
 
-    /// Offer `tool`, or not. Its default is stored as no change.
+    /// Offer `tool`, or not. Offered is stored as no change.
     pub fn set(&mut self, tool: ToolKind, shown: bool) {
-        if shown == tool.shown_by_default() {
+        if shown {
             self.0.remove(tool.key());
         } else {
             self.0.insert(tool.key().to_owned(), shown);
         }
     }
 
-    /// Whether every tool this version knows has its default.
+    /// Whether every tool this version knows is offered.
     pub fn is_default(&self) -> bool {
-        ToolKind::ALL
-            .iter()
-            .all(|tool| self.shows(*tool) == tool.shown_by_default())
+        ToolKind::ALL.iter().all(|tool| self.shows(*tool))
     }
 
-    /// Every tool this version knows back to its default.
+    /// Every tool this version knows offered again.
     pub fn reset(&mut self) {
         for tool in ToolKind::ALL {
             self.0.remove(tool.key());
@@ -385,20 +379,6 @@ impl Default for UpdateSettings {
             automatic: true,
             channel: Channel::of_this_build().unwrap_or(Channel::Stable),
         }
-    }
-}
-
-/// 关于 → 隐私.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct AnalyticsSettings {
-    /// 发送匿名使用统计. On unless the user turns it off.
-    pub enabled: bool,
-}
-
-impl Default for AnalyticsSettings {
-    fn default() -> Self {
-        Self { enabled: true }
     }
 }
 
@@ -679,45 +659,42 @@ mod tests {
         assert_eq!(settings, AppSettings::default());
     }
 
-    /// 侧栏功能: every tool but GPU/NPU until the user says otherwise, and
-    /// only what differs from that in the file.
+    /// 侧栏功能: every tool until the user says otherwise, and only what
+    /// differs from that in the file.
     #[test]
     fn the_sidebar_offers_its_usual_tools_until_told_otherwise() {
         let tools = AppSettings::default().sidebar_tools;
         assert!(tools.is_default());
         assert!(tools.shows(ToolKind::Monitor));
-        assert!(!tools.shows(ToolKind::Gpu));
 
         let mut tools = SidebarTools::default();
-        tools.set(ToolKind::Gpu, true);
-        tools.set(ToolKind::Docker, false);
+        tools.set(ToolKind::Tmux, false);
+        tools.set(ToolKind::History, false);
         assert!(!tools.is_default());
         assert_eq!(
             serde_json::to_value(&tools).unwrap(),
-            serde_json::json!({"docker": false, "gpu": true})
+            serde_json::json!({"history": false, "tmux": false})
         );
-        // Back to its default is no change at all.
-        tools.set(ToolKind::Docker, true);
+        // Back to offered is no change at all.
+        tools.set(ToolKind::Tmux, true);
         assert_eq!(
             serde_json::to_value(&tools).unwrap(),
-            serde_json::json!({"gpu": true})
+            serde_json::json!({"history": false})
         );
         tools.reset();
         assert_eq!(tools, SidebarTools::default());
 
-        // A newer version's tool is kept; a value that is no yes or no
+        // Another version's tool is kept; a value that is no yes or no
         // costs only itself.
-        let settings: AppSettings = serde_json::from_str(
-            r#"{"sidebar_tools":{"gpu":true,"k8s":true,"docker":"no","history":false}}"#,
-        )
-        .unwrap();
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"sidebar_tools":{"k8s":true,"tmux":"no","history":false}}"#)
+                .unwrap();
         let tools = settings.sidebar_tools;
-        assert!(tools.shows(ToolKind::Gpu));
-        assert!(tools.shows(ToolKind::Docker));
+        assert!(tools.shows(ToolKind::Tmux));
         assert!(!tools.shows(ToolKind::History));
         assert_eq!(
             serde_json::to_value(&tools).unwrap(),
-            serde_json::json!({"gpu": true, "history": false, "k8s": true})
+            serde_json::json!({"history": false, "k8s": true})
         );
         let mut tools = tools;
         tools.reset();
@@ -734,7 +711,6 @@ mod tests {
     #[test]
     fn the_local_sidebar_keeps_its_tool_by_key() {
         assert_eq!(AppSettings::default().local_sidebar_tool, None);
-        assert!(ToolKind::Projects.shown_by_default());
         let settings = AppSettings {
             local_sidebar_tool: Some(ToolKind::Projects),
             ..AppSettings::default()
@@ -745,11 +721,11 @@ mod tests {
         assert_eq!(read, settings);
         for stray in [r#""notes""#, "3", "{}", "null"] {
             let read: AppSettings = serde_json::from_str(&format!(
-                r#"{{"local_sidebar_tool":{stray},"sidebar_tools":{{"gpu":true}}}}"#
+                r#"{{"local_sidebar_tool":{stray},"sidebar_tools":{{"history":false}}}}"#
             ))
             .unwrap();
             assert_eq!(read.local_sidebar_tool, None, "{stray}");
-            assert!(read.sidebar_tools.shows(ToolKind::Gpu));
+            assert!(!read.sidebar_tools.shows(ToolKind::History));
         }
     }
 
@@ -980,17 +956,6 @@ mod tests {
         let settings: AppSettings =
             serde_json::from_str(r#"{"update":{"automatic":false}}"#).unwrap();
         assert!(!settings.update.automatic);
-    }
-
-    #[test]
-    fn usage_statistics_are_sent_unless_the_file_says_otherwise() {
-        let settings: AppSettings = serde_json::from_str("{}").unwrap();
-        assert!(settings.analytics.enabled);
-        let settings: AppSettings = serde_json::from_str(r#"{"analytics":{}}"#).unwrap();
-        assert!(settings.analytics.enabled);
-        let settings: AppSettings =
-            serde_json::from_str(r#"{"analytics":{"enabled":false}}"#).unwrap();
-        assert!(!settings.analytics.enabled);
     }
 
     #[test]

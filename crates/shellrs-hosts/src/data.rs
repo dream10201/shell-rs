@@ -3051,10 +3051,10 @@ mod tests {
         let saved = store.insert(draft("web", None));
         let temporary = store.insert_temporary(draft("quick", None), None);
         store.set_host_sidebar_tool(saved, Some("files".into()));
-        store.set_host_sidebar_tool(temporary, Some("docker".into()));
+        store.set_host_sidebar_tool(temporary, Some("monitor".into()));
         let tool_of =
             |store: &HostData, id| store.host(id).and_then(|host| host.sidebar_tool.clone());
-        assert_eq!(tool_of(&store, temporary).as_deref(), Some("docker"));
+        assert_eq!(tool_of(&store, temporary).as_deref(), Some("monitor"));
         let reopened = HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
         assert_eq!(tool_of(&reopened, saved).as_deref(), Some("files"));
         assert!(reopened.host(temporary).is_none());

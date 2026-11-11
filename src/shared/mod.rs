@@ -2,7 +2,6 @@
 
 mod closable_tab;
 mod command_line;
-mod detail_row;
 mod dialog;
 mod format;
 mod host_mark;
@@ -16,10 +15,9 @@ mod tint;
 
 pub use closable_tab::{ClosableTabTitle, tab_pressed_at};
 pub use command_line::{command_tooltip, one_line};
-pub use detail_row::detail_row;
 pub use dialog::{
-    DeleteHandler, commit_footer, confirm_danger, confirm_danger_with_cancel, confirm_delete,
-    dismiss_form_error, form_error_layer, parse_port, show_form_error,
+    DeleteHandler, commit_footer, confirm_danger, confirm_delete, dismiss_form_error,
+    form_error_layer, parse_port, show_form_error,
 };
 pub use format::{format_bytes, format_duration, format_percent};
 pub use host_mark::HostMark;

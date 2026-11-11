@@ -23,7 +23,6 @@
 #               APPLE_API_ISSUER
 #   environment `release`: MINISIGN_SECRET_KEY, MINISIGN_PASSWORD (when the
 #               key has one)
-# Variables: APTABASE_APP_KEY, optional: the app usage statistics go to.
 name: release
 
 on:
@@ -106,7 +105,6 @@ jobs:
       SHELLRS_UPDATE_CHANNEL: ${{ needs.verify.outputs.channel }}
       SHELLRS_COMMIT: ${{ github.sha }}
       SHELLRS_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      SHELLRS_ANALYTICS_KEY: ${{ vars.APTABASE_APP_KEY }}
       NOTARIZED: ${{ secrets.APPLE_CERTIFICATE_P12 != '' }}
     steps:
       - uses: actions/checkout@v7
@@ -204,7 +202,6 @@ jobs:
       VERSION: ${{ needs.verify.outputs.version }}
       SHELLRS_UPDATE_CHANNEL: ${{ needs.verify.outputs.channel }}
       SHELLRS_COMMIT: ${{ github.sha }}
-      SHELLRS_ANALYTICS_KEY: ${{ vars.APTABASE_APP_KEY }}
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install
@@ -266,7 +263,6 @@ jobs:
       VERSION: ${{ needs.verify.outputs.version }}
       SHELLRS_UPDATE_CHANNEL: ${{ needs.verify.outputs.channel }}
       SHELLRS_COMMIT: ${{ github.sha }}
-      SHELLRS_ANALYTICS_KEY: ${{ vars.APTABASE_APP_KEY }}
       DEBIAN_FRONTEND: noninteractive
     steps:
       - name: Build dependencies

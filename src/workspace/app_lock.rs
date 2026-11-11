@@ -62,10 +62,13 @@ impl Workspace {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 if this
                     .update(cx, |this, cx| {
-                        let minutes = this.settings().read(cx).settings().app_lock_idle_minutes;
-                        if lock
-                            .read(cx)
-                            .is_idle(Duration::from_secs(u64::from(minutes) * 60), cx)
+                        let settings = this.settings().read(cx).settings();
+                        let idle =
+                            Duration::from_secs(u64::from(settings.app_lock_idle_minutes) * 60);
+                        let with_screen = settings.app_lock_with_screen;
+                        let lock_state = lock.read(cx);
+                        if lock_state.is_idle(idle, cx)
+                            || (with_screen && lock_state.screen_locked())
                         {
                             this.lock_app(&lock, cx);
                         }

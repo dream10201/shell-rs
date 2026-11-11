@@ -22,7 +22,6 @@ use std::rc::Rc;
 use gpui_kit::component::dock::PaneRef;
 use gpui_kit::*;
 
-use crate::analytics::Counter;
 use crate::app::{
     CenterTab, CloseLocalTerminal, CloseSavedTerminal, DeleteSavedTerminal, DeleteTerminalGroup,
     MoveTerminalNode, NewSavedTerminal, NewTerminalGroup, OpenSavedTerminal, RenameSavedTerminal,
@@ -129,7 +128,6 @@ impl Workspace {
             return;
         };
         self.open_saved_terminal(id, window, cx);
-        self.count(Counter::ProjectTerminal);
     }
 
     /// A click on a saved terminal: its tab to the front, or a tab for it

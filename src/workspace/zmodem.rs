@@ -8,7 +8,6 @@ use gpui_kit::component::{WindowExt as _, notification::Notification};
 use gpui_kit::*;
 
 use super::Workspace;
-use crate::analytics::Counter;
 use crate::app::CenterTab;
 use crate::i18n::t;
 use crate::terminal::{RemoteTerminalId, ZmodemDirection, ZmodemReply};
@@ -49,12 +48,8 @@ impl Workspace {
             this.update(cx, |this, cx| {
                 let reply = match (direction, chosen.first()) {
                     (_, None) => ZmodemReply::Declined,
-                    (ZmodemDirection::Upload, Some(_)) => {
-                        this.count(Counter::ZmodemUpload);
-                        ZmodemReply::Files(chosen)
-                    }
+                    (ZmodemDirection::Upload, Some(_)) => ZmodemReply::Files(chosen),
                     (ZmodemDirection::Download, Some(folder)) => {
-                        this.count(Counter::ZmodemDownload);
                         ZmodemReply::Folder(folder.clone())
                     }
                 };
@@ -103,9 +98,8 @@ impl Workspace {
         } else {
             panel.update(cx, |panel, cx| panel.upload_dropped(files, cx))
         };
-        match uploaded {
-            Ok(()) => self.count(Counter::ZmodemUpload),
-            Err(message) => window.push_notification(Notification::warning(message), cx),
+        if let Err(message) = uploaded {
+            window.push_notification(Notification::warning(message), cx);
         }
     }
 }

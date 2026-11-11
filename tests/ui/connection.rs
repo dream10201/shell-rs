@@ -702,7 +702,7 @@ async fn a_link_opens_a_terminal_to_a_host_that_goes_with_its_last_tab(cx: &mut 
         // The bastion host gets the terminal alone: of the tools, only the
         // snippets, which type into it.
         assert!(window.try_find("tool-snippets").is_some());
-        for tool in ["tool-history", "tool-docker", "tool-monitor"] {
+        for tool in ["tool-history", "tool-tmux", "tool-monitor"] {
             assert!(window.try_find(tool).is_none(), "{tool}");
         }
     })
@@ -836,12 +836,7 @@ async fn a_temporary_connection_has_every_feature_and_saves_nothing(cx: &mut Tes
         assert!(window.try_find(("host-row", LINK_HOST.0)).is_none());
         // The hosts stay where they were.
         assert_eq!(window.find("show-hosts").checked(), Some(true));
-        for tool in [
-            "tool-snippets",
-            "tool-history",
-            "tool-docker",
-            "tool-monitor",
-        ] {
+        for tool in ["tool-snippets", "tool-history", "tool-tmux", "tool-monitor"] {
             assert!(window.try_find(tool).is_some(), "{tool}");
         }
     })

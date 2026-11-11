@@ -76,6 +76,9 @@ fn main() {
                         )
                     });
                     shellrs::app_lock::AppLock::install(lock.clone(), cx);
+                    lock.update(cx, |lock, _| {
+                        lock.watch_screen(shellrs::app_lock::system_screen())
+                    });
                     shellrs::settings::apply(settings.settings(), window, cx);
                     let server = match shellrs::instance::InstanceServer::reserve(
                         shellrs::app::instance_socket_path(),

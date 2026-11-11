@@ -17,13 +17,13 @@ mod window_hiding;
 
 pub use actions::*;
 pub use app_icon::show_logo_when_unbundled;
-pub use assets::{AppAssets, CatalogIcon, DOCKER_ICON};
+pub use assets::{AppAssets, CatalogIcon};
 pub use computer::computer_name;
 #[cfg(target_os = "macos")]
 pub use menu_bar::show_menu_bar;
 pub use paths::{
-    PORTABLE_DATA, SETUP_UNINSTALLER, analytics_path, compose_history_path, data_dir,
-    database_path, instance_endpoint, instance_socket_path, keys_dir, portable_root, settings_path,
+    PORTABLE_DATA, SETUP_UNINSTALLER, compose_history_path, data_dir, database_path,
+    instance_endpoint, instance_socket_path, keys_dir, portable_root, settings_path,
     terminal_output_dir, updates_dir, window_state_path,
 };
 pub use quit::{quit_held_back, set_quit_guard};

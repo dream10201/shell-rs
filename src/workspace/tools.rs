@@ -24,17 +24,10 @@ use gpui_kit::component::{
 };
 use gpui_kit::*;
 
-use crate::analytics::Counter;
 use crate::app::{
-    CenterTab, ControlContainers, ControlService, CopyCommand, EndProcess, EnterCommand,
-    RefreshConnections, RefreshDocker, RefreshGpu, RefreshHistory, RefreshProcesses,
-    RefreshServices, RemoveDockerObject, ShowDockerObject, ShowProcess, ShowService, SortProcesses,
-    ToggleAllGpuDevices, ToggleDockerProject, ToggleGpuDevice, ToggleMonitorDetail, ToggleTool,
-    ToggleToolSidebar, ToolKind,
-};
-use crate::docker::{
-    self, ContainerCommand, ContainerSubject, DockerObject, open_container_dialog,
-    open_object_dialog,
+    CenterTab, ControlService, CopyCommand, EndProcess, EnterCommand, RefreshConnections,
+    RefreshHistory, RefreshProcesses, RefreshServices, ShowProcess, ShowService, SortProcesses,
+    ToggleMonitorDetail, ToggleTool, ToggleToolSidebar, ToolKind,
 };
 use crate::host::{HostId, HostOs};
 use crate::i18n::t;
@@ -73,30 +66,6 @@ impl ToolTarget {
 }
 
 impl Workspace {
-    pub(super) fn on_kubernetes_action(
-        &mut self,
-        action: &crate::app::KubernetesAction,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if !self
-            .settings()
-            .read(cx)
-            .settings()
-            .sidebar_tools
-            .shows(ToolKind::Kubernetes)
-        {
-            return;
-        }
-        if let crate::kubernetes::KubernetesCommand::CopyValue(value) = &action.0 {
-            cx.write_to_clipboard(ClipboardItem::new_string(value.clone()));
-            window.push_notification(Notification::success(t!("k8s.copied")), cx);
-            return;
-        }
-        self.tools.update(cx, |tools, cx| {
-            tools.kubernetes_command(&action.0, window, cx)
-        });
-    }
     /// The terminal the right sidebar goes with: the one in front last
     /// while it is on screen, else another that is.
     pub(super) fn tool_target(&self, cx: &App) -> Option<ToolTarget> {
@@ -163,39 +132,6 @@ impl Workspace {
         }
     }
 
-    /// GPU/NPU's 刷新: read the host's devices again, and go on reading.
-    pub(super) fn on_refresh_gpu(
-        &mut self,
-        _: &RefreshGpu,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.tools.update(cx, |tools, cx| tools.refresh_gpu(cx));
-    }
-
-    /// GPU/NPU's 全部展开 and 全部收起.
-    pub(super) fn on_toggle_all_gpu_devices(
-        &mut self,
-        _: &ToggleAllGpuDevices,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.tools
-            .update(cx, |tools, cx| tools.toggle_all_gpu_devices(cx));
-    }
-
-    /// A click on a device of GPU/NPU: its details, or no more.
-    pub(super) fn on_toggle_gpu_device(
-        &mut self,
-        action: &ToggleGpuDevice,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let key = action.0.clone();
-        self.tools
-            .update(cx, |tools, cx| tools.toggle_gpu_device(&key, cx));
-    }
-
     /// The tool the right sidebar is showing, `None` while it is hidden.
     pub(super) fn tool_showing(&self, cx: &App) -> Option<ToolKind> {
         self.dock_area
@@ -244,7 +180,6 @@ impl Workspace {
             self.remember_target_tool(&target, None, cx);
         } else {
             self.remember_target_tool(&target, Some(tool), cx);
-            self.count_tool(tool);
         }
         self.sync_tool_sidebar(window, cx);
     }
@@ -392,11 +327,6 @@ impl Workspace {
             Ok(()) => {
                 let focus = view.read(cx).focus_handle();
                 window.focus(&focus, cx);
-                // Only the snippets and the history put commands in.
-                self.count(match self.tools.read(cx).tool() {
-                    ToolKind::History => Counter::CommandHistory,
-                    _ => Counter::CommandSnippet,
-                });
             }
             Err(why) => {
                 let message = if *run {
@@ -418,163 +348,6 @@ impl Workspace {
     ) {
         cx.write_to_clipboard(ClipboardItem::new_string(action.0.clone()));
         window.push_notification(Notification::success(t!("tools.command.copied")), cx);
-    }
-
-    /// Docker's 刷新: read the host's Docker again.
-    pub(super) fn on_refresh_docker(
-        &mut self,
-        _: &RefreshDocker,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.tools.update(cx, |tools, cx| tools.refresh_docker(cx));
-    }
-
-    /// A compose project's line: fold it away, or unfold it.
-    pub(super) fn on_toggle_docker_project(
-        &mut self,
-        action: &ToggleDockerProject,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.tools
-            .update(cx, |tools, cx| tools.toggle_docker_project(&action.0, cx));
-    }
-
-    /// A container's details and output, or a volume's, an image's or a
-    /// network's details.
-    pub(super) fn on_show_docker_object(
-        &mut self,
-        action: &ShowDockerObject,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(terminal) = self.tool_terminal(cx) else {
-            return;
-        };
-        let tools = self.tools.read(cx);
-        let dispatch = self.focus_handle.clone();
-        if action.object == DockerObject::Container {
-            if let Some(container) = tools.container(&action.id, cx) {
-                open_container_dialog(container, terminal.view, dispatch, window, cx);
-            }
-        } else if let Some(summary) = tools.docker_summary(action.object, &action.id, cx) {
-            open_object_dialog(summary, terminal.view, dispatch, window, cx);
-        }
-    }
-
-    /// Start, stop or restart containers, asking first before stopping or
-    /// restarting them; how it went is a notification, and the list is
-    /// read again.
-    pub(super) fn on_control_containers(
-        &mut self,
-        action: &ControlContainers,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(terminal) = self.tool_terminal(cx) else {
-            return;
-        };
-        let ControlContainers {
-            subject,
-            ids,
-            command,
-        } = action.clone();
-        let workspace = cx.entity().downgrade();
-        let run = Rc::new({
-            let subject = subject.clone();
-            move |window: &mut Window, cx: &mut App| {
-                let failed = subject.clone();
-                run_on_host(
-                    HostCommand {
-                        script: docker::control_command(&ids, command),
-                        outcome: docker::done,
-                        done: Some(containers_done(&subject, command)),
-                        failed: Box::new(move |why| containers_failed(&failed, command, why)),
-                        then: ToolSidebar::refresh_docker,
-                    },
-                    &terminal,
-                    workspace.clone(),
-                    window,
-                    cx,
-                )
-            }
-        });
-        let (title, description) = match (&subject, command) {
-            (_, ContainerCommand::Start) => return run(window, cx),
-            (ContainerSubject::Container(name), ContainerCommand::Stop) => (
-                t!("tools.container.stop.title", name = name),
-                t!("tools.container.stop.description"),
-            ),
-            (ContainerSubject::Project(name), ContainerCommand::Stop) => (
-                t!("tools.project.stop.title", name = name),
-                t!("tools.project.stop.description"),
-            ),
-            (ContainerSubject::Container(name), ContainerCommand::Restart) => (
-                t!("tools.container.restart.title", name = name),
-                t!("tools.container.restart.description"),
-            ),
-            (ContainerSubject::Project(name), ContainerCommand::Restart) => (
-                t!("tools.project.restart.title", name = name),
-                t!("tools.project.restart.description"),
-            ),
-        };
-        confirm_danger(title, Some(description), command.label(), run, window, cx);
-    }
-
-    /// Ask, then remove a container, an image, a volume or a network.
-    pub(super) fn on_remove_docker_object(
-        &mut self,
-        action: &RemoveDockerObject,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(terminal) = self.tool_terminal(cx) else {
-            return;
-        };
-        let RemoveDockerObject { object, id, name } = action.clone();
-        let (title, description) = match object {
-            DockerObject::Container => (
-                t!("tools.remove.container.title", name = name),
-                t!("tools.remove.container.description"),
-            ),
-            DockerObject::Image => (
-                t!("tools.remove.image.title", name = name),
-                t!("tools.remove.image.description"),
-            ),
-            DockerObject::Volume => (
-                t!("tools.remove.volume.title", name = name),
-                t!("tools.remove.volume.description"),
-            ),
-            DockerObject::Network => (
-                t!("tools.remove.network.title", name = name),
-                t!("tools.remove.network.description"),
-            ),
-        };
-        let workspace = cx.entity().downgrade();
-        confirm_danger(
-            title,
-            Some(description),
-            t!("common.delete"),
-            Rc::new(move |window, cx| {
-                let failed = name.clone();
-                run_on_host(
-                    HostCommand {
-                        script: docker::remove_command(object, &id),
-                        outcome: docker::done,
-                        done: Some(removed(object, &name)),
-                        failed: Box::new(move |why| not_removed(object, &failed, why)),
-                        then: ToolSidebar::refresh_docker,
-                    },
-                    &terminal,
-                    workspace.clone(),
-                    window,
-                    cx,
-                )
-            }),
-            window,
-            cx,
-        );
     }
 
     /// 系统服务's 刷新: read the host's services again.
@@ -921,78 +694,6 @@ pub(super) fn run_on_host(
             .ok();
         })
         .detach();
-}
-
-/// The notification when containers did as `command` said.
-fn containers_done(subject: &ContainerSubject, command: ContainerCommand) -> SharedString {
-    match (subject, command) {
-        (ContainerSubject::Container(name), ContainerCommand::Start) => {
-            t!("tools.container.start.done", name = name)
-        }
-        (ContainerSubject::Container(name), ContainerCommand::Stop) => {
-            t!("tools.container.stop.done", name = name)
-        }
-        (ContainerSubject::Container(name), ContainerCommand::Restart) => {
-            t!("tools.container.restart.done", name = name)
-        }
-        (ContainerSubject::Project(name), ContainerCommand::Start) => {
-            t!("tools.project.start.done", name = name)
-        }
-        (ContainerSubject::Project(name), ContainerCommand::Stop) => {
-            t!("tools.project.stop.done", name = name)
-        }
-        (ContainerSubject::Project(name), ContainerCommand::Restart) => {
-            t!("tools.project.restart.done", name = name)
-        }
-    }
-}
-
-/// The notification when they did not, and why.
-fn containers_failed(
-    subject: &ContainerSubject,
-    command: ContainerCommand,
-    why: &str,
-) -> SharedString {
-    match (subject, command) {
-        (ContainerSubject::Container(name), ContainerCommand::Start) => {
-            t!("tools.container.start.failed", name = name, error = why)
-        }
-        (ContainerSubject::Container(name), ContainerCommand::Stop) => {
-            t!("tools.container.stop.failed", name = name, error = why)
-        }
-        (ContainerSubject::Container(name), ContainerCommand::Restart) => {
-            t!("tools.container.restart.failed", name = name, error = why)
-        }
-        (ContainerSubject::Project(name), ContainerCommand::Start) => {
-            t!("tools.project.start.failed", name = name, error = why)
-        }
-        (ContainerSubject::Project(name), ContainerCommand::Stop) => {
-            t!("tools.project.stop.failed", name = name, error = why)
-        }
-        (ContainerSubject::Project(name), ContainerCommand::Restart) => {
-            t!("tools.project.restart.failed", name = name, error = why)
-        }
-    }
-}
-
-/// The notification when a container, an image, a volume or a network went.
-fn removed(object: DockerObject, name: &str) -> SharedString {
-    match object {
-        DockerObject::Container => t!("tools.remove.container.done", name = name),
-        DockerObject::Image => t!("tools.remove.image.done", name = name),
-        DockerObject::Volume => t!("tools.remove.volume.done", name = name),
-        DockerObject::Network => t!("tools.remove.network.done", name = name),
-    }
-}
-
-/// The notification when it did not, and why.
-fn not_removed(object: DockerObject, name: &str, why: &str) -> SharedString {
-    match object {
-        DockerObject::Container => t!("tools.remove.container.failed", name = name, error = why),
-        DockerObject::Image => t!("tools.remove.image.failed", name = name, error = why),
-        DockerObject::Volume => t!("tools.remove.volume.failed", name = name, error = why),
-        DockerObject::Network => t!("tools.remove.network.failed", name = name, error = why),
-    }
 }
 
 /// The notification when a service did as `command` said.

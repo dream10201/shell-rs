@@ -15,7 +15,7 @@
 - **更新签名密钥**：`minisign -G -p shellrs-update.pub -s shellrs-update.key` 生成两对（一对日常用，一对离线保存备用），把两个公钥（`.pub` 文件的第二行）填进 `src/update/build_info.rs` 的 `TRUSTED_KEYS`。私钥和口令只放进 GitHub 的 `release` 环境，另外离线备份；丢了私钥，已发出去的 ShellRS 就再也收不到更新。换钥匙时先发一版带上新公钥，再换签名用的私钥。
 - **Apple**（可选）：Developer ID Application 证书（导出 .p12）和 notarytool 用的 App Store Connect API Key。没有这些 secrets 时，macOS 的包只做 ad-hoc 签名、不公证：第一次打开要在「系统设置 › 隐私与安全性」里放行，每次升级后钥匙串会重新询问。`packaging/macos/Info.plist.in` 里的 bundle id `com.shellrs.ShellRS` 和签名的 Team ID 一经发布就不能再改：钥匙串按它们授权，改了之后每条保存的密码都要重新允许。
 - **图标**：`assets/logo/` 里的 `shellrs.icns`（macOS）、`shellrs.png`（1024×1024，Linux，macOS 没有 icns 时也由它生成）和 `shellrs.ico`（Windows 安装程序）。
-- **GitHub secrets**：`release` 环境里的 `MINISIGN_SECRET_KEY`（私钥文件的全文）、`MINISIGN_PASSWORD`（私钥有口令时）；要发布前人工批准，就给这个环境设审批人。可选的仓库级 secrets：`APPLE_CERTIFICATE_P12`（base64）、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_TEAM_ID`、`APPLE_API_KEY_P8`（base64）、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER`。可选的仓库变量 `APTABASE_APP_KEY`：匿名使用统计发往的 Aptabase 应用，不设就不发送。
+- **GitHub secrets**：`release` 环境里的 `MINISIGN_SECRET_KEY`（私钥文件的全文）、`MINISIGN_PASSWORD`（私钥有口令时）；要发布前人工批准，就给这个环境设审批人。可选的仓库级 secrets：`APPLE_CERTIFICATE_P12`（base64）、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_TEAM_ID`、`APPLE_API_KEY_P8`（base64）、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER`。
 
 清单格式见 `packaging/manifest.example.json`，由 `packaging/make-manifest.sh` 生成：一个文件里是清单原文和它的 minisign 签名，签名的 trusted comment 写明通道和版本。格式只增加字段、不改已有的；已发出去的 ShellRS 一直按 `update` 分支的 `v1/` 这个地址检查。
 

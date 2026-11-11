@@ -597,8 +597,6 @@ async fn a_portable_copy_downloads_the_portable_zip(cx: &mut TestAppContext) {
     })
     .await;
     assert_eq!(fixture.downloaded(), [vec![PORTABLE_PACKAGE.to_string()]]);
-    let install = cx.update(|cx| workspace.read(cx).updater().read(cx).install_type());
-    assert_eq!(install, "portable");
 }
 
 #[gpui_kit::test]
@@ -624,9 +622,6 @@ async fn a_read_only_portable_copy_links_the_portable_zip(cx: &mut TestAppContex
         window.click("open-download-page", cx)
     });
     assert_eq!(cx.opened_url().as_deref(), Some(PORTABLE_INSTALLER));
-    // Still counted as portable.
-    let install = cx.update(|cx| workspace.read(cx).updater().read(cx).install_type());
-    assert_eq!(install, "portable");
 }
 
 #[gpui_kit::test]

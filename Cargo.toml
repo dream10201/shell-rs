@@ -18,11 +18,7 @@ members = ["crates/shellrs-sync", "crates/shellrs-ssh", "crates/shellrs-hosts"]
 resolver = "3"
 
 [dependencies]
-gpui-kit = { version = "0.9.1", features = [
-    # Kubernetes' YAML is highlighted. Each grammar is compiled C.
-    "tree-sitter",
-    "tree-sitter-yaml",
-] }
+gpui-kit = "0.9.1"
 alacritty_terminal = "0.26"
 anyhow = "1"
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
@@ -31,8 +27,6 @@ async-channel = "2"
 # A terminal's parser thread waits for output only until a synchronized
 # update has to be drawn.
 async-io = "2"
-base64 = "0.23"
-flate2 = "1"
 dirs = "7"
 # Canonical local paths without the `\\?\` prefix std adds on Windows.
 dunce = "1"
@@ -75,10 +69,6 @@ shellrs-hosts = { path = "crates/shellrs-hosts" }
 minisign-verify = "0.3"
 reqwest = { version = "0.13", features = ["blocking"] }
 semver = { version = "1", features = ["serde"] }
-# 匿名使用统计: the system's name and version for Aptabase, as its own Tauri
-# plugin reads them.
-os_info = { version = "3", default-features = false }
-serde_yaml_ng = "0.10.0"
 # ZMODEM (`rz` / `sz` in a terminal): the protocol only, driven by the
 # terminal's parser thread. Pinned: its 0.x API changes between releases.
 zmodem2 = "=0.7.3"
@@ -117,6 +107,10 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSURL",
 ] }
 
+# 电脑锁屏时锁定: logind's `LockedHint`. The keychain already builds it.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
@@ -126,6 +120,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_IO",
     "Win32_System_LibraryLoader",
     "Win32_System_Pipes",
+    "Win32_System_RemoteDesktop",
     "Win32_System_Threading",
     "Win32_System_WindowsProgramming",
     "Win32_UI_WindowsAndMessaging",
@@ -134,7 +129,7 @@ windows-sys = { version = "0.61", features = [
 # The window's handle, to restore it from maximized: GPUI only maximizes.
 raw-window-handle = "0.6"
 # The Windows portable package updates itself from a zip. Deflate through
-# flate2, which keeps its default Rust backend: our own `flate2` asks for it.
+# flate2, which keeps its default Rust backend: `shellrs-sync`'s `flate2` asks for it.
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 # The icon in the Windows executables (build.rs).
@@ -186,7 +181,3 @@ blowfish = { opt-level = 3 }
 # The sync key's Argon2id, over 64 MiB, takes seconds unoptimized.
 argon2 = { opt-level = 3 }
 blake2 = { opt-level = 3 }
-# Kubernetes’ YAML is parsed whole to highlight it.
-tree-sitter = { opt-level = 3 }
-tree-sitter-json = { opt-level = 3 }
-tree-sitter-yaml = { opt-level = 3 }

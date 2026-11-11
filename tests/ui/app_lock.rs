@@ -378,3 +378,66 @@ fn app_lock_keychain_failure_blocks_startup_and_retry_recovers(cx: &mut TestAppC
         assert!(window.try_find("app-lock-screen").is_none());
     });
 }
+
+struct FakeScreen(std::sync::atomic::AtomicBool);
+
+impl shellrs::app_lock::ScreenState for FakeScreen {
+    fn is_locked(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[gpui_kit::test]
+fn app_lock_follows_the_computers_lock_screen_once_switched_on(cx: &mut TestAppContext) {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    let (handle, lock, _) = open_locked_workspace(cx, Arc::new(InMemoryLockStore::default()));
+    let screen = Arc::new(FakeScreen(false.into()));
+    cx.update(|cx| lock.update(cx, |lock, _| lock.watch_screen(screen.clone())));
+    app_settings(cx, handle);
+    in_frame(cx, handle, |window, cx| window.click("app-lock-enable", cx));
+    in_frame(cx, handle, |window, cx| {
+        enter(window, "app-lock-new-password", "screen password", cx);
+        enter(window, "app-lock-repeat-password", "screen password", cx);
+        window.click("app-lock-commit", cx);
+    });
+    wait_for_password(cx, &lock);
+    let advance = |cx: &mut TestAppContext| {
+        cx.executor().advance_clock(Duration::from_secs(2));
+        cx.run_until_parked();
+    };
+    let locked = |cx: &mut TestAppContext| cx.update(|cx| lock.read(cx).is_locked());
+    let switch = |cx: &mut TestAppContext| {
+        in_frame(cx, handle, |window, cx| {
+            window
+                .within("settings")
+                .within("group-1")
+                .within("item-2")
+                .click("check", cx);
+        })
+    };
+    // 电脑锁屏时锁定 is the third row, and off until switched on.
+    screen.0.store(true, Ordering::SeqCst);
+    advance(cx);
+    assert!(!locked(cx));
+    switch(cx);
+    advance(cx);
+    assert!(locked(cx));
+
+    // Back at the computer: ShellRS still asks for its own password.
+    screen.0.store(false, Ordering::SeqCst);
+    advance(cx);
+    assert!(locked(cx));
+    in_frame(cx, handle, |window, cx| {
+        enter(window, "app-lock-password", "screen password", cx);
+        window.click("app-lock-unlock", cx);
+    });
+    wait_for_password(cx, &lock);
+    assert!(!locked(cx));
+
+    switch(cx);
+    screen.0.store(true, Ordering::SeqCst);
+    advance(cx);
+    assert!(!locked(cx));
+}

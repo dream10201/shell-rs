@@ -11,12 +11,9 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::app::{CatalogIcon, NewSavedTerminal, NewTerminalGroup, ToggleTool, ToolKind};
-use crate::docker::{Container, DockerObject, DockerPanel, ObjectSummary};
-use crate::gpu::GpuPanel;
 use crate::history::HistoryPanel;
 use crate::host::{HostId, HostOs, HostStore, SavedTerminalId, SnippetCategoryId, SnippetNode};
 use crate::i18n::t;
-use crate::kubernetes::{KubernetesCommand, KubernetesPanel};
 use crate::monitor::{MonitorDetail, MonitorPanel};
 use crate::netstat::NetstatPanel;
 use crate::processes::{Process, ProcessDetails, ProcessPanel, ProcessSort};
@@ -51,15 +48,11 @@ impl ToolKind {
             ToolKind::Services
             | ToolKind::Processes
             | ToolKind::Connections
-            | ToolKind::Monitor
-            | ToolKind::Gpu => os.is_none_or(HostOs::is_linux),
+            | ToolKind::Monitor => os.is_none_or(HostOs::is_linux),
             ToolKind::Snippets | ToolKind::Projects => true,
-            // Wherever `sh` runs `docker`, `kubectl` or `tmux`: Linux, and a
-            // Mac with Docker Desktop, kubectl or tmux; and bash's history
-            // file wherever `sh` reads it.
-            ToolKind::Docker | ToolKind::Kubernetes | ToolKind::Tmux | ToolKind::History => {
-                os != Some(HostOs::Windows)
-            }
+            // Wherever `sh` runs `tmux`: Linux, and a Mac with tmux; and
+            // bash's history file wherever `sh` reads it.
+            ToolKind::Tmux | ToolKind::History => os != Some(HostOs::Windows),
         }
     }
 
@@ -69,13 +62,10 @@ impl ToolKind {
             ToolKind::Snippets => "tool-snippets",
             ToolKind::History => "tool-history",
             ToolKind::Tmux => "tool-tmux",
-            ToolKind::Docker => "tool-docker",
-            ToolKind::Kubernetes => "tool-kubernetes",
             ToolKind::Services => "tool-services",
             ToolKind::Processes => "tool-processes",
             ToolKind::Connections => "tool-connections",
             ToolKind::Monitor => "tool-monitor",
-            ToolKind::Gpu => "tool-gpu",
             ToolKind::Projects => "tool-projects",
         }
     }
@@ -128,15 +118,10 @@ pub struct ToolSidebar {
     snippets: Entity<SnippetPanel>,
     history: Entity<HistoryPanel>,
     tmux: Entity<TmuxPanel>,
-    docker: Entity<DockerPanel>,
-    /// Created only when Kubernetes is first selected; unused terminals
-    /// do not allocate its inputs, subscriptions or query state.
-    kubernetes: Option<Entity<KubernetesPanel>>,
     services: Entity<ServicePanel>,
     processes: Entity<ProcessPanel>,
     netstat: Entity<NetstatPanel>,
     dispatch: FocusHandle,
-    gpu: Entity<GpuPanel>,
     projects: Entity<ProjectPanel>,
     focus_handle: FocusHandle,
 }
@@ -159,12 +144,9 @@ impl ToolSidebar {
             snippets: cx.new(|cx| SnippetPanel::new(store, dispatch.clone(), window, cx)),
             history: cx.new(|cx| HistoryPanel::new(dispatch.clone(), window, cx)),
             tmux: cx.new(|_| TmuxPanel::new(dispatch.clone())),
-            docker: cx.new(|_| DockerPanel::new(dispatch.clone())),
-            kubernetes: None,
             services: cx.new(|cx| ServicePanel::new(dispatch.clone(), window, cx)),
             processes: cx.new(|cx| ProcessPanel::new(dispatch.clone(), window, cx)),
             netstat: cx.new(|cx| NetstatPanel::new(dispatch.clone(), window, cx)),
-            gpu: cx.new(|cx| GpuPanel::new(dispatch.clone(), cx)),
             dispatch,
             focus_handle: cx.focus_handle(),
         }
@@ -172,24 +154,6 @@ impl ToolSidebar {
 
     pub fn tool(&self) -> ToolKind {
         self.tool
-    }
-
-    pub fn disable_kubernetes(&mut self, cx: &mut Context<Self>) {
-        if let Some(panel) = self.kubernetes.take() {
-            panel.update(cx, |panel, cx| panel.set_target(None, false, cx));
-            cx.notify();
-        }
-    }
-
-    pub fn kubernetes_command(
-        &mut self,
-        command: &KubernetesCommand,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(panel) = &self.kubernetes {
-            panel.update(cx, |panel, cx| panel.command(command, window, cx));
-        }
     }
 
     /// Work on the terminal now in front, and say whether the dock is
@@ -282,33 +246,6 @@ impl ToolSidebar {
         self.tmux.read(cx).table()
     }
 
-    /// Docker's 刷新, and after a command.
-    pub fn refresh_docker(&mut self, cx: &mut Context<Self>) {
-        self.docker.update(cx, |docker, cx| docker.refresh(cx));
-    }
-
-    /// Fold a compose project away, or unfold it.
-    pub fn toggle_docker_project(&mut self, name: &str, cx: &mut Context<Self>) {
-        self.docker
-            .update(cx, |docker, cx| docker.toggle_project(name, cx));
-    }
-
-    /// A container of the host in front, as Docker last showed it.
-    pub fn container(&self, id: &str, cx: &App) -> Option<Container> {
-        self.docker.read(cx).container(id)
-    }
-
-    /// A volume, an image or a network of the host in front, as Docker
-    /// last showed it.
-    pub fn docker_summary(
-        &self,
-        object: DockerObject,
-        id: &str,
-        cx: &App,
-    ) -> Option<ObjectSummary> {
-        self.docker.read(cx).summary_of(object, id)
-    }
-
     /// 系统服务's 刷新, and after a command.
     pub fn refresh_services(&mut self, cx: &mut Context<Self>) {
         self.services
@@ -326,30 +263,10 @@ impl ToolSidebar {
             .update(cx, |processes, cx| processes.refresh(cx));
     }
 
-    /// Read the processes again in a moment, once one was told to end:
-    /// those of 进程管理, or of GPU/NPU when it is the one showing.
+    /// Read the processes again in a moment, once one was told to end.
     pub fn refresh_processes_soon(&mut self, cx: &mut Context<Self>) {
-        if self.tool == ToolKind::Gpu {
-            self.gpu.update(cx, |gpu, cx| gpu.refresh_soon(cx));
-        } else {
-            self.processes
-                .update(cx, |processes, cx| processes.refresh_soon(cx));
-        }
-    }
-
-    /// GPU/NPU's 刷新.
-    pub fn refresh_gpu(&mut self, cx: &mut Context<Self>) {
-        self.gpu.update(cx, |gpu, cx| gpu.refresh(cx));
-    }
-
-    /// Unfold a device of GPU/NPU, or fold it away.
-    pub fn toggle_gpu_device(&mut self, key: &str, cx: &mut Context<Self>) {
-        self.gpu.update(cx, |gpu, cx| gpu.toggle(key, cx));
-    }
-
-    /// GPU/NPU's 全部展开 and 全部收起.
-    pub fn toggle_all_gpu_devices(&mut self, cx: &mut Context<Self>) {
-        self.gpu.update(cx, |gpu, cx| gpu.toggle_all(cx));
+        self.processes
+            .update(cx, |processes, cx| processes.refresh_soon(cx));
     }
 
     /// 进程管理's sort buttons.
@@ -364,12 +281,8 @@ impl ToolSidebar {
     }
 
     /// The name and owner of a process of the host in front, for the
-    /// question before ending it: as the tool showing listed it, 进程管理
-    /// or GPU/NPU.
+    /// question before ending it.
     pub fn process_label(&self, pid: u32, cx: &App) -> Option<(String, Option<String>)> {
-        if self.tool == ToolKind::Gpu {
-            return self.gpu.read(cx).process(pid);
-        }
         let process = self.process(pid, cx)?;
         Some((process.name, process.user))
     }
@@ -387,20 +300,12 @@ impl ToolSidebar {
             view: terminal.view.clone(),
         });
         let showing = |tool| self.shown && self.tool == tool;
-        let kubernetes = showing(ToolKind::Kubernetes);
-        if let Some(panel) = &self.kubernetes {
-            panel.update(cx, |panel, cx| {
-                panel.set_target(target.clone(), kubernetes, cx)
-            });
-        }
-        let (monitor, netstat, processes, services, docker, history, gpu, tmux) = (
+        let (monitor, netstat, processes, services, history, tmux) = (
             showing(ToolKind::Monitor),
             showing(ToolKind::Connections),
             showing(ToolKind::Processes),
             showing(ToolKind::Services),
-            showing(ToolKind::Docker),
             showing(ToolKind::History),
-            showing(ToolKind::Gpu),
             showing(ToolKind::Tmux),
         );
         self.history.update(cx, |panel, cx| {
@@ -408,8 +313,6 @@ impl ToolSidebar {
         });
         self.tmux
             .update(cx, |panel, cx| panel.set_target(target.clone(), tmux, cx));
-        self.docker
-            .update(cx, |panel, cx| panel.set_target(target.clone(), docker, cx));
         self.services.update(cx, |panel, cx| {
             panel.set_target(target.clone(), services, cx)
         });
@@ -419,8 +322,6 @@ impl ToolSidebar {
         self.processes.update(cx, |panel, cx| {
             panel.set_target(target.clone(), processes, cx)
         });
-        self.gpu
-            .update(cx, |panel, cx| panel.set_target(target.clone(), gpu, cx));
         self.netstat
             .update(cx, |panel, cx| panel.set_target(target, netstat, cx));
     }
@@ -429,17 +330,13 @@ impl ToolSidebar {
     /// sidebar itself: left on an element no longer drawn, it would take
     /// every window-level shortcut's dispatch path with it.
     pub fn show(&mut self, tool: ToolKind, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tool == tool && (tool != ToolKind::Kubernetes || self.kubernetes.is_some()) {
+        if self.tool == tool {
             return;
         }
         if self.focus_handle.contains_focused(window, cx) {
             window.focus(&self.focus_handle, cx);
         }
         self.tool = tool;
-        if tool == ToolKind::Kubernetes && self.kubernetes.is_none() {
-            self.kubernetes =
-                Some(cx.new(|cx| KubernetesPanel::new(self.dispatch.clone(), window, cx)));
-        }
         self.sync_tools(cx);
         cx.notify();
     }
@@ -549,16 +446,10 @@ impl Render for ToolSidebar {
                     ToolKind::Snippets => self.snippets.clone().into_any_element(),
                     ToolKind::History => self.history.clone().into_any_element(),
                     ToolKind::Tmux => self.tmux.clone().into_any_element(),
-                    ToolKind::Docker => self.docker.clone().into_any_element(),
-                    ToolKind::Kubernetes => self.kubernetes.as_ref().map_or_else(
-                        || div().into_any_element(),
-                        |panel| panel.clone().into_any_element(),
-                    ),
                     ToolKind::Services => self.services.clone().into_any_element(),
                     ToolKind::Processes => self.processes.clone().into_any_element(),
                     ToolKind::Connections => self.netstat.clone().into_any_element(),
                     ToolKind::Monitor => self.monitor.clone().into_any_element(),
-                    ToolKind::Gpu => self.gpu.clone().into_any_element(),
                     ToolKind::Projects => self.projects.clone().into_any_element(),
                 };
                 sidebar.child(div().flex_1().min_h_0().child(panel))

@@ -293,17 +293,6 @@ impl Updater {
         }
     }
 
-    /// How this copy was installed, for 匿名使用统计: what its installer is,
-    /// except that a portable copy counts as one even where it cannot
-    /// update itself.
-    pub fn install_type(&self) -> &'static str {
-        match &self.services {
-            Some(services) if services.platform == super::platform::WINDOWS_PORTABLE => "portable",
-            Some(services) => services.installer.kind().install_type(),
-            None => "other",
-        }
-    }
-
     fn installable(&self) -> bool {
         self.unsupported().is_none()
     }

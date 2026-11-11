@@ -6,7 +6,6 @@ use gpui_kit::component::{WindowExt as _, notification::Notification};
 use gpui_kit::*;
 
 use super::Workspace;
-use crate::analytics::Counter;
 use crate::app::{CancelFileTransfers, DownloadFiles, StartDownload, StartUpload, UploadFiles};
 use crate::i18n::{t, tn};
 use crate::terminal::{RemoteTerminalId, TerminalChannels, TerminalLifecycle};
@@ -140,10 +139,6 @@ impl Workspace {
             window.push_notification(Notification::error(t!("transfer.error.not_connected")), cx);
             return;
         };
-        self.count(match job.is_upload() {
-            true => Counter::Upload,
-            false => Counter::Download,
-        });
         self.transfers.update(cx, |transfers, cx| {
             transfers.start(terminal.channels, terminal.host, job, cx)
         });

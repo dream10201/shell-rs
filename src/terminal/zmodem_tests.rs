@@ -823,7 +823,7 @@ fn the_lines_show_between_the_output_around_them() {
 /// what zmodem2 standing in for them cannot show. Needs Docker, the
 /// `debian:stable-slim` image and the network (lrzsz comes from Debian's
 /// packages; Alpine's main ones have none); run with
-/// `cargo test --lib terminal::zmodem -- --ignored` (CI: `shells.yml`).
+/// `cargo test --lib terminal::zmodem -- --ignored`.
 #[cfg(unix)]
 mod lrzsz {
     use sha2::{Digest, Sha256};

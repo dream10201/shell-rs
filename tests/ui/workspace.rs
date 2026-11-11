@@ -1052,18 +1052,18 @@ fn the_tool_switch_shows_a_tool_and_hides_it_again(cx: &mut TestAppContext) {
     });
 
     // Another tool takes its place.
-    in_frame(cx, handle, |window, cx| window.click("tool-docker", cx));
+    in_frame(cx, handle, |window, cx| window.click("tool-tmux", cx));
     in_frame(cx, handle, |window, _| {
-        assert_eq!(window.find(sidebar).label(), Some("Docker"));
+        assert_eq!(window.find(sidebar).label(), Some("tmux"));
         assert_eq!(window.find("tool-snippets").checked(), Some(false));
-        assert_eq!(window.find("tool-docker").checked(), Some(true));
+        assert_eq!(window.find("tool-tmux").checked(), Some(true));
     });
 
     // The tool showing hides the sidebar.
-    in_frame(cx, handle, |window, cx| window.click("tool-docker", cx));
+    in_frame(cx, handle, |window, cx| window.click("tool-tmux", cx));
     in_frame(cx, handle, |window, _| {
         assert!(window.try_find(sidebar).is_none());
-        assert_eq!(window.find("tool-docker").checked(), Some(false));
+        assert_eq!(window.find("tool-tmux").checked(), Some(false));
     });
 
     // The shortcut brings back the tool shown last.
@@ -1071,7 +1071,7 @@ fn the_tool_switch_shows_a_tool_and_hides_it_again(cx: &mut TestAppContext) {
         window.dispatch_action(Box::new(ToggleToolSidebar), cx)
     });
     in_frame(cx, handle, |window, _| {
-        assert_eq!(window.find(sidebar).label(), Some("Docker"));
+        assert_eq!(window.find(sidebar).label(), Some("tmux"));
     });
 }
 
@@ -1152,15 +1152,15 @@ fn each_host_keeps_its_own_tool_sidebar(cx: &mut TestAppContext) {
     };
 
     front(INITIAL_WEB_TERMINAL, cx);
-    click("tool-docker", cx);
-    assert_eq!(showing(INITIAL_WEB_TERMINAL, cx).as_deref(), Some("Docker"));
+    click("tool-tmux", cx);
+    assert_eq!(showing(INITIAL_WEB_TERMINAL, cx).as_deref(), Some("tmux"));
     // staging-api never had it open.
     front(INITIAL_STAGING_TERMINAL, cx);
     assert_eq!(showing(INITIAL_STAGING_TERMINAL, cx), None);
     click("tool-snippets", cx);
 
     for (terminal, tool) in [
-        (INITIAL_WEB_TERMINAL, "Docker"),
+        (INITIAL_WEB_TERMINAL, "tmux"),
         (INITIAL_STAGING_TERMINAL, "命令片段"),
     ] {
         front(terminal, cx);
@@ -1169,7 +1169,7 @@ fn each_host_keeps_its_own_tool_sidebar(cx: &mut TestAppContext) {
 
     // Hidden on web-01, it is hidden there only.
     front(INITIAL_WEB_TERMINAL, cx);
-    click("tool-docker", cx);
+    click("tool-tmux", cx);
     front(INITIAL_STAGING_TERMINAL, cx);
     assert_eq!(
         showing(INITIAL_STAGING_TERMINAL, cx).as_deref(),
@@ -1190,13 +1190,15 @@ fn each_host_keeps_its_own_tool_sidebar(cx: &mut TestAppContext) {
 }
 
 /// The tool a host kept from the last launch: its terminal opens with it,
-/// no click needed, and other hosts' do not.
+/// no click needed, and other hosts' do not; neither does one that kept a
+/// tool this version does not have.
 #[gpui_kit::test]
 fn a_host_brings_back_the_tool_it_kept_from_the_last_launch(cx: &mut TestAppContext) {
     use shellrs::app::ToolKind;
 
     let mut store = HostStore::seed();
     store.set_host_sidebar_tool_unnotified(HostId(WEB_01), Some(ToolKind::Snippets.key().into()));
+    store.set_host_sidebar_tool_unnotified(HostId(STAGING_API), Some("k8s".into()));
     let (handle, _) = open_workspace_with_store(cx, store);
     in_frame(cx, handle, |window, cx| {
         window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx)

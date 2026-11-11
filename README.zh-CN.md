@@ -52,12 +52,9 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、经终端连接的文�
 
 - 跟着当前的远程终端，在这条终端自己的连接上读取和执行，不另外登录；⌘⌥B（其他平台 Ctrl+Alt+B）显示或隐藏。
 - 系统监控：系统信息、CPU（含每个核）、内存、网卡速率和磁盘占用，每 2 秒刷新。
-- 网络连接、进程管理和系统服务：搜索和筛选，查看进程详情、结束进程，启动、停止、重启 systemd 服务，开关开机启动，查看日志。这三项和系统监控只支持 Linux。
-- Docker：按 compose 项目列出容器，启停、重启、看详情和日志，管理卷、镜像和网络。不是 root 时用免密码的 sudo（系统服务也是）。
-- Kubernetes：选择主机 kubeconfig 中的集群，读取所有命名空间并过滤 Pod、Deployment、StatefulSet、Service 等资源；查看详情与关联 Pod、检索容器日志、生成日志和进入容器等命令。默认不显示，在设置里打开。详见[使用说明](docs/kubernetes.md)。
+- 网络连接、进程管理和系统服务：搜索和筛选，查看进程详情、结束进程，启动、停止、重启 systemd 服务，开关开机启动，查看日志；不是 root 时用免密码的 sudo。这三项和系统监控只支持 Linux。
 - 历史命令读主机上的 `~/.bash_history`，命令片段所有主机共用、可以分类；点一下输入到终端，或直接执行。
 - tmux：主机上的 tmux 会话，标出终端所在的那个；新建、连接、退出当前、重命名和结束会话。
-- GPU/NPU：AI 主机的 NVIDIA GPU 和华为昇腾 NPU，按 8 卡设计：汇总、每卡的利用率、显存、温度、功耗和健康状态，以及计算进程（可以结束）。默认不显示，在设置里打开，其余工具也可以在那里隐藏。
 
 **文件传输**
 
@@ -86,13 +83,12 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、经终端连接的文�
 
 - 秘密只进系统钥匙串；主机信任记录存在 ShellRS 自己的 `known_hosts` 里，不改动 `~/.ssh`。
 - 在线升级：更新清单经 minisign 签名，安装包按 SHA-256 校验；后台下载，重启或退出时安装。分稳定版和 Beta 两个渠道，检查更新只发送版本号、系统和 CPU 架构。
-- 匿名使用统计：经 Aptabase 只发送版本、系统、CPU 架构和各功能的使用次数，不含主机、凭据、命令或任何标识，可在「设置 › 关于」关闭。详见[使用手册](docs/manual.zh.md#隐私)。
 
 ## 截图
 
 <p align="center">
-  <img src="docs/screenshots/tools.png" alt="右侧栏的五个工具并排：系统监控、进程管理、系统服务、Docker 和网络连接"><br>
-  <em>右侧栏工具：系统监控、进程管理、系统服务、Docker 和网络连接</em>
+  <img src="docs/screenshots/tools.png" alt="右侧栏的三个工具并排：系统监控、进程管理和系统服务"><br>
+  <em>右侧栏工具：系统监控、进程管理和系统服务</em>
 </p>
 
 <p align="center">
@@ -168,7 +164,7 @@ cargo test
 - [russh](https://github.com/Eugeny/russh)：SSH 协议
 - [alacritty_terminal](https://crates.io/crates/alacritty_terminal) 和 [portable-pty](https://crates.io/crates/portable-pty)：终端模拟与本地 PTY
 - [keyring](https://crates.io/crates/keyring)：系统钥匙串
-- [Simple Icons](https://simpleicons.org)：系统徽章和右侧栏 Docker 工具使用的 logo（CC0）
+- [Simple Icons](https://simpleicons.org)：系统徽章使用的 logo（CC0）
 - [Termark](https://www.termark.app/) 和 Xshell：交互设计的参照
 
 ## 许可证

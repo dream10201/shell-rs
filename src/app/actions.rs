@@ -7,16 +7,14 @@ use gpui_kit::component::Icon;
 use gpui_kit::*;
 use shellrs_sync::DeviceId;
 
-use super::{CatalogIcon, DOCKER_ICON};
+use super::CatalogIcon;
 use crate::i18n::t;
 use crate::{
-    docker::{ContainerCommand, ContainerSubject, DockerObject},
     host::{
         CredentialId, ForwardId, GroupId, HostId, HostNode, NodeDrop, SavedTerminalId,
         SnippetCategoryId, SnippetDrop, SnippetId, SnippetNode, TerminalDrop, TerminalGroupId,
         TerminalNode,
     },
-    kubernetes::KubernetesCommand,
     monitor::MonitorDetail,
     processes::ProcessSort,
     services::ServiceCommand,
@@ -105,15 +103,8 @@ gpui_kit::actions!(
         RefreshProcesses,
         /// Read the services of the SSH terminal's host again.
         RefreshServices,
-        /// Read the Docker of the SSH terminal's host again.
-        RefreshDocker,
         /// Read the bash history of the SSH terminal's host again.
         RefreshHistory,
-        /// Read the GPUs and NPUs of the SSH terminal's host again, and go
-        /// on reading them after a failure stopped it.
-        RefreshGpu,
-        /// 全部展开 in GPU/NPU, or 全部收起 when every device is unfolded.
-        ToggleAllGpuDevices,
         /// Read the tmux sessions of the SSH terminal's host again.
         RefreshTmux,
         /// Open the dialog that names a new tmux session, then start it in
@@ -316,13 +307,8 @@ id_actions! {
     /// Show a tool in the right sidebar, or hide the sidebar if it is
     /// already showing that tool.
     ToggleTool(ToolKind);
-    /// Browse Kubernetes resources and logs on the SSH host.
-    KubernetesAction(KubernetesCommand);
     /// Unfold a part of the system monitor, or fold it away again.
     ToggleMonitorDetail(MonitorDetail);
-    /// Unfold a device of GPU/NPU to its details, or fold them away again,
-    /// by its key.
-    ToggleGpuDevice(String);
     /// Attach the SSH terminal in front to a tmux session of its host, by
     /// the session's id.
     AttachTmuxSession(String);
@@ -339,9 +325,6 @@ id_actions! {
     /// Open the details of a service of the host of the SSH terminal in
     /// front, by its name.
     ShowService(String);
-    /// Fold a compose project of the Docker tool away, or unfold it, by
-    /// its name.
-    ToggleDockerProject(String);
     /// Copy a command of 历史命令 or 命令片段 to the clipboard.
     CopyCommand(String);
     /// Open the new-snippet dialog with this category picked.
@@ -450,40 +433,6 @@ pub struct ControlService {
     pub command: ServiceCommand,
 }
 
-/// Start, stop or restart containers of the host of the SSH terminal in
-/// front: one, or a compose project's all; asks first before stopping or
-/// restarting them.
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = shellrs, no_json)]
-pub struct ControlContainers {
-    /// What they are, for the question and the notification: 「容器“web”」,
-    /// 「项目“php-56”」.
-    pub subject: ContainerSubject,
-    pub ids: Vec<String>,
-    pub command: ContainerCommand,
-}
-
-/// Open the details of a container, an image, a volume or a network of the
-/// host of the SSH terminal in front.
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = shellrs, no_json)]
-pub struct ShowDockerObject {
-    pub object: DockerObject,
-    /// What Docker knows it by: the ID, or a volume's name.
-    pub id: String,
-}
-
-/// Ask, then remove a container, an image, a volume or a network of the
-/// host of the SSH terminal in front.
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = shellrs, no_json)]
-pub struct RemoveDockerObject {
-    pub object: DockerObject,
-    /// What Docker knows it by: the ID, or a volume's name.
-    pub id: String,
-    pub name: String,
-}
-
 /// Put a command on the input line of the terminal the right sidebar goes
 /// with, an SSH terminal or a local one, in place of what is typed there,
 /// and with `run` run it.
@@ -552,29 +501,23 @@ pub enum ToolKind {
     Snippets,
     History,
     Tmux,
-    Docker,
-    Kubernetes,
     Services,
     Processes,
     Connections,
     Monitor,
-    Gpu,
     /// 项目, the one tool of local terminals.
     Projects,
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 11] = [
+    pub const ALL: [ToolKind; 8] = [
         ToolKind::Snippets,
         ToolKind::History,
         ToolKind::Tmux,
-        ToolKind::Docker,
-        ToolKind::Kubernetes,
         ToolKind::Services,
         ToolKind::Processes,
         ToolKind::Connections,
         ToolKind::Monitor,
-        ToolKind::Gpu,
         ToolKind::Projects,
     ];
 
@@ -586,13 +529,10 @@ impl ToolKind {
             ToolKind::Snippets => "snippets",
             ToolKind::History => "history",
             ToolKind::Tmux => "tmux",
-            ToolKind::Docker => "docker",
-            ToolKind::Kubernetes => "kubernetes",
             ToolKind::Services => "services",
             ToolKind::Processes => "processes",
             ToolKind::Connections => "connections",
             ToolKind::Monitor => "monitor",
-            ToolKind::Gpu => "gpu",
             ToolKind::Projects => "projects",
         }
     }
@@ -602,43 +542,28 @@ impl ToolKind {
         Self::ALL.into_iter().find(|tool| tool.key() == key)
     }
 
-    /// Whether the sidebar offers the tool until the user says otherwise.
-    /// Not GPU/NPU or Kubernetes: most hosts have neither accelerators nor
-    /// kubectl.
-    pub fn shown_by_default(self) -> bool {
-        !matches!(self, ToolKind::Gpu | ToolKind::Kubernetes)
-    }
-
     pub fn label(self) -> SharedString {
         match self {
             ToolKind::Snippets => t!("tools.kind.snippets"),
             ToolKind::History => t!("tools.kind.history"),
             ToolKind::Tmux => "tmux".into(),
-            ToolKind::Docker => "Docker".into(),
-            ToolKind::Kubernetes => "Kubernetes".into(),
             ToolKind::Services => t!("tools.kind.services"),
             ToolKind::Processes => t!("tools.kind.processes"),
             ToolKind::Connections => t!("tools.kind.connections"),
             ToolKind::Monitor => t!("tools.kind.monitor"),
-            ToolKind::Gpu => "GPU/NPU".into(),
             ToolKind::Projects => t!("tools.kind.projects"),
         }
     }
 
-    /// Lucide glyphs, but for Docker, which goes by its whale: a box said
-    /// nothing about Docker.
     pub fn icon(self) -> Icon {
         Icon::new(match self {
             ToolKind::Snippets => CatalogIcon::CodeXml,
             ToolKind::History => CatalogIcon::RotateCcwClock,
             ToolKind::Tmux => CatalogIcon::Layers,
-            ToolKind::Docker => return Icon::default().path(DOCKER_ICON),
-            ToolKind::Kubernetes => CatalogIcon::ShipWheel,
             ToolKind::Services => CatalogIcon::ServerCog,
             ToolKind::Processes => CatalogIcon::ListFilter,
             ToolKind::Connections => CatalogIcon::Network,
             ToolKind::Monitor => CatalogIcon::Activity,
-            ToolKind::Gpu => CatalogIcon::Gpu,
             ToolKind::Projects => CatalogIcon::FolderCode,
         })
     }

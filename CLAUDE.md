@@ -8,7 +8,7 @@ ShellRS（crate 与二进制都叫 `shellrs`）是 Xshell 式的 SSH 主机管�
 
 - **术语**：保存的一项叫「主机」（量词「台」），代码里叫 host（`Host`、`HostStore`、`hosts` 表）；以前叫「会话」/ `Session`，别再用。IP / 域名字段叫「地址」。SSH 协议层的 session 照旧叫 session。
 - **两种不保存的连接**：「外部连接」是堡垒机用 `ssh://` / `-url` 拉起 ShellRS，只开一个标签；「临时连接」从标题栏打开，功能齐全。代码里统称 temporary。
-- **全是真的**：SQLite（默认在系统数据目录，`SHELLRS_DATA_DIR` 可覆盖，Windows 便携版在 exe 旁的 `data`）、本地终端、SSH（`russh`）、Telnet（自己写）、串口（`serial2`）、文件传输、端口转发、凭据、右侧栏工具、在线升级、匿名统计。密码和口令只进系统钥匙串，**数据库里永远不出现秘密**。
+- **全是真的**：SQLite（默认在系统数据目录，`SHELLRS_DATA_DIR` 可覆盖，Windows 便携版在 exe 旁的 `data`）、本地终端、SSH（`russh`）、Telnet（自己写）、串口（`serial2`）、文件传输、端口转发、凭据、右侧栏工具、在线升级。密码和口令只进系统钥匙串，**数据库里永远不出现秘密**。
 
 做 UI 之前先读 `gpui-kit` 与 `gpui-kit-design-guides` 两个技能，里面的 Coding Guides 和 Design Guides 在本仓库是规范。不要凭记忆臆造 gpui-kit API，以 `~/.cargo/registry/src/*/gpui-component-0.9.1/`、`gpui-base-0.9.1/` 的源码为准。
 
@@ -29,9 +29,10 @@ ShellRS（crate 与二进制都叫 `shellrs`）是 Xshell 式的 SSH 主机管�
 - **端口转发**：侧栏第二个列表，每条规则经由一台保存的主机、自己建连接，和主机的标签无关。「创建」只保存不启动，可设随 ShellRS 自动开启；断线自动重连三次，不弹问答。
 - **临时连接与外部连接**：临时连接的密码只在内存；外部连接只认命令行参数，不注册系统链接，打开时收起左侧栏。
 - **没有外部 CLI**：1.0.1 起整个去掉了（`shellrs` 命令、`shellrs-cli`、设置页、Agent Skills、`exec --terminal`），不要加回来（用户定的）。
+- **没有匿名使用统计，也没有 Docker、Kubernetes、GPU/NPU 工具**：1.0.5 起整个去掉了匿名使用统计（Aptabase）和右侧栏的 Docker、Kubernetes、GPU/NPU 三个工具，不要加回来（用户定的）。
 - **本地终端**：Shell 设置是输入框加常用 shell 下拉；留空自动检测（Windows 优先 PowerShell 7）。
 - **开始页**：没有标签时显示「最近连接」和「快速连接」。
-- **右侧栏**：只跟着终端出现，工作区级一份；开没开、开哪个工具按主机记（存在主机表里，切标签也跟着变，issue #46），没开过的主机收起，本地终端共用一份（存设置里）；分屏时跟最近在前的终端，本地远程都算（用户定的）。本地终端旁只有「项目」和「命令片段」（「项目」在前；片段打进本地终端，Windows 上不清行，同 Windows 主机）；远程终端旁十个工具：命令片段、历史命令、tmux、Docker、Kubernetes、系统服务、进程管理、网络连接、系统监控、GPU/NPU；在「设置 › 终端 › 侧栏功能」里切换显示（GPU/NPU、Kubernetes 默认不显示），只在设置里改。按主机系统过滤工具。工具在终端自己的连接上执行命令；危险操作先确认，非 root 用 `sudo -n`；列表默认不自动刷新，定时读的只在显示时读。
+- **右侧栏**：只跟着终端出现，工作区级一份；开没开、开哪个工具按主机记（存在主机表里，切标签也跟着变，issue #46），没开过的主机收起，本地终端共用一份（存设置里）；分屏时跟最近在前的终端，本地远程都算（用户定的）。本地终端旁只有「项目」和「命令片段」（「项目」在前；片段打进本地终端，Windows 上不清行，同 Windows 主机）；远程终端旁七个工具：命令片段、历史命令、tmux、系统服务、进程管理、网络连接、系统监控；在「设置 › 终端 › 侧栏功能」里切换显示，只在设置里改。按主机系统过滤工具。工具在终端自己的连接上执行命令；危险操作先确认，非 root 用 `sudo -n`；列表默认不自动刷新，定时读的只在显示时读。
 - **命令片段**：分类像主机分组一样任意嵌套、拖动排序（片段拖到片段旁或分类上，分类拖到中间成为子分类，拖到空白处回最外层），没有分类的片段在最外层、分类后面，不再有「未分类」；每行只显示名称，悬停在行左边显示命令；同一层级的分类不能重名（同主机分组）；顺序和嵌套跟着同步（用户定的）。
 - **项目**（本地终端）：右侧栏「项目」像主机一样保存本地终端，可以不分组；分组只有名字、不嵌套，和磁盘目录无关，分组和终端都能拖动排序，新建按钮在标题栏；删除终端连标签一起关，开着的才确认（用户试过「项目=目录+启动命令」和「目录列表」两版，都不要）。分组的「+」直接开一个终端、不填东西；关掉标签终端还在（变灰），点一下重开。每个终端自动记住 shell 最后所在的文件夹（Windows 读不到就回主目录），退出时开着的（顺序、在前的）随时写库，下次启动在原文件夹重开；「保留终端内容」（默认开）关标签和退出时记下最后 1000 行输出，重开时先显示。列表和标签上的名字跟 shell 和程序设的标题走（关标签、重启后记着最后一个），手动改过名的固定用那个名字（用户定的）。⌘T 的本地终端和分屏不恢复。
 - **同步**（核心在 `crates/shellrs-sync`，方案见设计文档）：「设置 › 云同步」选一个文件夹（网盘同步的文件夹）、连接 WebDAV（坚果云、Nextcloud 等，地址是服务器上的文件夹）或 S3（AWS、R2、MinIO、OSS、COS 等兼容的，桶要用户先建好），没有同步就创建（同步密码至少 12 个字符）、已有就加入；第一次加入时的去重预览放下一轮（用户定的）。WebDAV 密码或 S3 的 Secret Key 只进钥匙串（`sync:login`），被拒时停下请用户重新登录，不弹框问。密码、口令和 `keys/` 里的私钥一律跟着同步，不设开关；对安全有要求的人不开同步就是（用户定的）。串口主机不同步，只留在本机（串口号是这台电脑的）。启动、窗口回到前台（每分钟最多一次）、改动后停 5 秒、「立即同步」、退出前（最多等 3 秒）各同步一次，不定时轮询；出错只写在设置页，要用户处理的（别处改了密码、被重置、被移出、一次删很多）才弹通知，自动同步等用户处理完。「更换同步密码」总是连数据密钥一起换，只有这一个入口（用户定的）。关闭同步时本机数据不动。
@@ -40,7 +41,6 @@ ShellRS（crate 与二进制都叫 `shellrs`）是 Xshell 式的 SSH 主机管�
 - **命令广播**：标签图标前出现复选框，勾满两个自动排成分屏，撰写窗格改为发给全部（广播时它就是命令栏）；命令原样发出、不先清行；同步按键默认关。
 - **Windows 便携版**：一个 zip 既是首次下载也是升级包；exe 旁有 `data` 才算便携版。密码仍进凭据管理器、和安装版共用（用户定的）。
 - **软件渲染**：CPU 渲染时终端少画几帧、光标不闪、关动画。
-- **匿名使用统计**（Aptabase）：默认开、可关；只发版本、系统、设置快照和功能次数，不发内容和任何标识。不用定时器（用户明确不要），只有发布构建、且流水线给了 `APTABASE_APP_KEY` 才发（现在没设，不发）。
 - **窗口**：默认记住大小和位置。左右侧栏拖动后的宽度记在设置里、下次启动照旧（左默认 280 最窄 180，右默认 320 最窄 220），「设置 › 应用 › 窗口 › 侧栏宽度」恢复默认（用户定的）。macOS 菜单栏只有「ShellRS」和「窗口」两个菜单，同其他 Mac 应用（issue #88）；⌘H、⌥⌘H、⌘M 是固定键，不进快捷键设置，也不能设给别的功能；不做「编辑」菜单（终端的 ⌘C、⌘V 有自己的规则）。
 - **终端交互**：选中复制默认关；右键默认显示菜单。远程终端断开后按 Enter 在原标签重连，按 Space 关闭标签页。
 - **标签连接状态**：标签图标彩色就是在线，连接中、断开时变灰（不用小圆点）。只在标签上变灰。
@@ -49,6 +49,7 @@ ShellRS（crate 与二进制都叫 `shellrs`）是 Xshell 式的 SSH 主机管�
 - **终端通知**：只做程序请求的（OSC 9 / 777）和响铃，不做 OSC 133。
 - **字号**：界面字号在「外观」里，默认 16、Windows 14（对齐系统 9pt 正文）；⌘= / ⌘- / ⌘0 在终端里调终端字号，在终端外调界面字号。
 - **主题**：浅色、深色各选一套；「界面跟随主题」默认关，界面是中性灰、只有终端配色（用户试过，别改回去）。默认深色用炭灰，不用近黑。只有内置主题，只收宽松许可的配色。
+- **应用锁**：只挡界面，不加密数据库和文件（用户知道）。密码的 Argon2id 校验值（256 MiB、3 轮、4 路，参数写在记录里）存在钥匙串的 `app-lock` 账户，读不出就不开放；旧参数的记录解锁成功后重算。锁定时连接照常跑。「多久未操作自动锁定」和「电脑锁屏时锁定」（默认关）都由工作区每秒一次的循环查，锁屏状态经 `ScreenState`（macOS 会话字典、Windows WTS、Linux logind 的 `LockedHint`）。
 - **键盘快捷键**：设置里单独一类，只收主要功能；冲突就拒绝。终端里只按 Ctrl 加字母的通用快捷键让给 shell，所以「关闭标签」在 Windows / Linux 默认 Ctrl+Shift+W（同 Windows Terminal；不把 Ctrl+W 从 shell 抢过来，用户定的）；「显示或隐藏 ShellRS」是系统级快捷键，默认不设键。
 - **关键字高亮**：设置里单独一类；规则是正则、颜色任意；总开关默认关，预置三条示例。
 
@@ -64,7 +65,7 @@ cargo test -p shellrs-sync                  # 只跑同步核心（不编 GPUI�
 cargo test -p shellrs-ssh                   # 只跑 SSH 核心（不编 GPUI）；文件传输的测试用本机的 sh 真跑命令
 cargo test -p shellrs-hosts                 # 只跑主机核心（数据库、HostData、同步一轮；不编 GPUI，快）
 cargo test -p shellrs-sync webdav -- --include-ignored  # WebDAV 后端对本机 Apache（macOS 自带；Debian 装 apache2）；设 SHELLRS_TEST_WEBDAV_URL/_USER/_PASSWORD 改测别的服务器
-cargo test -p shellrs-sync s3 -- --include-ignored      # S3 后端对 SHELLRS_TEST_S3_ENDPOINT/_ACCESS_KEY/_SECRET_KEY 指的服务（CI 起 versitygw）；不设就跳过
+cargo test -p shellrs-sync s3 -- --include-ignored      # S3 后端对 SHELLRS_TEST_S3_ENDPOINT/_ACCESS_KEY/_SECRET_KEY 指的服务；不设就跳过
 cargo test --lib terminal::zmodem -- --include-ignored  # ZMODEM 对 Docker 里的 lrzsz
 cargo clippy --all-targets -- -D warnings   # 必须无警告
 cargo fmt --check
@@ -89,8 +90,8 @@ Cargo workspace，`cargo` 命令覆盖全部四个包：
 - `terminal/`：本地 PTY、驱动 `alacritty_terminal` 的引擎、`TerminalView`、关键字高亮、目录报告、ZMODEM。
 - `transfer/`：文件传输的管理器（每个传输一个工作线程，定时收事件）、两个对话框和错误的文案；处理器在 `workspace/transfers.rs`。
 - `forward/`：端口转发的运行和界面。`credential/`：凭据界面。`project/`：「项目」的树和对话框（模型在主机核心，打开、保存和恢复终端在 `workspace/projects.rs`）。
-- `monitor/`、`gpu/`、`netstat/`、`processes/`、`services/`、`docker/`、`kubernetes/`、`tmux/`、`history/`、`snippets/`：右侧栏工具，各自是「命令 + 纯解析模型 + 面板」。
-- `secrets/`：系统钥匙串（`KeychainSecretStore`），接口和其余实现在主机核心。`settings/`：设置与设置页（「云同步」页在 `sync_page.rs`）。`instance/`：单实例和外部连接的链接。`update/`：在线升级。`analytics/`：匿名统计。
+- `monitor/`、`netstat/`、`processes/`、`services/`、`tmux/`、`history/`、`snippets/`：右侧栏工具，各自是「命令 + 纯解析模型 + 面板」。
+- `secrets/`：系统钥匙串（`KeychainSecretStore`），接口和其余实现在主机核心。`settings/`：设置与设置页（「云同步」页在 `sync_page.rs`）。`instance/`：单实例和外部连接的链接。`update/`：在线升级。
 - `sync/`：重新导出主机核心的同步，加上应用自己的：`SyncService`（什么时候同步，以及创建、加入、改密码、移除设备、关闭这些任务）、对话框和错误的文案（`describe.rs`）；一轮怎么走在核心的 `sync/round.rs`，导出、应用记录在核心的 `data/sync.rs`，处理器在 `workspace/sync.rs`。
 - `workspace/`：窗口壳，持有 store、`DockArea` 和**全部动作处理器**，按领域拆文件。`shared/`：多个功能共用的展示片段。
 
@@ -103,7 +104,7 @@ Cargo workspace，`cargo` 命令覆盖全部四个包：
 - **登录快照在 UI 线程解析**：工作线程拿到的是查好凭据和跳板的 `HostLogin`，不读 store。
 - **对外只给 `PublicId`**，不给内部 id。
 - **改表**：升 `SCHEMA_VERSION`、加一步迁移和「旧库升级后与新库比对」的测试；表都是 `STRICT`；库只往前升，迁移前先备份。
-- **发布后不能改的标识**：更新清单地址和平台 key、统计计数的键和安装类型、凭据的 `keychain_id`、同步密钥和同步位置登录密钥（WebDAV 密码、S3 Secret Key）的钥匙串账户 `sync:keyring`、`sync:login`、`Shortcut` 的 `id`、`ToolKind::key`、主题 key、`panel_name()`；同步的一切（`crates/shellrs-sync/FORMAT.md`：远程目录和文件名、`SRSY` 信封、`vault.json` 字段、记录的 kind 和字段名）。
+- **发布后不能改的标识**：更新清单地址和平台 key、凭据的 `keychain_id`、同步密钥和同步位置登录密钥（WebDAV 密码、S3 Secret Key）的钥匙串账户 `sync:keyring`、`sync:login`、`Shortcut` 的 `id`、`ToolKind::key`、主题 key、`panel_name()`；同步的一切（`crates/shellrs-sync/FORMAT.md`：远程目录和文件名、`SRSY` 信封、`vault.json` 字段、记录的 kind 和字段名）。
 - **一个数据目录只跑一个 ShellRS**（`src/instance`）：启动时先连数据目录里的 `instance.sock`（Windows 是命名管道），连得上就让已在运行的那个到前台、把链接交给它。Unix 套接字 0600 并核对 uid，Windows 用带 DACL 的命名管道。
 
 ### 多语言
@@ -164,7 +165,7 @@ Cargo workspace，`cargo` 命令覆盖全部四个包：
 ### 升级、发布、平台
 
 - **Windows** 只在 CI 上编译和测试：`windows.yml` 按路径触发，新加 `cfg(windows)` 代码的文件要加进那个列表。发布版是 GUI 子系统。C 运行库静态链接（`.cargo/config.toml` 的 `+crt-static`）：动态链接要 `VCRUNTIME140.dll`，LTSC 版和没装 VC++ 运行库的系统启动不了；`scripts/windows-runtime.ps1` 在 CI 里查 exe 的导入表。
-- 在线升级和统计在 UI 测试里都没有真实服务，测试从不联网；统计新加计数要同步两份手册「隐私」一节的清单。
+- 在线升级在 UI 测试里没有真实服务，测试从不联网。
 - **发布走 tag**（`docs/release.md`）：流水线给包签名（minisign，私钥在 `release` 环境的 `MINISIGN_SECRET_KEY`）、建 GitHub Release，最后把清单提交到 `update` 分支的 `v1/<通道>.json`，客户端从 raw.githubusercontent.com 读它；不用 R2、Cloudflare 和官网。没有 Apple 的 secrets 时 macOS 包是 ad-hoc 签名、不公证。更新日志由改版本号的提交写，中英两份（`CHANGELOG.zh.md`、`CHANGELOG.md`）都要有，功能提交不改。
 - macOS 上关窗口是隐藏，⌘Q 才退出。
 

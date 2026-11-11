@@ -3,7 +3,9 @@
 mod activity;
 mod password;
 mod password_form;
+mod screen;
 mod storage;
+pub use screen::{NoScreen, ScreenState, system_screen};
 pub use storage::{InMemoryLockStore, KeychainLockStore, LockRecordStore};
 
 pub use activity::activity_tracker;
@@ -50,6 +52,7 @@ pub struct AppLock {
     locked: bool,
     busy: bool,
     last_activity: Option<Instant>,
+    screen: Arc<dyn ScreenState>,
     _keyboard_activity: Option<Subscription>,
 }
 
@@ -69,6 +72,7 @@ impl AppLock {
             locked: true,
             busy: false,
             last_activity: None,
+            screen: Arc::new(NoScreen),
             _keyboard_activity: None,
         };
         this.reload(cx);
@@ -161,6 +165,16 @@ impl AppLock {
             })
     }
 
+    /// Where 电脑锁屏时锁定 learns of the computer's lock screen.
+    pub fn watch_screen(&mut self, screen: Arc<dyn ScreenState>) {
+        self.screen = screen;
+    }
+
+    /// Whether the computer's lock screen is showing over an open ShellRS.
+    pub fn screen_locked(&self) -> bool {
+        self.is_enabled() && !self.locked && !self.busy && self.screen.is_locked()
+    }
+
     pub fn lock(&mut self, cx: &mut Context<Self>) {
         if self.is_enabled() && !self.busy {
             self.locked = true;
@@ -213,12 +227,19 @@ impl AppLock {
                                 .map_err(|error| PasswordFailure::Verify(error.to_string()))?,
                         ),
                         PasswordOperation::Disable => None,
-                        PasswordOperation::Unlock => verifier,
+                        // Made with less than verifiers are now: made again
+                        // from the password just proven, when that saves.
+                        PasswordOperation::Unlock => {
+                            let renewed = verifier
+                                .as_ref()
+                                .filter(|old| old.is_outdated())
+                                .and_then(|_| Verifier::new(&current).ok())
+                                .filter(|new| storage::save(store.as_ref(), Some(new)).is_ok());
+                            return Ok(renewed.or(verifier));
+                        }
                     };
-                    if operation != PasswordOperation::Unlock {
-                        storage::save(store.as_ref(), next.as_ref())
-                            .map_err(|error| PasswordFailure::Save(error.to_string()))?;
-                    }
+                    storage::save(store.as_ref(), next.as_ref())
+                        .map_err(|error| PasswordFailure::Save(error.to_string()))?;
                     Ok(next)
                 })
                 .await;
@@ -360,6 +381,103 @@ mod tests {
             assert!(!restarted.read(cx).is_enabled());
             assert!(!restarted.read(cx).is_locked());
         });
+    }
+
+    #[gpui_kit::test]
+    fn unlocking_renews_a_verifier_made_with_less(cx: &mut TestAppContext) {
+        let store = Arc::new(FailingStore::default());
+        let old = crate::app_lock::password::tests::first_version("first password");
+        super::storage::save(&store.memory, Some(&old)).unwrap();
+        let saved = store.memory.read().unwrap().unwrap();
+
+        // The keychain refuses the write: the old one keeps working.
+        store.fail_write.store(true, Ordering::SeqCst);
+        let lock = open(cx, store.clone());
+        assert!(submit(
+            cx,
+            &lock,
+            PasswordOperation::Unlock,
+            "first password",
+            ""
+        ));
+        assert_eq!(
+            store.memory.read().unwrap().unwrap().as_str(),
+            saved.as_str()
+        );
+
+        store.fail_write.store(false, Ordering::SeqCst);
+        let lock = open(cx, store.clone());
+        assert!(!submit(
+            cx,
+            &lock,
+            PasswordOperation::Unlock,
+            "incorrect",
+            ""
+        ));
+        assert_eq!(
+            store.memory.read().unwrap().unwrap().as_str(),
+            saved.as_str()
+        );
+        assert!(submit(
+            cx,
+            &lock,
+            PasswordOperation::Unlock,
+            "first password",
+            ""
+        ));
+        let renewed = store.memory.read().unwrap().unwrap();
+        assert!(renewed.contains(r#""version":2"#) && renewed.contains("cost"));
+        let lock = open(cx, store.clone());
+        assert!(submit(
+            cx,
+            &lock,
+            PasswordOperation::Unlock,
+            "first password",
+            ""
+        ));
+        assert_eq!(
+            store.memory.read().unwrap().unwrap().as_str(),
+            renewed.as_str()
+        );
+    }
+
+    struct Screen(std::sync::atomic::AtomicBool);
+    impl super::ScreenState for Screen {
+        fn is_locked(&self) -> bool {
+            self.0.load(Ordering::SeqCst)
+        }
+    }
+
+    #[gpui_kit::test]
+    fn the_computers_lock_screen_counts_only_over_an_open_lock(cx: &mut TestAppContext) {
+        let screen = Arc::new(Screen(true.into()));
+        let lock = open(cx, Arc::new(InMemoryLockStore::default()));
+        cx.update(|cx| {
+            lock.update(cx, |lock, _| lock.watch_screen(screen.clone()));
+            // No app lock to close.
+            assert!(!lock.read(cx).screen_locked());
+        });
+        assert!(submit(
+            cx,
+            &lock,
+            PasswordOperation::Enable,
+            "",
+            "first password"
+        ));
+        cx.update(|cx| {
+            assert!(lock.read(cx).screen_locked());
+            lock.update(cx, |lock, cx| lock.lock(cx));
+            assert!(!lock.read(cx).screen_locked());
+        });
+        screen.0.store(false, Ordering::SeqCst);
+        assert!(submit(
+            cx,
+            &lock,
+            PasswordOperation::Unlock,
+            "first password",
+            ""
+        ));
+        cx.update(|cx| assert!(!lock.read(cx).screen_locked()));
     }
 
     #[gpui_kit::test]

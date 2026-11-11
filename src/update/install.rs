@@ -44,20 +44,6 @@ pub enum InstallKind {
     Unsupported(Unsupported),
 }
 
-impl InstallKind {
-    /// How this copy was installed, as 匿名使用统计 reports it. Published:
-    /// the values never change.
-    pub fn install_type(&self) -> &'static str {
-        match self {
-            Self::MacBundle { .. } => "bundle",
-            Self::WindowsSetup { .. } => "setup",
-            Self::WindowsPortable { .. } => "portable",
-            Self::AppImage { .. } => "appimage",
-            Self::Unsupported(_) => "other",
-        }
-    }
-}
-
 /// Why this copy of ShellRS cannot replace itself.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Unsupported {
@@ -476,24 +462,6 @@ mod tests {
                 ..at("windows", exe)
             }),
             InstallKind::WindowsSetup { exe: exe.into() }
-        );
-    }
-
-    #[test]
-    fn the_install_type_is_one_of_a_fixed_few() {
-        let path = PathBuf::from("x");
-        let kinds = [
-            InstallKind::MacBundle {
-                bundle: path.clone(),
-            },
-            InstallKind::WindowsSetup { exe: path.clone() },
-            InstallKind::WindowsPortable { root: path.clone() },
-            InstallKind::AppImage { file: path },
-            InstallKind::Unsupported(Unsupported::NotInstalled),
-        ];
-        assert_eq!(
-            kinds.map(|kind| kind.install_type()),
-            ["bundle", "setup", "portable", "appimage", "other"]
         );
     }
 

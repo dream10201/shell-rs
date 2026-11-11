@@ -7,7 +7,6 @@ use std::rc::Rc;
 use gpui_kit::component::{WindowExt as _, notification::Notification};
 use gpui_kit::*;
 
-use crate::analytics::Counter;
 use crate::app::{ImportKnownHosts, ImportSshConfig};
 use crate::host::{ImportOutcome, ImportSource, open_import_dialog};
 use crate::i18n::tn;
@@ -59,17 +58,10 @@ impl Workspace {
         );
     }
 
-    /// Count an import and say what it added. A write that failed has
+    /// Say what an import added. A write that failed has
     /// said so already; success is not claimed on top of it.
     fn imported(&mut self, outcome: ImportOutcome, window: &mut Window, cx: &mut Context<Self>) {
-        if outcome.hosts == 0 {
-            return;
-        }
-        self.count(match outcome.source {
-            ImportSource::SshConfig => Counter::ImportSshConfig,
-            ImportSource::KnownHosts => Counter::ImportKnownHosts,
-        });
-        if outcome.failed {
+        if outcome.hosts == 0 || outcome.failed {
             return;
         }
         let title = tn!("host.import.done", outcome.hosts);

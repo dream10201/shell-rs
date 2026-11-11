@@ -9,10 +9,8 @@ icon_assets!(
     ExtraIcons,
     [
         Server,
-        Gpu,
         Layers,
         LogOut,
-        ChevronsDownUp,
         Terminal,
         Upload,
         Download,
@@ -63,7 +61,6 @@ icon_assets!(
         RotateCcw,
         Network,
         Boxes,
-        ShipWheel,
         RadioTower,
         Megaphone,
         Send,
@@ -137,28 +134,13 @@ os_icons! {
     "icons/os/netbsd.svg" => "netbsd",
 }
 
-/// Brand marks that Lucide, which draws no brands, cannot stand in for:
-/// Docker's whale on the right sidebar's Docker tool. From Simple Icons (CC0),
-/// single-path and monochrome like the operating-system marks.
-const BRAND_ICONS: &[(&str, &[u8])] = &[(
-    DOCKER_ICON,
-    include_bytes!("../../assets/icons/brand/docker.svg"),
-)];
-
-/// Docker's whale, for `Icon::path`.
-pub const DOCKER_ICON: &str = "icons/brand/docker.svg";
-
 /// Asset source for the application: the default component bundle plus the
-/// extra icons and the marks above.
+/// extra icons and the operating-system marks.
 pub struct AppAssets;
 
 impl AssetSource for AppAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        if let Some((_, bytes)) = OS_ICONS
-            .iter()
-            .chain(BRAND_ICONS)
-            .find(|(name, _)| *name == path)
-        {
+        if let Some((_, bytes)) = OS_ICONS.iter().find(|(name, _)| *name == path) {
             return Ok(Some(Cow::Borrowed(bytes)));
         }
         if let Some(bytes) = ExtraIcons.load(path)? {
@@ -173,7 +155,6 @@ impl AssetSource for AppAssets {
         paths.extend(
             OS_ICONS
                 .iter()
-                .chain(BRAND_ICONS)
                 .map(|(name, _)| *name)
                 .filter(|name| name.starts_with(path))
                 .map(SharedString::from),
@@ -200,16 +181,6 @@ mod tests {
                 .unwrap_or_else(|| panic!("{path} 不在资源包里"));
             assert!(bytes.starts_with(b"<svg"), "{path} 不是 SVG");
         }
-    }
-
-    #[test]
-    fn the_docker_tool_has_dockers_whale() {
-        let bytes = AppAssets
-            .load(super::DOCKER_ICON)
-            .unwrap()
-            .expect("in the bundle");
-        assert!(bytes.starts_with(b"<svg"));
-        assert!(String::from_utf8_lossy(&bytes).contains("<title>Docker</title>"));
     }
 
     #[test]

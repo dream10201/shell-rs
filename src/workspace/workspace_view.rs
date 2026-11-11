@@ -21,7 +21,6 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::front::follow_focus;
-use crate::analytics::{Analytics, AnalyticsServices, Counter};
 use crate::app::{
     CenterTab, ClearTerminal, CloseActiveTab, CloseLocalTerminal, CloseSettings, CloseTabs,
     CloseTerminal, CollapseAllGroups, ConnectGroup, ConnectHost, CopyHostAddress, CopyHostId,
@@ -174,9 +173,6 @@ pub struct Workspace {
     /// 同步. Without services in UI tests, so it never reaches a folder
     /// unless a test hands it a store.
     pub(super) sync: Entity<SyncService>,
-    /// 匿名使用统计. Production only, like the CLI server: UI tests hand in
-    /// one that only records.
-    pub(super) analytics: Option<super::analytics::Reporting>,
     local_terminal_provider: SharedLocalTerminalTransportProvider,
     host_terminals: HostTerminalTransports,
     /// Backs the host dialog's 「测试连接」.
@@ -282,12 +278,6 @@ impl Workspace {
         this.sync.update(cx, |sync, cx| {
             sync.set_services(crate::sync::system_services(), cx)
         });
-        if let Some(services) = AnalyticsServices::system() {
-            let enabled = this.settings.read(cx).settings().analytics.enabled;
-            this.set_analytics(Analytics::start(services, enabled), window, cx);
-            this.report_started(cx);
-            this.count_automatic_forwards(cx);
-        }
         this
     }
 
@@ -432,16 +422,6 @@ impl Workspace {
                 }
                 this.sync_updater(cx);
                 this.follow_sync_settings(cx);
-                this.sync_analytics(window, cx);
-                if !settings
-                    .read(cx)
-                    .settings()
-                    .sidebar_tools
-                    .shows(crate::app::ToolKind::Kubernetes)
-                {
-                    this.tools
-                        .update(cx, |tools, cx| tools.disable_kubernetes(cx));
-                }
                 this.sync_tool_sidebar(window, cx);
                 this.follow_sidebar_widths(window, cx);
             }),
@@ -655,7 +635,6 @@ impl Workspace {
             locked_links: Vec::new(),
             updater,
             sync,
-            analytics: None,
             local_terminal_provider,
             host_terminals,
             connection_tester,
@@ -1255,7 +1234,6 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.open_local_terminal(None, window, cx);
-        self.count(Counter::LocalTerminal);
     }
 
     /// Open a local terminal tab: in the home folder, or a saved terminal's
@@ -1629,7 +1607,6 @@ impl Workspace {
     ) {
         if let Some(terminal) = self.active_terminal(cx) {
             terminal.update(cx, |terminal, cx| terminal.open_find(window, cx));
-            self.count(Counter::Find);
         }
     }
 
@@ -2099,7 +2076,6 @@ fn new_terminal_panel(
                 cx.notify();
             }
             TerminalPanelEvent::Connected(_, host_id) => {
-                this.count_connection(*host_id, cx);
                 this.store
                     .update(cx, |store, cx| store.record_connection(*host_id, cx));
             }
@@ -2351,9 +2327,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_show_or_hide_app))
             .on_action(cx.listener(Self::on_toggle_tool_sidebar))
             .on_action(cx.listener(Self::on_toggle_tool))
-            .on_action(cx.listener(Self::on_refresh_gpu))
-            .on_action(cx.listener(Self::on_toggle_gpu_device))
-            .on_action(cx.listener(Self::on_toggle_all_gpu_devices))
             .on_action(cx.listener(Self::on_refresh_tmux))
             .on_action(cx.listener(Self::on_new_tmux_session))
             .on_action(cx.listener(Self::on_attach_tmux_session))
@@ -2392,12 +2365,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_snippet_category))
             .on_action(cx.listener(Self::on_new_snippet_subcategory))
             .on_action(cx.listener(Self::on_move_snippet_node))
-            .on_action(cx.listener(Self::on_refresh_docker))
-            .on_action(cx.listener(Self::on_kubernetes_action))
-            .on_action(cx.listener(Self::on_toggle_docker_project))
-            .on_action(cx.listener(Self::on_show_docker_object))
-            .on_action(cx.listener(Self::on_control_containers))
-            .on_action(cx.listener(Self::on_remove_docker_object))
             .on_action(cx.listener(Self::on_show_hosts))
             .on_action(cx.listener(Self::on_show_forwards))
             .on_action(cx.listener(Self::on_new_forward))
