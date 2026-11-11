@@ -6,16 +6,18 @@ One section per version, titled `## [version]`, optionally followed by a date. E
 
 ## [1.0.5]
 
+This version does not read data from earlier versions: it starts empty, and the old data files and the passwords in the system keychain stay where they are, neither read nor deleted. With sync, set the password and join the sync again to get your hosts back.
+
 ### Added
 
-- App lock: a “Lock when the computer locks” switch (Settings › App › App lock, off by default). With it on, ShellRS locks as soon as this computer’s screen is locked.
-
-### Improved
-
-- The app lock checks its password with stronger Argon2id parameters (256 MiB of memory, 3 passes, 4 lanes, a 32-byte random salt). An existing lock needs no setup: it moves to the new parameters the next time you unlock.
+- Everything is encrypted: the first start asks you to set the app lock password, and every start and every lock asks for it. Hosts, passwords, private keys, settings, trusted host keys and kept terminal output are encrypted with it (a key derived with Argon2id, XChaCha20-Poly1305), and the system keychain is no longer used. A forgotten password cannot be recovered, and neither can the data.
+- Once locked, neither the password nor any key stays in memory. Open terminals and port forwards keep running; until you unlock, nothing new connects, reconnects, syncs or saves.
+- App lock: a “Lock when the computer locks” switch (Settings › App › App lock, off by default).
+- Portable use on Linux and macOS too: with a `data` folder beside the program (beside the AppImage on Linux, beside `ShellRS.app` on macOS) all data is kept in it. Move the whole folder to another computer and the same password opens it; delete the folder and no data is left.
 
 ### Removed
 
+- The app lock can no longer be turned off.
 - Anonymous usage statistics, and their switch in Settings › About.
 - The Docker, Kubernetes and GPU/NPU tools of the right sidebar.
 
