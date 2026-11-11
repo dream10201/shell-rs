@@ -2,7 +2,23 @@
 
 [简体中文](CHANGELOG.zh.md)
 
-One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. The website’s changelog shows this file in English and Japanese and CHANGELOG.zh.md in Chinese (ShellRS’s update dialog opens it with What’s new). Written in Markdown, for users.
+One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
+
+## [1.0.0]
+
+### Added
+
+- Coming back to ShellRS from another app puts the keyboard focus on the current terminal, so you can type right away.
+- Double-click the empty space to the right of the tabs to open a new local terminal.
+
+### Improved
+
+- The sidebars can be dragged narrower (180 at the least on the left, 220 on the right), and their widths are remembered for the next start. Settings › App › Window restores the default widths.
+- Packages and updates now come from GitHub Releases.
+
+### Fixed
+
+- Cloud sync: creating a sync on Zspace’s WebDAV no longer reports devices that aren’t there.
 
 ## [0.1.18]
 
