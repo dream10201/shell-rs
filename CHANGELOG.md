@@ -4,6 +4,21 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.5]
+
+### Added
+
+- App lock: a “Lock when the computer locks” switch (Settings › App › App lock, off by default). With it on, ShellRS locks as soon as this computer’s screen is locked.
+
+### Improved
+
+- The app lock checks its password with stronger Argon2id parameters (256 MiB of memory, 3 passes, 4 lanes, a 32-byte random salt). An existing lock needs no setup: it moves to the new parameters the next time you unlock.
+
+### Removed
+
+- Anonymous usage statistics, and their switch in Settings › About.
+- The Docker, Kubernetes and GPU/NPU tools of the right sidebar.
+
 ## [1.0.4]
 
 ### Improved
