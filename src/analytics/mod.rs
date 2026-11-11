@@ -30,6 +30,7 @@ pub use client::{Analytics, AnalyticsServices, HttpTransport, Transport};
 pub use model::{Counter, Delivery, Signal, Snapshot};
 pub use system::SystemInfo;
 
-/// The Aptabase app ShellRS reports to. Not a secret: every build carries
+/// The Aptabase app ShellRS reports to, as the release workflow gives it;
+/// a build without one reports nothing. Not a secret: every build carries
 /// it, and all it allows is sending events.
-pub const APP_KEY: &str = "A-US-1582708162";
+pub const APP_KEY: Option<&str> = option_env!("SHELLRS_ANALYTICS_KEY");

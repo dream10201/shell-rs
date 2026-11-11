@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 description = "ShellRS sync core: encrypted per-device snapshots in plain file stores"
 license = "MIT"
-repository = "https://github.com/since2006/shell-rs"
+repository = "https://github.com/dream10201/shell-rs"
 
 [dependencies]
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }

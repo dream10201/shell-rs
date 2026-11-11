@@ -1,6 +1,6 @@
 //! 在线升级：检查、下载、校验并安装新版本。
 //!
-//! The manifest and packages come from `dl.shellrs.com` (`feed`), are
+//! The manifest and packages come from GitHub (`feed`), are
 //! believed only after `verify`, and `install` puts the new version in
 //! place the way each platform's package wants. Nothing here knows about
 //! the window: the workspace wires the updater to the title bar, the

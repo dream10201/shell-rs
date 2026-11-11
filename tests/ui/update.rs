@@ -149,8 +149,10 @@ impl UpdateFixture {
 
 /// What the fake manifests offer a Windows portable copy, beside this
 /// platform's package.
-const PORTABLE_PACKAGE: &str = "https://dl.shellrs.com/releases/portable.zip";
-const PORTABLE_INSTALLER: &str = "https://dl.shellrs.com/releases/portable-installer.zip";
+const PORTABLE_PACKAGE: &str =
+    "https://github.com/dream10201/shell-rs/releases/download/portable.zip";
+const PORTABLE_INSTALLER: &str =
+    "https://github.com/dream10201/shell-rs/releases/download/portable-installer.zip";
 
 /// `channel`'s manifest offering `version` for this platform and for the
 /// Windows portable copy, signed by `pair`.
@@ -174,7 +176,7 @@ fn signed_manifest(
         "notes": "### 新增\n\n- 在线升级：新版本在后台下载好后，标题栏会提示。",
         "assets": {
             platform: {
-                "urls": ["https://dl.shellrs.com/releases/package"],
+                "urls": ["https://github.com/dream10201/shell-rs/releases/download/package"],
                 "size": package.len(),
                 "sha256": sha256,
             },
@@ -185,7 +187,7 @@ fn signed_manifest(
             }
         },
         "installers": {
-            platform: "https://dl.shellrs.com/releases/installer",
+            platform: "https://github.com/dream10201/shell-rs/releases/download/installer",
             WINDOWS_PORTABLE: PORTABLE_INSTALLER,
         },
     })
@@ -267,7 +269,10 @@ fn the_about_page_opens_the_website(cx: &mut TestAppContext) {
     let (handle, _) = open_workspace(cx);
     open_about_settings(cx, handle);
     in_frame(cx, handle, |window, cx| window.click("open-website", cx));
-    assert_eq!(cx.opened_url().as_deref(), Some("https://shellrs.com"));
+    assert_eq!(
+        cx.opened_url().as_deref(),
+        Some("https://github.com/dream10201/shell-rs")
+    );
 }
 
 /// Open 设置 › 关于.
@@ -446,7 +451,7 @@ async fn the_update_dialog_links_the_changelog_and_restarts_into_the_new_version
     in_frame(cx, handle, |window, cx| window.click("open-changelog", cx));
     assert_eq!(
         cx.opened_url().as_deref(),
-        Some("https://shellrs.com/zh/changelog")
+        Some("https://github.com/dream10201/shell-rs/blob/main/CHANGELOG.zh.md")
     );
     let settings = cx.update(|cx| workspace.read(cx).settings().clone());
     cx.update(|cx| {
@@ -461,7 +466,7 @@ async fn the_update_dialog_links_the_changelog_and_restarts_into_the_new_version
     in_frame(cx, handle, |window, cx| window.click("open-changelog", cx));
     assert_eq!(
         cx.opened_url().as_deref(),
-        Some("https://shellrs.com/changelog")
+        Some("https://github.com/dream10201/shell-rs/blob/main/CHANGELOG.md")
     );
     in_frame(cx, handle, |window, _| {
         assert!(window.try_find("update-dialog").is_some());

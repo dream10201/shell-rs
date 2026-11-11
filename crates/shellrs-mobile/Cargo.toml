@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 description = "ShellRS for the mobile apps: the SSH and hosts cores behind a stable Swift and Kotlin interface"
 license = "MIT"
-repository = "https://github.com/since2006/shell-rs"
+repository = "https://github.com/dream10201/shell-rs"
 
 [lib]
 # A static library for iOS, a shared one for Android (and for generating the

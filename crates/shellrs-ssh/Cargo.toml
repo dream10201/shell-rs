@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 description = "ShellRS SSH core: logins, host keys, channels and the SFTP transfer engine"
 license = "MIT"
-repository = "https://github.com/since2006/shell-rs"
+repository = "https://github.com/dream10201/shell-rs"
 
 [dependencies]
 anyhow = "1"

@@ -804,7 +804,7 @@ mod tests {
         ] {
             assert_eq!(endpoint(key), None, "{key}");
         }
-        assert!(endpoint(super::super::APP_KEY).is_some());
+        assert!(endpoint("A-US-1").is_some());
     }
 
     #[test]

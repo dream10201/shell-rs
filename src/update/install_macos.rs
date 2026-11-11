@@ -128,7 +128,9 @@ impl MacInstaller {
             },
             bundle,
             tools,
-            team: APPLE_TEAM_ID.map(String::from),
+            team: APPLE_TEAM_ID
+                .filter(|team| !team.is_empty())
+                .map(String::from),
         }
     }
 

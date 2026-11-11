@@ -5,8 +5,8 @@
 #
 # <dist-dir> holds the release's packages under their published names.
 # MINISIGN_KEY_FILE is the secret key; MINISIGN_PASSWORD its password, if it
-# has one. SHELLRS_MIRROR_BASE, when set (e.g. the GitHub release download
-# URL of a public repository), adds a second address for every package.
+# has one. The packages' addresses are those of the GitHub release
+# `v<version>`.
 #
 # The output is the envelope src/update/manifest.rs reads: the manifest's
 # exact text and its minisign signature, whose trusted comment
@@ -20,8 +20,8 @@ notes=$3
 dist=$4
 out=$5
 
-base="https://dl.shellrs.com/releases/$version"
-mirror=${SHELLRS_MIRROR_BASE:-}
+repository="https://github.com/dream10201/shell-rs"
+base="$repository/releases/download/v$version"
 
 mac_arm="ShellRS-$version-macos-aarch64.app.zip"
 mac_intel="ShellRS-$version-macos-x86_64.app.zip"
@@ -40,17 +40,16 @@ sha256() {
     fi
 }
 
-# The asset entry of one package: its addresses, size and SHA-256.
+# The asset entry of one package: its address, size and SHA-256.
 asset() {
     local file="$dist/$1"
     local size
     size=$(wc -c <"$file" | tr -d ' ')
     jq -n \
         --arg url "$base/$1" \
-        --arg mirror "${mirror:+$mirror/$1}" \
         --argjson size "$size" \
         --arg sha256 "$(sha256 "$file")" \
-        '{urls: ([$url] + (if $mirror == "" then [] else [$mirror] end)), size: $size, sha256: $sha256}'
+        '{urls: [$url], size: $size, sha256: $sha256}'
 }
 
 work=$(mktemp -d)
@@ -61,7 +60,7 @@ jq -n -j \
     --arg channel "$channel" \
     --arg published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --rawfile notes "$notes" \
-    --arg notes_url "https://shellrs.com/changelog#$version" \
+    --arg notes_url "$repository/releases/tag/v$version" \
     --argjson mac_arm "$(asset "$mac_arm")" \
     --argjson mac_intel "$(asset "$mac_intel")" \
     --argjson win "$(asset "$win")" \

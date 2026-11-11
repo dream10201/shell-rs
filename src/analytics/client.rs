@@ -114,9 +114,11 @@ impl AnalyticsServices {
         if is_debug && std::env::var_os(DEBUG_ENV).is_none() {
             return None;
         }
-        let endpoint = endpoint(APP_KEY)?;
+        let app_key = APP_KEY?;
+        // An unset workflow variable arrives as an empty key: no endpoint.
+        let endpoint = endpoint(app_key)?;
         Some(Self {
-            transport: Arc::new(HttpTransport::new(endpoint, APP_KEY)),
+            transport: Arc::new(HttpTransport::new(endpoint, app_key)),
             state_path: crate::app::analytics_path(),
             is_debug,
             detect: SystemInfo::detect,

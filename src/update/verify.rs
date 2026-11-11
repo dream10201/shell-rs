@@ -339,11 +339,6 @@ pub(crate) mod tests {
             .arg(&out)
             .env("MINISIGN_KEY_FILE", &secret)
             .env_remove("MINISIGN_PASSWORD")
-            // As the release workflow sets it.
-            .env(
-                "SHELLRS_MIRROR_BASE",
-                "https://github.com/since2006/shell-rs/releases/download/v0.2.0",
-            )
             .output()
             .unwrap();
         drop(forks);
@@ -361,20 +356,19 @@ pub(crate) mod tests {
             let key = format!("macos-{arch}");
             let name = format!("ShellRS-0.2.0-{key}.app.zip");
             let asset = &manifest.assets[&key];
-            // Each architecture has its own package and both download sources.
+            // Each architecture has its own package.
             assert_eq!(
                 asset.urls,
-                [
-                    format!("https://dl.shellrs.com/releases/0.2.0/{name}"),
-                    format!(
-                        "https://github.com/since2006/shell-rs/releases/download/v0.2.0/{name}"
-                    ),
-                ]
+                [format!(
+                    "https://github.com/dream10201/shell-rs/releases/download/v0.2.0/{name}"
+                )]
             );
             assert_eq!(verify_file(&dist.join(&name), asset), Ok(()));
             assert_eq!(
                 manifest.installers[&key],
-                format!("https://dl.shellrs.com/releases/0.2.0/ShellRS-0.2.0-{key}.dmg")
+                format!(
+                    "https://github.com/dream10201/shell-rs/releases/download/v0.2.0/ShellRS-0.2.0-{key}.dmg"
+                )
             );
         }
         assert_ne!(
@@ -406,7 +400,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             manifest.installers["windows-x86_64-portable"],
-            "https://dl.shellrs.com/releases/0.2.0/ShellRS-0.2.0-windows-x86_64-portable.zip"
+            "https://github.com/dream10201/shell-rs/releases/download/v0.2.0/ShellRS-0.2.0-windows-x86_64-portable.zip"
         );
         assert_eq!(
             open_envelope(&bytes, Channel::Beta, &keys),
