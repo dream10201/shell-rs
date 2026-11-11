@@ -4,6 +4,12 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.3]
+
+### Improved
+
+- Dependencies are updated to their latest versions, including the SSH library russh 0.65, SQLite (rusqlite 0.42) and Rust 1.99.1; the UI framework gpui-kit is updated to 0.6.6.
+
 ## [1.0.2]
 
 ### Added

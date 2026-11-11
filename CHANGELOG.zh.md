@@ -4,6 +4,12 @@
 
 每个版本一节，标题写成 `## [版本号]`，可以在后面加日期。每一节同时写中文（这里）和英文（[CHANGELOG.md](CHANGELOG.md)），在同一次提交里。发布流程（`.github/workflows/release.yml`）把英文版里与 tag 同版本的那一节原样作为 GitHub Release 的说明；ShellRS 的更新对话框用「查看更新内容」打开 GitHub 上的更新日志：中文界面打开这一份，其他语言打开英文版。用 Markdown 书写，面向使用者。
 
+## [1.0.3]
+
+### 改进
+
+- 依赖更新到最新版本，包括 SSH 协议库 russh 0.65、SQLite（rusqlite 0.42）和 Rust 1.99.1；界面框架 gpui-kit 更新到 0.6.6。
+
 ## [1.0.2]
 
 ### 新增
