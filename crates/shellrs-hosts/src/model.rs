@@ -1,5 +1,5 @@
 use gpui_shared_string::SharedString;
-use rand::{Rng as _, distr::Alphanumeric};
+use rand::{RngExt as _, distr::Alphanumeric};
 
 use crate::secrets::SecretRef;
 

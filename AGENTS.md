@@ -4,7 +4,7 @@ Git 提交信息一律使用英文。
 
 ## 项目是什么
 
-ShellRS（crate 与二进制都叫 `shellrs`）是一个类似 Xshell 的 SSH 主机管理工具，基于 `gpui-kit` 0.6.1（GPUI + gpui-base + gpui-component）。界面文案有简体中文和英文两种（中文是源语言，文案在 `locales/`，经 `crate::i18n::t!`），标识符用英文。
+ShellRS（crate 与二进制都叫 `shellrs`）是一个类似 Xshell 的 SSH 主机管理工具，基于 `gpui-kit` 0.6.6（GPUI + gpui-base + gpui-component）。界面文案有简体中文和英文两种（中文是源语言，文案在 `locales/`，经 `crate::i18n::t!`），标识符用英文。
 
 **保存的一项叫「主机」，代码里叫 `Host`。** 左侧列表里保存的一项（地址、端口、用户、认证方式）在界面上叫「主机」，量词用「台」，代码和数据库里一律叫 host（`Host`、`HostId`、`HostStore`、`host/` 模块、`hosts` 表）。它以前叫「会话」/ `Session`，界面、代码和表名都已改掉，新写的文案和标识符不要再用「会话」/ session 指它。填 IP / 域名的那个字段叫「地址」（`Host.address`、`hosts.address`），不叫「主机」（「主机密钥」「首次连接此主机」这些照旧）。SSH 协议里的 session 不在此列：「SSH 会话通道」、russh 的 `client::Session` / `server::Session`、`channel_open_session` 照旧。
 
@@ -12,7 +12,7 @@ ShellRS（crate 与二进制都叫 `shellrs`）是一个类似 Xshell 的 SSH �
 
 已确认的产品决定：没有 SFTP、编辑器和预览（1.0.2 起去掉，不要加回来），文件只做上传和下载；暂不做 Dock 布局持久化；首次启动是空库，不预置任何分组或主机；分组支持任意层级嵌套，主机也可以不属于任何分组（渲染在树的根层级）；删除分组会连同其子分组和里面的主机一起删，删除前确认并写明数量。
 
-做 UI 之前先读 `gpui-kit` 与 `gpui-kit-design-guides` 两个技能（其中的 Coding Guides 和 Design Guides 在本仓库是规范，不是参考）。不要凭记忆臆造 gpui-kit API：以 `~/.cargo/registry/src/*/gpui-component-0.6.1/`、`gpui-base-0.6.1/` 的源码或 `https://gpui-kit.com/component/<name>.md` 为准。
+做 UI 之前先读 `gpui-kit` 与 `gpui-kit-design-guides` 两个技能（其中的 Coding Guides 和 Design Guides 在本仓库是规范，不是参考）。不要凭记忆臆造 gpui-kit API：以 `~/.cargo/registry/src/*/gpui-component-0.6.6/`、`gpui-base-0.6.6/` 的源码或 `https://gpui-kit.com/component/<name>.md` 为准。
 
 ## 常用命令
 
@@ -34,7 +34,7 @@ security find-generic-password -s shellrs -a "password:<user>@<host>:<port>"   #
 cargo test -- --ignored                     # 会读写真实钥匙串的测试，默认跳过
 ```
 
-工具链：`rust-toolchain.toml` 固定 Rust 1.98.1，因为 `gpui-pre` 用到了 1.94 尚未稳定的 std API。`Cargo.lock` 把 `gpui-pre*` 系列固定在 0.3.2（gpui-kit 0.6.1 发布时配套的版本），不要随手 `cargo update` 它们，除非确认仍能编译。`cargo test` 需要 gpui-kit 的 `test-support` 特性，首次会再编译一遍（同样慢）。
+工具链：`rust-toolchain.toml` 固定 Rust 1.99.1，因为 `gpui-pre` 用到了 1.94 尚未稳定的 std API。`Cargo.lock` 把 `gpui-pre*` 系列固定在 0.3.2（gpui-kit 0.6.1 发布时配套的版本），不要随手 `cargo update` 它们，除非确认仍能编译。`cargo test` 需要 gpui-kit 的 `test-support` 特性，首次会再编译一遍（同样慢）。
 
 本终端的 `screencapture` 被 macOS 权限拦截，视觉检查只能靠 UI 集成测试或让用户看窗口。
 

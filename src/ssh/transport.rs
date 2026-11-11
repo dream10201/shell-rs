@@ -435,10 +435,10 @@ mod tests {
         async fn auth_publickey(
             &mut self,
             _: &str,
-            public_key: &PublicKey,
+            key: server::VerifiedPublicKey<'_>,
         ) -> Result<server::Auth, Self::Error> {
             Ok(match &self.auth {
-                TestAuth::PublicKey(expected) if expected == public_key => server::Auth::Accept,
+                TestAuth::PublicKey(expected) if expected == key.public_key => server::Auth::Accept,
                 TestAuth::PublicKey(_) => server::Auth::reject(),
                 _ => server::Auth::UnsupportedMethod,
             })

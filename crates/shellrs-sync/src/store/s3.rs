@@ -642,13 +642,13 @@ fn elements(xml: &[u8]) -> Result<Vec<(String, String, String)>, StoreError> {
             .map_err(|error| bad(&error))?
         {
             Event::Start(start) => {
-                path.push(String::from_utf8_lossy(start.local_name().as_ref()).into_owned());
+                path.push(start.local_name().as_ref().to_string());
                 text.clear();
             }
-            Event::Text(chunk) => text.push_str(&chunk.decode().map_err(|error| bad(&error))?),
-            Event::CData(chunk) => text.push_str(&chunk.decode().map_err(|error| bad(&error))?),
+            Event::Text(chunk) => text.push_str(&chunk.into_inner()),
+            Event::CData(chunk) => text.push_str(&chunk.into_inner()),
             Event::GeneralRef(reference) => {
-                let name = reference.decode().map_err(|error| bad(&error))?;
+                let name = reference.into_inner();
                 let raw = format!("&{name};");
                 match quick_xml::escape::unescape(&raw) {
                     Ok(resolved) => text.push_str(&resolved),

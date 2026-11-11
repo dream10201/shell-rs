@@ -538,7 +538,7 @@ fn parse_multistatus(xml: &[u8]) -> Result<Vec<Entry>, StoreError> {
     // The current propstat's properties, kept until its status is known.
     let mut found = Entry::default();
     let mut status_ok = false;
-    let mut path: Vec<Vec<u8>> = Vec::new();
+    let mut path: Vec<String> = Vec::new();
     let mut text = String::new();
     loop {
         match reader
@@ -547,12 +547,12 @@ fn parse_multistatus(xml: &[u8]) -> Result<Vec<Entry>, StoreError> {
         {
             Event::Start(start) => {
                 let name = start.local_name().as_ref().to_ascii_lowercase();
-                match name.as_slice() {
-                    b"response" => {
+                match name.as_str() {
+                    "response" => {
                         entry = Some(Entry::default());
                         response_ok = true;
                     }
-                    b"propstat" => {
+                    "propstat" => {
                         found = Entry::default();
                         status_ok = false;
                     }
@@ -563,14 +563,14 @@ fn parse_multistatus(xml: &[u8]) -> Result<Vec<Entry>, StoreError> {
             }
             Event::Empty(empty) => {
                 let name = empty.local_name().as_ref().to_ascii_lowercase();
-                if name == b"collection" && path.iter().any(|part| part == b"resourcetype") {
+                if name == "collection" && path.iter().any(|part| part == "resourcetype") {
                     found.collection = true;
                 }
             }
-            Event::Text(chunk) => text.push_str(&chunk.decode().map_err(|error| bad(&error))?),
-            Event::CData(chunk) => text.push_str(&chunk.decode().map_err(|error| bad(&error))?),
+            Event::Text(chunk) => text.push_str(&chunk.into_inner()),
+            Event::CData(chunk) => text.push_str(&chunk.into_inner()),
             Event::GeneralRef(reference) => {
-                let name = reference.decode().map_err(|error| bad(&error))?;
+                let name = reference.into_inner();
                 let raw = format!("&{name};");
                 match quick_xml::escape::unescape(&raw) {
                     Ok(resolved) => text.push_str(&resolved),
@@ -583,24 +583,24 @@ fn parse_multistatus(xml: &[u8]) -> Result<Vec<Entry>, StoreError> {
                 };
                 let value = std::mem::take(&mut text);
                 let value = value.trim();
-                match name.as_slice() {
-                    b"href" if path.last().is_some_and(|parent| parent == b"response") => {
+                match name.as_str() {
+                    "href" if path.last().is_some_and(|parent| parent == "response") => {
                         if let Some(entry) = &mut entry {
                             entry.href = value.to_owned();
                         }
                     }
-                    b"status" if path.last().is_some_and(|parent| parent == b"propstat") => {
+                    "status" if path.last().is_some_and(|parent| parent == "propstat") => {
                         status_ok = value.split_whitespace().nth(1) == Some("200");
                     }
-                    b"status" if path.last().is_some_and(|parent| parent == b"response") => {
+                    "status" if path.last().is_some_and(|parent| parent == "response") => {
                         response_ok = value.split_whitespace().nth(1) == Some("200");
                     }
-                    b"getetag" if !value.is_empty() => found.etag = Some(value.to_owned()),
-                    b"getcontentlength" => found.length = value.parse().ok(),
-                    b"getlastmodified" if !value.is_empty() => {
+                    "getetag" if !value.is_empty() => found.etag = Some(value.to_owned()),
+                    "getcontentlength" => found.length = value.parse().ok(),
+                    "getlastmodified" if !value.is_empty() => {
                         found.modified = Some(value.to_owned());
                     }
-                    b"propstat" => {
+                    "propstat" => {
                         if let Some(entry) = &mut entry
                             && status_ok
                         {
@@ -611,7 +611,7 @@ fn parse_multistatus(xml: &[u8]) -> Result<Vec<Entry>, StoreError> {
                             entry.modified = entry.modified.take().or(found.modified);
                         }
                     }
-                    b"response" => entries.extend(
+                    "response" => entries.extend(
                         entry
                             .take()
                             .filter(|entry| response_ok && !entry.href.is_empty()),

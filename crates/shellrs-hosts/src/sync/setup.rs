@@ -1,7 +1,7 @@
 //! What setting sync up asks of the user, checked: a sync password, and
 //! the login of a WebDAV server or an S3 bucket as typed.
 
-use rand::Rng as _;
+use rand::RngExt as _;
 use zeroize::Zeroizing;
 
 use super::SyncLocation;

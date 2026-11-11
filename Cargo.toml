@@ -18,7 +18,7 @@ members = ["crates/shellrs-sync", "crates/shellrs-ssh", "crates/shellrs-hosts"]
 resolver = "3"
 
 [dependencies]
-gpui-kit = { version = "0.6.1", features = [
+gpui-kit = { version = "0.6.6", features = [
     # Kubernetes' YAML is highlighted. Each grammar is compiled C.
     "tree-sitter",
     "tree-sitter-yaml",
@@ -31,29 +31,29 @@ async-channel = "2"
 # A terminal's parser thread waits for output only until a synchronized
 # update has to be drawn.
 async-io = "2"
-base64 = "0.22"
+base64 = "0.23"
 flate2 = "1"
-dirs = "6"
+dirs = "7"
 # Canonical local paths without the `\\?\` prefix std adds on Windows.
 dunce = "1"
 futures = "0.3"
 portable-pty = "0.9"
 # Serial ports, for serial hosts: portable-pty already builds it.
 serial2 = "0.2"
-rand = "0.9"
+rand = "0.10"
 # 关键字高亮: the rules match the terminal's text, not Alacritty's grid
 # search, whose DFA cannot build `\b` and loses `^` after the first line.
 regex = "1"
-russh = "0.63"
+russh = "0.65"
 # 多语言: the same crate gpui-kit translates its own text with, so one
 # locale switches both.
 rust-i18n = "4.2"
 serde_json = "1"
 sys-locale = "0.3"
-sha2 = "0.10"
+sha2 = "0.11"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.42", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 unicode-width = "0.2"
@@ -72,7 +72,7 @@ shellrs-hosts = { path = "crates/shellrs-hosts" }
 # Online update: the signed manifest, its versions and the downloads. The
 # default features keep rustls with the OS trust store and the system proxy
 # (a GUI app started from Finder or the Start menu has no HTTPS_PROXY).
-minisign-verify = "0.2"
+minisign-verify = "0.3"
 reqwest = { version = "0.13", features = ["blocking"] }
 semver = { version = "1", features = ["serde"] }
 # 匿名使用统计: the system's name and version for Aptabase, as its own Tauri
@@ -84,7 +84,7 @@ serde_yaml_ng = "0.10.0"
 zmodem2 = "=0.7.3"
 # 显示或隐藏 ShellRS, the shortcut that works in any app: the system's
 # hot keys (Carbon on macOS, RegisterHotKey on Windows, X11 on Linux).
-global-hotkey = "0.9"
+global-hotkey = "0.10"
 
 [target.'cfg(unix)'.dependencies]
 # `access(2)`: whether the folder ShellRS runs from can take its update.
@@ -143,9 +143,9 @@ winresource = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["process", "test-util"] }
-gpui-kit = { version = "0.6.1", features = ["test-support"] }
+gpui-kit = { version = "0.6.6", features = ["test-support"] }
 tempfile = "3"
-minisign = "0.7"
+minisign = "0.10"
 # The portable installer's tests build and unpack zips on every platform.
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 # The hosts core's fixtures, such as a database in memory.

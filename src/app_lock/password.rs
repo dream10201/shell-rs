@@ -1,6 +1,6 @@
 //! Salted Argon2id password verification. Plaintext passwords are never serialized.
 use argon2::{Algorithm, Argon2, Params, Version};
-use rand::RngCore as _;
+use rand::Rng as _;
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq as _;
 use zeroize::Zeroizing;

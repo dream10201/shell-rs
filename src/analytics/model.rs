@@ -7,7 +7,7 @@ use std::io;
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate, SecondsFormat, TimeDelta, Utc};
-use rand::Rng as _;
+use rand::RngExt as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 

@@ -9,7 +9,7 @@ use crate::i18n::t;
 use crate::shared::tab_pressed_at;
 use gpui_kit::component::dock::{
     BasePanelView, DockArea, DockAreaRenderer, DockContext, DockSkin, DropIndicator, NodeId,
-    PanelState, PanelStyle, TabGroupContext, TabGroupRenderer, TilesRenderer,
+    PanelState, PanelStyle, TabGroupContext, TabGroupRenderer,
 };
 use gpui_kit::component::{
     ActiveTheme as _, Icon, Selectable as _, Sizable as _,
@@ -218,10 +218,6 @@ impl DockAreaRenderer for WorkspaceDockSkin {
             broadcast: self.broadcast.clone(),
             target: self.target.clone(),
         })
-    }
-
-    fn tiles_renderer(&self) -> Rc<dyn TilesRenderer> {
-        self.skin.tiles_renderer()
     }
 }
 

@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use async_channel::{Receiver, Sender, TryRecvError};
 use gpui_kit::*;
-use rand::Rng as _;
+use rand::RngExt as _;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 

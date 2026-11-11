@@ -10,11 +10,11 @@ repository = "https://github.com/dream10201/shell-rs"
 [dependencies]
 anyhow = "1"
 # HTTP proxies' Basic authentication.
-base64 = "0.22"
+base64 = "0.23"
 # Where the default private keys are looked for, unless told otherwise.
-dirs = "6"
+dirs = "7"
 futures = "0.3"
-russh = "0.63"
+russh = "0.65"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 zeroize = "1"
 

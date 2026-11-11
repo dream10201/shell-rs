@@ -4,7 +4,7 @@
 
 ## 构建
 
-装好 [rustup](https://rustup.rs) 即可：`rust-toolchain.toml` 固定了 Rust 1.98.1，第一次构建时 rustup 会自动装上它，不改动机器上默认的工具链。首次构建要编译整个 GPUI 栈，需要一段时间。
+装好 [rustup](https://rustup.rs) 即可：`rust-toolchain.toml` 固定了 Rust 1.99.1，第一次构建时 rustup 会自动装上它，不改动机器上默认的工具链。首次构建要编译整个 GPUI 栈，需要一段时间。
 
 Linux 需要先装这些开发包（Debian / Ubuntu，与发布构建用的一致）：
 
@@ -18,7 +18,7 @@ Windows 只在 CI（`.github/workflows/windows.yml`）上编译和测试。C 运
 
 ## 运行和验证
 
-工具链固定 Rust 1.98.1；保持仓库锁定的 GPUI 与 russh 版本。
+工具链固定 Rust 1.99.1；保持仓库锁定的 GPUI 与 russh 版本。
 
 ```sh
 cargo run

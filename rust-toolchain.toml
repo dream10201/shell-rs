@@ -2,5 +2,5 @@
 # project pins the current stable. rustup installs it on first use without
 # changing the machine's default toolchain.
 [toolchain]
-channel = "1.98.1"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
