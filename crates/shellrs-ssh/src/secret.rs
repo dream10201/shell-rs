@@ -1,5 +1,5 @@
 //! Which secret a connection needs, and where it reads the saved ones.
-//! Each app keeps its secrets in its own platform's keychain; the
+//! Each app keeps its secrets its own way; the
 //! connection only ever asks for one by its [`SecretRef`].
 
 use std::path::Path;
@@ -81,8 +81,8 @@ impl SecretRef {
         Self::Temporary { host }
     }
 
-    /// The keychain entry's account name. Its prefix says the kind, readable
-    /// as it is in Keychain Access. Saved secrets are found by it, so it
+    /// The name the secret is kept under. Its prefix says the kind. Saved
+    /// secrets are found by it, so it
     /// never changes.
     pub fn account(&self) -> String {
         match self {

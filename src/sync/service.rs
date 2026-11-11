@@ -248,6 +248,11 @@ impl SyncService {
     }
 
     fn start_round(&mut self, cx: &mut Context<Self>) {
+        // Locked, the vault opens nothing: the next trigger after
+        // unlocking syncs.
+        if crate::app_lock::is_locked(cx) {
+            return;
+        }
         if self.busy() {
             self.again = true;
             return;

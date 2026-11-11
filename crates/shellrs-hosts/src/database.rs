@@ -711,6 +711,38 @@ impl HostDatabase {
         Self::prepare(Connection::open(path)?)
     }
 
+    /// A database kept in memory: as `image` left it, or new. Nothing
+    /// reaches a disk until someone stores [`Self::image`].
+    pub fn from_image(image: Option<&[u8]>) -> Result<Self, OpenError> {
+        let mut connection = Connection::open_in_memory()?;
+        if let Some(image) = image {
+            connection.deserialize_read_exact(rusqlite::MAIN_DB, image, image.len(), false)?;
+        }
+        Self::prepare(connection)
+    }
+
+    /// The whole database as SQLite's file format, for [`Self::from_image`].
+    pub fn image(&mut self) -> rusqlite::Result<Vec<u8>> {
+        Ok(self.connection.serialize(rusqlite::MAIN_DB)?.to_vec())
+    }
+
+    /// Grows with every row written: whether the image is out of date.
+    pub fn changes(&self) -> u64 {
+        self.connection.total_changes()
+    }
+
+    /// Whether a batch is open: an image taken now would hold half of it.
+    pub fn in_batch(&self) -> bool {
+        !self.connection.is_autocommit()
+    }
+
+    /// The schema version of an image that opening would migrate: the one
+    /// to keep a copy of first.
+    pub fn outdated_image(image: &[u8]) -> Option<i64> {
+        let version = i64::from(u32::from_be_bytes(image.get(60..64)?.try_into().ok()?));
+        (version > 0 && version < SCHEMA_VERSION).then_some(version)
+    }
+
     /// An anonymous database that lives only as long as this value.
     #[cfg(any(test, feature = "testing"))]
     pub fn in_memory() -> Result<Self, OpenError> {
@@ -2133,6 +2165,28 @@ pub fn now_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_database_in_memory_comes_back_from_its_image() {
+        let mut db = HostDatabase::from_image(None).unwrap();
+        let before = db.changes();
+        db.set_secret_edit("host", "one", 7).unwrap();
+        assert_ne!(db.changes(), before);
+        let image = db.image().unwrap();
+        assert_eq!(HostDatabase::outdated_image(&image), None);
+
+        let again = HostDatabase::from_image(Some(&image)).unwrap();
+        let data = again.load().unwrap();
+        assert_eq!(
+            data.secret_edits
+                .get(&("host".to_string(), "one".to_string())),
+            Some(&7)
+        );
+        // It still takes writes, and grows.
+        again.set_secret_edit("host", "two", 8).unwrap();
+        assert_eq!(again.load().unwrap().secret_edits.len(), 2);
+        assert!(HostDatabase::from_image(Some(b"not a database")).is_err());
+    }
     use crate::SnippetCategoryDraft;
 
     fn group(id: u64, name: &str, parent: Option<u64>) -> HostGroup {

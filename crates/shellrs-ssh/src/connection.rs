@@ -11,9 +11,7 @@ use super::prompt::{
 use super::session::ChannelStream;
 use anyhow::{Result, anyhow, bail};
 use russh::keys::{
-    HashAlg, PrivateKeyWithHashAlg, PublicKey,
-    known_hosts::{known_host_keys_path, learn_known_hosts_path},
-    load_secret_key, parse_public_key_base64,
+    HashAlg, PrivateKeyWithHashAlg, PublicKey, decode_secret_key, parse_public_key_base64,
 };
 use russh::{
     MethodKind, MethodSet,
@@ -768,7 +766,7 @@ impl client::Handler for SshClientHandler {
             forget_known_host(&self.host, self.port, &self.known_hosts_path)
                 .map_err(|_| write_failed())?;
         }
-        learn_known_hosts_path(&self.host, self.port, &key, &self.known_hosts_path)
+        learn_known_host(&self.host, self.port, &key, &self.known_hosts_path)
             .map_err(|_| write_failed())?;
         Ok(true)
     }
@@ -850,62 +848,77 @@ pub fn is_network_error(error: &anyhow::Error) -> bool {
     })
 }
 
-/// Drop every key saved for `host` at `port`, as `ssh-keygen -R` does: a
-/// reinstalled server has new keys of every kind. A line naming it with a
-/// hashed host name, which only a hand could have written there, stays.
-fn forget_known_host(host: &str, port: u16, path: &Path) -> std::io::Result<()> {
-    let name = if port == 22 {
+/// The name a host goes by in the trust file.
+fn known_host_name(host: &str, port: u16) -> String {
+    if port == 22 {
         host.to_string()
     } else {
         format!("[{host}]:{port}")
-    };
-    let contents = std::fs::read_to_string(path)?;
-    let kept: String = contents
-        .lines()
-        .filter(|line| {
-            let line = line.trim_start();
-            line.starts_with('#')
-                || !line
-                    .split_whitespace()
-                    .next()
-                    .is_some_and(|hosts| hosts.split(',').any(|entry| entry == name))
-        })
-        .map(|line| format!("{line}\n"))
-        .collect();
-    // In one step, so a crash halfway cannot lose the other hosts' keys.
-    let temporary = path.with_extension("tmp");
-    std::fs::write(&temporary, kept)?;
-    std::fs::rename(&temporary, path)
+    }
 }
 
+/// The trust file's text; empty when there is none yet.
+fn known_hosts_text(path: &Path) -> std::io::Result<String> {
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    String::from_utf8(crate::files::read(path)?).map_err(std::io::Error::other)
+}
+
+fn names_host(line: &str, name: &str) -> bool {
+    line.split_whitespace()
+        .next()
+        .is_some_and(|hosts| hosts.split(',').any(|entry| entry == name))
+}
+
+/// Take a host's keys out of the trust file.
+fn forget_known_host(host: &str, port: u16, path: &Path) -> std::io::Result<()> {
+    let name = known_host_name(host, port);
+    let kept: String = known_hosts_text(path)?
+        .lines()
+        .filter(|line| line.trim_start().starts_with('#') || !names_host(line, &name))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    crate::files::write(path, kept.as_bytes())
+}
+
+/// Add a host's key to the trust file.
+fn learn_known_host(host: &str, port: u16, key: &PublicKey, path: &Path) -> std::io::Result<()> {
+    let mut text = known_hosts_text(path)?;
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    let key = key.to_openssh().map_err(std::io::Error::other)?;
+    text.push_str(&format!("{} {key}\n", known_host_name(host, port)));
+    crate::files::write(path, text.as_bytes())
+}
+
+/// The keys the trust file has for a host, each with its line, from 1.
 fn read_known_keys(host: &str, port: u16, path: &Path) -> Result<Vec<(usize, PublicKey)>> {
-    if path.exists() {
-        let contents =
-            std::fs::read_to_string(path).wrap_err_with(|| KnownHostsError::ReadFailed {
+    let contents = known_hosts_text(path).wrap_err_with(|| KnownHostsError::ReadFailed {
+        path: path.to_path_buf(),
+    })?;
+    let name = known_host_name(host, port);
+    let mut keys = Vec::new();
+    for (index, line) in contents.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let key = line
+            .split_whitespace()
+            .nth(2)
+            .and_then(|encoded| parse_public_key_base64(encoded).ok());
+        let Some(key) = key else {
+            bail!(KnownHostsError::Corrupt {
                 path: path.to_path_buf(),
-            })?;
-        for line in contents.lines().map(str::trim) {
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let mut fields = line.split_whitespace();
-            let valid = fields.next().is_some()
-                && fields.next().is_some()
-                && fields
-                    .next()
-                    .is_some_and(|encoded| parse_public_key_base64(encoded).is_ok());
-            if !valid {
-                bail!(KnownHostsError::Corrupt {
-                    path: path.to_path_buf(),
-                });
-            }
+            });
+        };
+        if names_host(line, &name) {
+            keys.push((index + 1, key));
         }
     }
-    known_host_keys_path(host, port, path).map_err(|_| {
-        anyhow!(KnownHostsError::Unreadable {
-            path: path.to_path_buf(),
-        })
-    })
+    Ok(keys)
 }
 
 async fn authenticate(
@@ -1196,6 +1209,19 @@ fn key_paths(login: &HostLogin, key_dir: Option<&Path>) -> Result<Vec<PathBuf>> 
         .into_iter()
         .map(|name| dir.join(name))
         .collect())
+}
+
+/// The private key in the file at `path`, one of ShellRS's own or the
+/// user's.
+fn load_secret_key(
+    path: &Path,
+    passphrase: Option<&str>,
+) -> std::result::Result<russh::keys::PrivateKey, russh::keys::Error> {
+    let text = zeroize::Zeroizing::new(
+        String::from_utf8(crate::files::read(path)?)
+            .map_err(|_| russh::keys::Error::CouldNotReadKey)?,
+    );
+    decode_secret_key(&text, passphrase)
 }
 
 async fn load_private_key(

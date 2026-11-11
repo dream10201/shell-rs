@@ -27,7 +27,7 @@
 
 ShellRS 把 Xshell 式的主机管理和多标签终端、经终端连接的文件上传下载、SSH 端口转发放进同一个跨平台应用，JumpServer 等堡垒机也可以像调用 Xshell 一样调用它。它用 Rust 编写，界面基于 Zed 编辑器的 GPU 加速 UI 框架 GPUI（通过 [gpui-kit](https://gpui-kit.com)），不依赖 Electron 或 JVM。
 
-主机、分组、凭据和转发规则保存在本地的 SQLite 数据库里。密码和私钥口令只存进系统钥匙串（macOS 钥匙串、Windows 凭据管理器、Linux Secret Service），数据库里没有任何秘密。
+主机、分组、凭据和转发规则保存在本地的 SQLite 数据库里。ShellRS 存在这台电脑上的东西（数据库、设置、私钥、保存的密码和口令）都用首次启动时设的应用锁密码加密，不使用系统钥匙串，数据库里没有任何秘密。
 
 ## 功能
 
@@ -81,7 +81,9 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、经终端连接的文�
 
 **安全与更新**
 
-- 秘密只进系统钥匙串；主机信任记录存在 ShellRS 自己的 `known_hosts` 里，不改动 `~/.ssh`。
+- 全盘加密：应用锁密码加密全部数据（Argon2id、XChaCha20-Poly1305），每次启动和锁定后都要输入；不能关闭，忘了密码无法找回。
+- 各系统都能当便携版用：程序（`shellrs.exe`、`.AppImage` 或 `ShellRS.app`）旁边有 `data` 文件夹时，全部数据都在里面，拿到别的电脑用同一个密码就能打开，删掉就什么都不留。
+- 主机信任记录存在 ShellRS 自己的 `known_hosts` 里，不改动 `~/.ssh`。
 - 在线升级：更新清单经 minisign 签名，安装包按 SHA-256 校验；后台下载，重启或退出时安装。分稳定版和 Beta 两个渠道，检查更新只发送版本号、系统和 CPU 架构。
 
 ## 截图
@@ -105,7 +107,7 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、经终端连接的文�
 | macOS 11+（Apple Silicon） | `ShellRS-<版本>-macos-aarch64.dmg` | 已签名并经过 Apple 公证。打开 DMG，把 ShellRS 拖进「应用程序」 |
 | macOS 11+（Intel） | `ShellRS-<版本>-macos-x86_64.dmg` | 已签名并经过 Apple 公证。打开 DMG，把 ShellRS 拖进「应用程序」 |
 | Windows x64 | `ShellRS-<版本>-windows-x86_64-setup.exe` | 按当前用户安装，不需要管理员权限。安装程序暂未签名，SmartScreen 拦下时点「更多信息 › 仍要运行」 |
-| Windows x64（便携版） | `ShellRS-<版本>-windows-x86_64-portable.zip` | 解压到自己能写入的文件夹，运行 `shellrs.exe`，数据都在旁边的 `data` 文件夹里。见[Windows 便携版](docs/manual.zh.md#windows-便携版) |
+| Windows x64（便携版） | `ShellRS-<版本>-windows-x86_64-portable.zip` | 解压到自己能写入的文件夹，运行 `shellrs.exe`，数据都在旁边的 `data` 文件夹里。见[便携版](docs/manual.zh.md#便携版) |
 | Linux x64 | `ShellRS-<版本>-linux-x86_64.AppImage` | `chmod +x` 后直接运行，需要 glibc 2.31 以上（Ubuntu 20.04、Debian 11 及更新的版本） |
 
 每个安装包都附带 minisign 签名（`.minisig`），另有一份 `SHA256SUMS`。
@@ -114,7 +116,7 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、经终端连接的文�
 
 ## 快速上手
 
-1. 点标题栏的「新建主机…」（⌘N，Windows / Linux 上 Ctrl+N），填写地址、端口和认证方式，密码会存进系统钥匙串。
+1. 点标题栏的「新建主机…」（⌘N，Windows / Linux 上 Ctrl+N），填写地址、端口和认证方式，密码用应用锁密码加密保存。
 2. 双击主机打开终端。第一次连接时会请你确认主机密钥。
 3. 终端连上后，点标签栏右侧的「上传文件…」或「下载文件…」传文件。
 4. 标题栏「ShellRS」后面的三个图标切换侧栏：主机、端口转发、凭据。
@@ -163,7 +165,7 @@ cargo test
 - [GPUI](https://github.com/zed-industries/zed)（Zed）和 [gpui-kit](https://gpui-kit.com)：界面框架
 - [russh](https://github.com/Eugeny/russh)：SSH 协议
 - [alacritty_terminal](https://crates.io/crates/alacritty_terminal) 和 [portable-pty](https://crates.io/crates/portable-pty)：终端模拟与本地 PTY
-- [keyring](https://crates.io/crates/keyring)：系统钥匙串
+- [argon2](https://crates.io/crates/argon2)、[chacha20poly1305](https://crates.io/crates/chacha20poly1305)（RustCrypto）：本机数据的加密
 - [Simple Icons](https://simpleicons.org)：系统徽章使用的 logo（CC0）
 - [Termark](https://www.termark.app/) 和 Xshell：交互设计的参照
 

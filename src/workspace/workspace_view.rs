@@ -241,7 +241,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Self {
         let connector = crate::ssh::SshConnector::new(
-            crate::app::data_dir().join("known_hosts"),
+            crate::app::known_hosts_path(),
             crate::secrets::KeychainSource::shared(store.read(cx).secrets()),
         );
         let remote = Arc::new(crate::ssh::SshTerminalTransportProvider::with_connector(
@@ -599,6 +599,8 @@ impl Workspace {
             Self::watch_idle_lock(lock.clone(), window, cx);
             subscriptions.push(cx.observe_in(&lock, window, |this, _, window, cx| {
                 if !crate::app_lock::is_locked(cx) {
+                    // What changed while locked could not be sealed then.
+                    this.store.update(cx, |store, cx| store.save_now(cx));
                     for link in std::mem::take(&mut this.locked_links) {
                         this.open_link(link, window, cx);
                     }
@@ -2281,9 +2283,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_send_break))
             .on_action(cx.listener(Self::on_close_terminal))
             .on_action(cx.listener(Self::on_close_local_terminal))
-            .on_action(cx.listener(Self::on_enable_app_lock))
             .on_action(cx.listener(Self::on_change_app_lock_password))
-            .on_action(cx.listener(Self::on_disable_app_lock))
             .on_action(cx.listener(Self::on_lock_app))
             .on_action(cx.listener(Self::on_open_settings))
             .on_action(cx.listener(Self::on_check_for_updates))

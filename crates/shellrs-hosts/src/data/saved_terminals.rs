@@ -409,7 +409,7 @@ impl HostData {
     /// The output a saved terminal showed when it last closed, to draw
     /// again when it opens.
     pub fn kept_output(&self, id: SavedTerminalId) -> Option<Vec<u8>> {
-        let bytes = std::fs::read(self.kept_output_path(id)?).ok()?;
+        let bytes = shellrs_ssh::files::read(&self.kept_output_path(id)?).ok()?;
         (!bytes.is_empty()).then_some(bytes)
     }
 
@@ -422,11 +422,7 @@ impl HostData {
         };
         match output.filter(|output| !output.is_empty()) {
             Some(output) => {
-                let written = path
-                    .parent()
-                    .map_or(Ok(()), std::fs::create_dir_all)
-                    .and_then(|_| std::fs::write(&path, output));
-                if let Err(error) = written {
+                if let Err(error) = shellrs_ssh::files::write(&path, &output) {
                     eprintln!("shellrs: cannot keep a terminal's output: {error}");
                 }
             }

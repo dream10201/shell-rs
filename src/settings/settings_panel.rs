@@ -824,10 +824,9 @@ fn sidebar_widths_item(store: &Entity<SettingsStore>) -> SettingItem {
 }
 
 fn app_lock_group(store: &Entity<SettingsStore>, cx: &App) -> SettingGroup {
-    use crate::app::{ChangeAppLockPassword, DisableAppLock, EnableAppLock, LockApp};
+    use crate::app::{ChangeAppLockPassword, LockApp};
     let lock = crate::app_lock::AppLock::global(cx);
-    let enabled = lock.as_ref().is_some_and(|lock| lock.read(cx).is_enabled());
-    let available = lock.is_some();
+    let enabled = lock.is_some();
     let busy = lock.as_ref().is_some_and(|lock| lock.read(cx).is_busy());
     let mut items = vec![
         SettingItem::render(move |_, _, cx| {
@@ -837,60 +836,32 @@ fn app_lock_group(store: &Entity<SettingsStore>, cx: &App) -> SettingGroup {
                 .gap_3()
                 .justify_between()
                 .child(
-                    v_flex()
-                        .gap_1()
+                    div()
                         .min_w_0()
-                        .child(div().text_sm().child(if enabled {
-                            t!("app_lock.enabled")
-                        } else {
-                            t!("app_lock.disabled")
-                        }))
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(t!("app_lock.description")),
-                        ),
+                        .flex_1()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t!("app_lock.description")),
                 )
                 .child(
                     h_flex()
                         .gap_2()
-                        .when(enabled, |row| {
-                            row.child(
-                                Button::new("app-lock-now")
-                                    .label(t!("app_lock.lock_now"))
-                                    .disabled(busy)
-                                    .on_click(|_, window, cx| {
-                                        window.dispatch_action(Box::new(LockApp), cx)
-                                    }),
-                            )
-                            .child(
-                                Button::new("app-lock-change")
-                                    .label(t!("app_lock.change"))
-                                    .disabled(busy)
-                                    .on_click(|_, window, cx| {
-                                        window.dispatch_action(Box::new(ChangeAppLockPassword), cx)
-                                    }),
-                            )
-                            .child(
-                                Button::new("app-lock-disable")
-                                    .label(t!("app_lock.disable"))
-                                    .disabled(busy)
-                                    .on_click(|_, window, cx| {
-                                        window.dispatch_action(Box::new(DisableAppLock), cx)
-                                    }),
-                            )
-                        })
-                        .when(!enabled, |row| {
-                            row.child(
-                                Button::new("app-lock-enable")
-                                    .label(t!("app_lock.enable"))
-                                    .disabled(!available || busy)
-                                    .on_click(|_, window, cx| {
-                                        window.dispatch_action(Box::new(EnableAppLock), cx)
-                                    }),
-                            )
-                        }),
+                        .child(
+                            Button::new("app-lock-now")
+                                .label(t!("app_lock.lock_now"))
+                                .disabled(busy || !enabled)
+                                .on_click(|_, window, cx| {
+                                    window.dispatch_action(Box::new(LockApp), cx)
+                                }),
+                        )
+                        .child(
+                            Button::new("app-lock-change")
+                                .label(t!("app_lock.change"))
+                                .disabled(busy || !enabled)
+                                .on_click(|_, window, cx| {
+                                    window.dispatch_action(Box::new(ChangeAppLockPassword), cx)
+                                }),
+                        ),
                 )
         })
         .keywords(keywords(t!("app_lock.keywords"))),

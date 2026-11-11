@@ -102,8 +102,7 @@ impl AppShell {
     fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let lock = self.lock.read(cx);
         let locked = lock.is_locked();
-        let ready = lock.is_ready();
-        if ready && self.content.is_none() && !locked {
+        if self.content.is_none() && !locked {
             self.create_workspace(window, cx);
         }
         if locked {

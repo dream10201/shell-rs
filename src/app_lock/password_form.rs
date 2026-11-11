@@ -21,6 +21,8 @@ struct PasswordForm {
     repeat: Entity<InputState>,
     error: Option<SharedString>,
     working: bool,
+    /// On the unlock screen, where the form has its own button.
+    inline: bool,
     dismissed: bool,
     _subscriptions: Vec<Subscription>,
 }
@@ -53,13 +55,14 @@ impl PasswordForm {
             repeat,
             error: None,
             working: false,
+            inline: false,
             dismissed: false,
             _subscriptions: subscriptions,
         }
     }
 
     fn focus(&self, window: &mut Window, cx: &mut App) {
-        let input = if self.operation == PasswordOperation::Enable {
+        let input = if self.operation == PasswordOperation::Create {
             &self.new
         } else {
             &self.current
@@ -73,15 +76,12 @@ impl PasswordForm {
         }
         let current = Zeroizing::new(self.current.read(cx).value().to_string());
         let new = Zeroizing::new(self.new.read(cx).value().to_string());
-        let sets_password = matches!(
-            self.operation,
-            PasswordOperation::Enable | PasswordOperation::Change
-        );
-        self.error = if sets_password && new.chars().count() < 8 {
+        let sets_password = self.operation != PasswordOperation::Unlock;
+        self.error = if sets_password && new.chars().count() < super::SHORTEST_PASSWORD {
             Some(t!("app_lock.too_short"))
         } else if sets_password && new.as_str() != self.repeat.read(cx).value().as_str() {
             Some(t!("app_lock.mismatch"))
-        } else if self.operation != PasswordOperation::Enable && current.is_empty() {
+        } else if self.operation != PasswordOperation::Create && current.is_empty() {
             Some(t!("app_lock.enter_password"))
         } else {
             None
@@ -107,7 +107,7 @@ impl PasswordForm {
                                 input.set_masked(true, window, cx);
                             });
                         }
-                        if this.operation != PasswordOperation::Unlock && !this.dismissed {
+                        if !this.inline && !this.dismissed {
                             window.close_dialog(cx);
                         }
                     }
@@ -142,32 +142,26 @@ impl Render for PasswordForm {
             .gap_3()
             .child(
                 Form::new()
-                    .when(self.operation != PasswordOperation::Enable, |form| {
+                    .when(self.operation != PasswordOperation::Create, |form| {
                         form.child(
                             Field::new()
                                 .label(t!("app_lock.current_password"))
                                 .child(input(&self.current, "app-lock-password")),
                         )
                     })
-                    .when(
-                        matches!(
-                            self.operation,
-                            PasswordOperation::Enable | PasswordOperation::Change
-                        ),
-                        |form| {
-                            form.child(
-                                Field::new()
-                                    .label(t!("app_lock.new_password"))
-                                    .description(t!("app_lock.password_help"))
-                                    .child(input(&self.new, "app-lock-new-password")),
-                            )
-                            .child(
-                                Field::new()
-                                    .label(t!("app_lock.repeat_password"))
-                                    .child(input(&self.repeat, "app-lock-repeat-password")),
-                            )
-                        },
-                    ),
+                    .when(self.operation != PasswordOperation::Unlock, |form| {
+                        form.child(
+                            Field::new()
+                                .label(t!("app_lock.new_password"))
+                                .description(t!("app_lock.password_help"))
+                                .child(input(&self.new, "app-lock-new-password")),
+                        )
+                        .child(
+                            Field::new()
+                                .label(t!("app_lock.repeat_password"))
+                                .child(input(&self.repeat, "app-lock-repeat-password")),
+                        )
+                    }),
             )
             .when_some(self.error.clone(), |view, error| {
                 view.child(
@@ -181,11 +175,15 @@ impl Render for PasswordForm {
                         .child(error),
                 )
             })
-            .when(self.operation == PasswordOperation::Unlock, |view| {
+            .when(self.inline, |view| {
                 view.child(
                     Button::new("app-lock-unlock")
                         .primary()
-                        .label(t!("app_lock.unlock"))
+                        .label(if self.operation == PasswordOperation::Create {
+                            t!("app_lock.setup_commit")
+                        } else {
+                            t!("app_lock.unlock")
+                        })
                         .loading(self.working)
                         .disabled(self.working)
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -196,27 +194,14 @@ impl Render for PasswordForm {
     }
 }
 
-pub fn open_password_dialog(
-    service: Entity<AppLock>,
-    operation: PasswordOperation,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    if operation == PasswordOperation::Unlock || service.read(cx).is_locked() {
+/// Open the dialog that changes the password.
+pub fn open_password_dialog(service: Entity<AppLock>, window: &mut Window, cx: &mut App) {
+    if service.read(cx).is_locked() {
         return;
     }
-    let title = match operation {
-        PasswordOperation::Enable => t!("app_lock.enable_title"),
-        PasswordOperation::Change => t!("app_lock.change_title"),
-        PasswordOperation::Disable => t!("app_lock.disable_title"),
-        PasswordOperation::Unlock => unreachable!(),
-    };
-    let commit_label = match operation {
-        PasswordOperation::Enable => t!("app_lock.enable_commit"),
-        PasswordOperation::Change => t!("app_lock.change_commit"),
-        PasswordOperation::Disable => t!("app_lock.disable_commit"),
-        PasswordOperation::Unlock => unreachable!(),
-    };
+    let operation = PasswordOperation::Change;
+    let title = t!("app_lock.change_title");
+    let commit_label = t!("app_lock.change_commit");
     let form = cx.new(|cx| PasswordForm::new(service, operation, window, cx));
     window.open_dialog(cx, {
         let form = form.clone();
@@ -265,9 +250,33 @@ pub struct UnlockScreen {
 
 impl UnlockScreen {
     pub fn new(service: Entity<AppLock>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let form =
-            cx.new(|cx| PasswordForm::new(service.clone(), PasswordOperation::Unlock, window, cx));
-        let subscription = cx.observe(&service, |_, _, cx| cx.notify());
+        let operation = |service: &AppLock| {
+            if service.needs_password() {
+                PasswordOperation::Create
+            } else {
+                PasswordOperation::Unlock
+            }
+        };
+        let form = cx.new(|cx| {
+            let mut form =
+                PasswordForm::new(service.clone(), operation(service.read(cx)), window, cx);
+            form.inline = true;
+            form
+        });
+        // A password just chosen is the one asked for from then on.
+        let subscription = cx.observe(&service, {
+            let form = form.clone();
+            move |_, service, cx| {
+                let operation = operation(service.read(cx));
+                form.update(cx, |form, cx| {
+                    if form.operation != operation {
+                        form.operation = operation;
+                        cx.notify();
+                    }
+                });
+                cx.notify();
+            }
+        });
         Self {
             service,
             form,
@@ -288,12 +297,11 @@ impl UnlockScreen {
 
 impl Render for UnlockScreen {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let loading = self.service.read(cx).is_loading();
-        let error = self
-            .service
-            .read(cx)
-            .load_error()
-            .map(|error| t!("app_lock.load_failed", error = error));
+        let (title, description) = if self.service.read(cx).needs_password() {
+            (t!("app_lock.setup_title"), t!("app_lock.setup_description"))
+        } else {
+            (t!("app_lock.locked"), t!("app_lock.unlock_description"))
+        };
         v_flex()
             .id("app-lock-screen")
             .test_support()
@@ -321,45 +329,15 @@ impl Render for UnlockScreen {
                                 div()
                                     .text_xl()
                                     .font_weight(FontWeight::SEMIBOLD)
-                                    .child(t!("app_lock.locked")),
+                                    .child(title),
                             )
                             .child(
                                 div()
                                     .text_sm()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child(t!("app_lock.unlock_description")),
+                                    .child(description),
                             )
-                            .map(|view| match (loading, error) {
-                                (true, _) => view.child(
-                                    div()
-                                        .id("app-lock-loading")
-                                        .test_support()
-                                        .role(Role::Status)
-                                        .text_sm()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(t!("app_lock.loading")),
-                                ),
-                                (false, Some(error)) => view
-                                    .child(
-                                        div()
-                                            .id("app-lock-load-error")
-                                            .test_support()
-                                            .role(Role::Alert)
-                                            .aria_label(error.clone())
-                                            .text_sm()
-                                            .text_color(cx.theme().danger)
-                                            .child(error),
-                                    )
-                                    .child(
-                                        Button::new("app-lock-retry")
-                                            .label(t!("app_lock.retry"))
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.service
-                                                    .update(cx, |service, cx| service.reload(cx))
-                                            })),
-                                    ),
-                                (false, None) => view.child(self.form.clone()),
-                            }),
+                            .child(self.form.clone()),
                     ),
             )
     }

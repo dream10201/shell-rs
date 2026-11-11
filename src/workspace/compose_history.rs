@@ -39,7 +39,7 @@ impl ComposeHistory {
     /// there is none or it does not read: a convenience, as the window's
     /// place is.
     pub(super) fn load(path: PathBuf) -> Self {
-        let mut commands = std::fs::read(&path)
+        let mut commands = shellrs_ssh::files::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Saved>(&bytes).ok())
             .map(|saved| saved.commands)
@@ -111,15 +111,10 @@ impl ComposeHistory {
 /// is only logged: the history stays until quitting.
 fn write(commands: &[String], path: &Path) {
     let written = (|| {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
         let saved = Saved {
             commands: commands.to_vec(),
         };
-        let temporary = path.with_extension("json.tmp");
-        std::fs::write(&temporary, serde_json::to_vec_pretty(&saved)?)?;
-        std::fs::rename(temporary, path)
+        shellrs_ssh::files::write(path, &serde_json::to_vec_pretty(&saved)?)
     })();
     if let Err(error) = written {
         eprintln!("shellrs: cannot save the compose pane's history: {error}");

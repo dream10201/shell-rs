@@ -27,7 +27,7 @@
 
 ShellRS brings Xshell-style host management and tabbed terminals, file uploads and downloads over a terminal’s connection, and SSH port forwarding together in one cross-platform app, which bastion hosts such as JumpServer can launch the way they launch Xshell. It is written in Rust, and its UI is built on GPUI, the GPU-accelerated UI framework of the Zed editor (through [gpui-kit](https://gpui-kit.com)). There is no Electron and no JVM.
 
-Hosts, groups, credentials and forwarding rules live in a local SQLite database. Passwords and key passphrases go only into the system keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service); the database never holds a secret.
+Hosts, groups, credentials and forwarding rules live in a local SQLite database. Everything ShellRS keeps on this computer (the database, settings, private keys, saved passwords and passphrases) is encrypted with the app lock password you choose on first start; the system keychain isn't used, and the database never holds a secret.
 
 ## Features
 
@@ -81,7 +81,9 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 
 **Security and updates**
 
-- Secrets stay in the system keychain. Host keys are recorded in ShellRS's own `known_hosts`, never in `~/.ssh`.
+- Full encryption: an app lock password, asked for at every start and after locking, encrypts all data (Argon2id, XChaCha20-Poly1305). It can't be turned off, and a forgotten password can't be recovered.
+- Portable on every system: with a `data` folder beside the program (`shellrs.exe`, the `.AppImage` or `ShellRS.app`), all data lives there, moves to another computer with the same password, and leaves nothing behind when deleted.
+- Host keys are recorded in ShellRS's own `known_hosts`, never in `~/.ssh`.
 - In-app updates: the update manifest is minisign-signed and each package is checked against its SHA-256. Updates download in the background and install on restart or quit. There are stable and beta channels, and an update check sends only the version, OS and CPU architecture.
 
 ## Screenshots
@@ -105,16 +107,16 @@ Download from GitHub [Releases](https://github.com/dream10201/shell-rs/releases)
 | macOS 11+ (Apple Silicon) | `ShellRS-<version>-macos-aarch64.dmg` | Signed and notarized. Open the DMG and drag ShellRS into Applications |
 | macOS 11+ (Intel) | `ShellRS-<version>-macos-x86_64.dmg` | Signed and notarized. Open the DMG and drag ShellRS into Applications |
 | Windows x64 | `ShellRS-<version>-windows-x86_64-setup.exe` | Installs per user, no administrator rights needed. The installer is not signed yet; if SmartScreen stops it, choose "More info › Run anyway" |
-| Windows x64 (portable) | `ShellRS-<version>-windows-x86_64-portable.zip` | Unzip into a folder you can write to and run `shellrs.exe`; its data stays in the `data` folder beside it. See [Windows portable](docs/manual.md#windows-portable) |
+| Windows x64 (portable) | `ShellRS-<version>-windows-x86_64-portable.zip` | Unzip into a folder you can write to and run `shellrs.exe`; its data stays in the `data` folder beside it. See [Portable copies](docs/manual.md#portable-copies) |
 | Linux x64 | `ShellRS-<version>-linux-x86_64.AppImage` | `chmod +x` and run. Needs glibc 2.31 or newer (Ubuntu 20.04, Debian 11 and later) |
 
 Every package comes with a minisign signature (`.minisig`), and each release has a `SHA256SUMS` file.
 
-Once installed, ShellRS keeps itself up to date: it checks, downloads and verifies new versions in the background, then shows an icon in the top-right corner of the title bar; click it and choose "Restart to update", or just quit and the update is installed on the way out. Automatic updates are unavailable when ShellRS runs from inside the DMG or outside the Applications folder, on Linux when it isn't run as the AppImage, or when the Windows portable copy's folder can't be written to.
+Once installed, ShellRS keeps itself up to date: it checks, downloads and verifies new versions in the background, then shows an icon in the top-right corner of the title bar; click it and choose "Restart to update", or just quit and the update is installed on the way out. Automatic updates are unavailable when ShellRS runs from inside the DMG or outside the Applications folder, on Linux when it isn't run as the AppImage, or when a portable copy's folder can't be written to.
 
 ## Getting started
 
-1. Click "New host…" in the title bar (⌘N, or Ctrl+N on Windows and Linux) and fill in the address, port and login. Passwords go into the system keychain.
+1. Click "New host…" in the title bar (⌘N, or Ctrl+N on Windows and Linux) and fill in the address, port and login. Passwords are saved encrypted with the app lock password.
 2. Double-click a host to open a terminal. On the first connection you're asked to confirm the host key.
 3. Once a terminal is connected, click "Upload files…" or "Download files…" at the right of its tab bar to move files.
 4. The three icons after "ShellRS" in the title bar switch the sidebar between hosts, port forwards and credentials.
@@ -165,7 +167,7 @@ cargo test
 - [GPUI](https://github.com/zed-industries/zed) (Zed) and [gpui-kit](https://gpui-kit.com): the UI framework
 - [russh](https://github.com/Eugeny/russh): SSH
 - [alacritty_terminal](https://crates.io/crates/alacritty_terminal) and [portable-pty](https://crates.io/crates/portable-pty): terminal emulation and local PTYs
-- [keyring](https://crates.io/crates/keyring): the system keychain
+- [argon2](https://crates.io/crates/argon2) and [chacha20poly1305](https://crates.io/crates/chacha20poly1305) (RustCrypto): the encryption of saved data
 - [Simple Icons](https://simpleicons.org): the OS logos on host badges (CC0)
 - [Termark](https://www.termark.app/) and Xshell: the interaction designs ShellRS follows
 

@@ -287,14 +287,14 @@ host.dialog.optional:
   zh-CN: 可选
   en: Optional
 host.dialog.keychain_note:
-  zh-CN: 密码保存在系统钥匙串，不会写入 ShellRS 的数据库。
-  en: Passwords are kept in the system keychain, never in ShellRS’s database.
+  zh-CN: 密码同其他数据一样，用应用锁密码加密保存。
+  en: Passwords are encrypted with the app lock password, like everything else.
 host.dialog.no_keychain_note:
-  zh-CN: 系统钥匙串不可用，这台机器上无法保存密码，每次连接都会询问。
-  en: The system keychain isn’t available, so passwords can’t be saved on this computer and are asked for at each connection.
+  zh-CN: 密码存储不可用，这台机器上无法保存密码，每次连接都会询问。
+  en: Password storage isn’t available, so passwords can’t be saved on this computer and are asked for at each connection.
 host.dialog.telnet_no_keychain_note:
-  zh-CN: 系统钥匙串不可用，这台机器上无法保存密码，连接后自己输入。
-  en: The system keychain isn’t available, so the password can’t be saved on this computer. Type it after connecting.
+  zh-CN: 密码存储不可用，这台机器上无法保存密码，连接后自己输入。
+  en: Password storage isn’t available, so the password can’t be saved on this computer. Type it after connecting.
 host.dialog.telnet_auto_login:
   zh-CN: Telnet 自动登录
   en: Log in automatically
@@ -593,6 +593,9 @@ host.link.unreadable:
   en: The link has characters that can’t be read.
 
 # 本地数据库: a change that stands in memory but is not on disk.
+host.store.save_failed:
+  zh-CN: 改动没能写入加密的数据文件，关闭 ShellRS 后会丢失：%{error}
+  en: "The change couldn’t be written to the encrypted data file and will be lost when ShellRS closes: %{error}"
 host.store.not_saved.new_host:
   zh-CN: 新建主机未能保存到本地数据库：%{error}
   en: "Couldn’t save the new host to the local database: %{error}"
@@ -743,36 +746,36 @@ host.store.sync.state_not_saved:
   en: "Couldn’t save the sync state: %{error}"
 
 host.store.secret.password_write:
-  zh-CN: 密码未能写入系统钥匙串：%{error}
-  en: "Couldn’t save the password to the system keychain: %{error}"
+  zh-CN: 密码未能加密保存：%{error}
+  en: "Couldn’t save the password to the encrypted data: %{error}"
 host.store.secret.password_delete:
-  zh-CN: 密码未能从系统钥匙串删除：%{error}
-  en: "Couldn’t delete the password from the system keychain: %{error}"
+  zh-CN: 密码未能从加密数据里删除：%{error}
+  en: "Couldn’t delete the password from the encrypted data: %{error}"
 host.store.secret.passphrase_write:
-  zh-CN: 私钥口令未能写入系统钥匙串：%{error}
-  en: "Couldn’t save the private key’s passphrase to the system keychain: %{error}"
+  zh-CN: 私钥口令未能加密保存：%{error}
+  en: "Couldn’t save the private key’s passphrase to the encrypted data: %{error}"
 host.store.secret.passphrase_delete:
-  zh-CN: 私钥口令未能从系统钥匙串删除：%{error}
-  en: "Couldn’t delete the private key’s passphrase from the system keychain: %{error}"
+  zh-CN: 私钥口令未能从加密数据里删除：%{error}
+  en: "Couldn’t delete the private key’s passphrase from the encrypted data: %{error}"
 host.store.secret.credential_write:
-  zh-CN: 凭据的密码未能写入系统钥匙串：%{error}
-  en: "Couldn’t save the credential’s password to the system keychain: %{error}"
+  zh-CN: 凭据的密码未能加密保存：%{error}
+  en: "Couldn’t save the credential’s password to the encrypted data: %{error}"
 host.store.secret.credential_delete:
-  zh-CN: 凭据的密码未能从系统钥匙串删除：%{error}
-  en: "Couldn’t delete the credential’s password from the system keychain: %{error}"
+  zh-CN: 凭据的密码未能从加密数据里删除：%{error}
+  en: "Couldn’t delete the credential’s password from the encrypted data: %{error}"
 host.store.secret.proxy_write:
-  zh-CN: 代理的密码未能写入系统钥匙串：%{error}
-  en: "Couldn’t save the proxy’s password to the system keychain: %{error}"
+  zh-CN: 代理的密码未能加密保存：%{error}
+  en: "Couldn’t save the proxy’s password to the encrypted data: %{error}"
 host.store.secret.proxy_delete:
-  zh-CN: 代理的密码未能从系统钥匙串删除：%{error}
-  en: "Couldn’t delete the proxy’s password from the system keychain: %{error}"
+  zh-CN: 代理的密码未能从加密数据里删除：%{error}
+  en: "Couldn’t delete the proxy’s password from the encrypted data: %{error}"
 host.store.secret.temporary:
   zh-CN: 这次连接的密码未能记下：%{error}
   en: "Couldn’t keep the password for this connection: %{error}"
 
 host.store.secret.sync_keyring:
-  zh-CN: 同步的密钥未能在钥匙串里更新：%{error}
-  en: "Couldn’t update the sync keys in the keychain: %{error}"
+  zh-CN: 同步的密钥未能在加密数据里更新：%{error}
+  en: "Couldn’t update the sync keys in the encrypted data: %{error}"
 
 # 导入主机: the dialog that adds the hosts ~/.ssh/config or known_hosts names.
 host.import.key_not_copied:

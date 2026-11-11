@@ -38,6 +38,10 @@ pub struct WindowState {
     /// desktop's elsewhere.
     bounds: Bounds<Pixels>,
     maximized: bool,
+    /// 设置 › 应用 › 窗口 as it was then: the settings themselves are
+    /// sealed until the password is given, after the window has opened.
+    #[serde(default)]
+    remember: WindowSettings,
 }
 
 impl WindowState {
@@ -57,6 +61,7 @@ impl WindowState {
             display: display.uuid().ok().map(|uuid| uuid.to_string()),
             bounds,
             maximized,
+            remember: WindowSettings::default(),
         })
     }
 
@@ -66,14 +71,14 @@ impl WindowState {
         serde_json::from_slice(&std::fs::read(path).ok()?).ok()
     }
 
+    /// What of it the next launch uses.
+    pub fn remember(&self) -> WindowSettings {
+        self.remember
+    }
+
     /// Written whole, through a temporary file, as the settings are.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let temporary = path.with_extension("json.tmp");
-        std::fs::write(&temporary, serde_json::to_vec_pretty(self)?)?;
-        std::fs::rename(temporary, path)
+        shellrs_ssh::files::replace(path, &serde_json::to_vec_pretty(self)?)
     }
 }
 
@@ -87,14 +92,16 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let latest: Rc<RefCell<Option<WindowState>>> = Rc::default();
-        // Written again on quitting, in case a change has not settled. The
-        // app's, not this view's: on Windows and Linux closing the window
-        // has dropped the view by then.
+        // As it is now: quitting writes it even if it never moved.
+        let latest = Rc::new(RefCell::new(WindowState::capture(window, cx)));
+        // Written again on quitting, in case a change has not settled, with
+        // 设置 › 应用 › 窗口 as it is then. The app's, not this view's: on
+        // Windows and Linux closing the window has dropped the view by then.
         App::on_app_quit(cx, {
-            let (latest, path) = (latest.clone(), path.clone());
-            move |_| {
-                if let Some(state) = latest.borrow().as_ref() {
+            let (latest, path, settings) = (latest.clone(), path.clone(), self.settings().clone());
+            move |cx| {
+                if let Some(state) = latest.borrow_mut().as_mut() {
+                    state.remember = settings.read(cx).settings().window;
                     write(state, &path);
                 }
                 async {}
@@ -102,9 +109,10 @@ impl Workspace {
         })
         .detach();
         let subscription = cx.observe_window_bounds(window, move |this, window, cx| {
-            let Some(state) = WindowState::capture(window, cx) else {
+            let Some(mut state) = WindowState::capture(window, cx) else {
                 return;
             };
+            state.remember = this.settings().read(cx).settings().window;
             if latest.borrow().as_ref() == Some(&state) {
                 return;
             }
@@ -272,6 +280,7 @@ mod tests {
             display: Some(display.into()),
             bounds,
             maximized,
+            remember: WindowSettings::default(),
         }
     }
 

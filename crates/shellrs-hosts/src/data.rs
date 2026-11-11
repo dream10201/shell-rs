@@ -53,7 +53,7 @@ pub use sync::{
 /// the change stands and a [`Failure`] is said so the user can be told.
 ///
 /// Passwords and private-key passphrases never reach the database. They go to
-/// the system keychain through `secrets`, on a background thread (see
+/// the secret store given as `secrets`, on a background thread (see
 /// [`Self::take_secret_jobs`]), and report failures the same way.
 ///
 /// A temporary host is one connected to without saving it, kept apart from
@@ -220,7 +220,7 @@ pub enum Failure {
 /// Why a secret is not kept.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SecretError {
-    /// This computer has no system keychain.
+    /// There is nowhere to keep secrets.
     Unavailable,
     /// The keychain's own failure, as it put it.
     Keychain(String),
@@ -377,11 +377,26 @@ impl HostData {
         }
     }
 
-    /// Attach the system keychain. `main` does this once at startup; the UI
+    /// Attach where passwords are kept. `main` does this once at startup; the UI
     /// tests attach an in-memory store instead.
     pub fn with_secrets(mut self, secrets: SharedSecretStore) -> Self {
         self.secrets = Arc::new(TemporarySecretStore::new(secrets));
         self
+    }
+
+    /// How many changes the database has taken; none without one.
+    pub fn database_changes(&self) -> Option<u64> {
+        self.database.as_ref().map(HostDatabase::changes)
+    }
+
+    /// The database as [`HostDatabase::image`] gives it, when it changed
+    /// since `seen` and no batch is open, with what to pass as `seen` next
+    /// time.
+    pub fn database_image(&mut self, seen: u64) -> Option<rusqlite::Result<(Vec<u8>, u64)>> {
+        let database = self.database.as_mut()?;
+        let changes = database.changes();
+        (changes != seen && !database.in_batch())
+            .then(|| database.image().map(|image| (image, changes)))
     }
 
     /// Keep pasted and generated private keys in `dir`. `main` puts it
@@ -404,9 +419,10 @@ impl HostData {
     /// folder at that file in this one (see `moved_key`): a portable copy
     /// moved to another drive letter, or another copy's data copied in.
     /// Writes straight to the database, before the store is in use, and
-    /// says what could not be saved. The new path asks for the key's
-    /// passphrase once more: the keychain knows it by the old one.
+    /// says what could not be saved. A saved passphrase, kept by the key's
+    /// path, moves to the new one.
     pub fn adopt_moved_keys(&mut self) -> Option<Failure> {
+        use crate::secrets::SecretStore as _;
         let dir = self.key_dir.clone()?;
         let mut problem = None;
         for credential in &mut self.credentials {
@@ -417,7 +433,19 @@ impl HostData {
             else {
                 continue;
             };
-            credential.key_path = Some(moved.display().to_string().into());
+            let old = credential
+                .key_path
+                .replace(moved.display().to_string().into());
+            let (old, new) = (
+                old.map(|path| SecretRef::passphrase(path.as_ref())),
+                SecretRef::passphrase(&moved),
+            );
+            if let Some(old) = old
+                && let Ok(Some(passphrase)) = self.secrets.get(&old)
+                && self.secrets.set(&new, &passphrase).is_ok()
+            {
+                let _ = self.secrets.delete(&old);
+            }
             if let Some(database) = &self.database
                 && let Err(error) = database.update_credential(credential)
             {
@@ -3748,11 +3776,27 @@ mod tests {
         }
         drop(database);
 
+        use crate::secrets::SecretStore as _;
+        let secrets = Arc::new(crate::secrets::InMemorySecretStore::default());
+        secrets
+            .set(&SecretRef::passphrase(&before), "open sesame")
+            .unwrap();
         let mut store = HostData::load(HostDatabase::open(&path).unwrap())
             .unwrap()
+            .with_secrets(secrets.clone())
             .with_key_dir(&keys);
         assert_eq!(store.adopt_moved_keys(), None);
         let moved = keys.join(name.as_str()).display().to_string();
+        // The passphrase saved for the key went with it.
+        assert_eq!(
+            secrets
+                .get(&SecretRef::passphrase(&moved))
+                .unwrap()
+                .as_deref()
+                .map(String::as_str),
+            Some("open sesame")
+        );
+        assert_eq!(secrets.len(), 1);
         let key_of = |store: &HostData, id| {
             store
                 .credential(CredentialId(id))

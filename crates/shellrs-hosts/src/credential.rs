@@ -19,7 +19,7 @@ pub struct CredentialId(pub u64);
 /// What a credential logs in with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum CredentialKind {
-    /// A password kept in the system keychain under the credential's own
+    /// A password kept with the secrets under the credential's own
     /// entry.
     #[default]
     Password,

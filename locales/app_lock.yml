@@ -4,35 +4,17 @@ app_lock.title:
   zh-CN: 应用锁
   en: App lock
 app_lock.description:
-  zh-CN: 每次启动 ShellRS 时需要输入应用锁密码。
-  en: Require the app lock password each time ShellRS starts.
-app_lock.enabled:
-  zh-CN: 已启用应用锁
-  en: App lock is on
-app_lock.disabled:
-  zh-CN: 未启用应用锁
-  en: App lock is off
-app_lock.enable:
-  zh-CN: 启用…
-  en: Enable…
+  zh-CN: ShellRS 的全部数据都用应用锁密码加密保存，每次启动和锁定后都要输入密码。
+  en: Everything ShellRS keeps is encrypted with the app lock password, which is asked for at every start and after locking.
 app_lock.change:
   zh-CN: 修改密码…
   en: Change password…
-app_lock.disable:
-  zh-CN: 关闭…
-  en: Turn off…
 app_lock.lock_now:
   zh-CN: 立即锁定
   en: Lock now
-app_lock.enable_title:
-  zh-CN: 启用应用锁
-  en: Enable app lock
 app_lock.change_title:
   zh-CN: 修改应用锁密码
   en: Change app lock password
-app_lock.disable_title:
-  zh-CN: 关闭应用锁
-  en: Turn off app lock
 app_lock.current_password:
   zh-CN: 应用锁密码
   en: App lock password
@@ -43,17 +25,11 @@ app_lock.repeat_password:
   zh-CN: 确认新密码
   en: Confirm new password
 app_lock.password_help:
-  zh-CN: 至少 8 个字符。请妥善保管，应用锁密码无法找回。
-  en: At least 8 characters. Keep it safe; the app lock password cannot be recovered.
-app_lock.enable_commit:
-  zh-CN: 启用
-  en: Enable
+  zh-CN: 至少 8 个字符。请妥善保管：忘记密码，数据就再也打不开。
+  en: "At least 8 characters. Keep it safe: without it the data can never be opened again."
 app_lock.change_commit:
   zh-CN: 保存密码
   en: Save password
-app_lock.disable_commit:
-  zh-CN: 关闭应用锁
-  en: Turn off app lock
 app_lock.locked:
   zh-CN: ShellRS 已锁定
   en: ShellRS is locked
@@ -76,17 +52,11 @@ app_lock.wrong_password:
   zh-CN: 应用锁密码不正确，请重新输入。
   en: The app lock password is incorrect. Try again.
 app_lock.unavailable:
-  zh-CN: 应用锁当前不可修改，请稍后重试。
-  en: App lock cannot be changed right now. Try again later.
+  zh-CN: 现在不能进行这项操作，请稍后重试。
+  en: That can’t be done right now. Try again later.
 app_lock.failed:
-  zh-CN: 无法验证应用锁密码：%{error}
-  en: "Could not verify the app lock password: %{error}"
-app_lock.save_failed:
-  zh-CN: 未能保存应用锁，原有设置保持不变：%{error}
-  en: "Could not save app lock. Its previous settings are unchanged: %{error}"
-app_lock.load_failed:
-  zh-CN: 无法读取系统钥匙串中的应用锁，暂时无法进入。请允许钥匙串访问后重试：%{error}
-  en: "Could not read app lock from the system keychain. Allow keychain access and retry: %{error}"
+  zh-CN: 无法保存或读取加密数据：%{error}
+  en: "Couldn’t read or save the encrypted data: %{error}"
 app_lock.keywords:
   zh-CN: 应用锁,密码,安全,启动,解锁,锁定,锁屏
   en: app lock,password,security,startup,unlock,lock,lock screen
@@ -109,9 +79,15 @@ app_lock.screen_description:
   zh-CN: 电脑锁屏后，ShellRS 也一起锁定。
   en: ShellRS locks as soon as this computer’s screen is locked.
 
-app_lock.loading:
-  zh-CN: 正在读取系统钥匙串…
-  en: Reading the system keychain…
-app_lock.retry:
-  zh-CN: 重试
-  en: Retry
+app_lock.damaged:
+  zh-CN: 加密数据的密钥文件（vault.json）已损坏，无法解锁。
+  en: The key file of the encrypted data (vault.json) is damaged, so it can’t be unlocked.
+app_lock.setup_title:
+  zh-CN: 设置应用锁密码
+  en: Set the app lock password
+app_lock.setup_description:
+  zh-CN: ShellRS 用这个密码加密主机、密码、私钥、设置等全部数据，每次启动都要输入。
+  en: ShellRS encrypts everything with this password, from hosts, passwords and private keys to settings, and asks for it at every start.
+app_lock.setup_commit:
+  zh-CN: 开始使用
+  en: Get started

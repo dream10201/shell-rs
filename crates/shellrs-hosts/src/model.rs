@@ -434,7 +434,7 @@ impl Host {
         is_ip_address(&self.address)
     }
 
-    /// Where this host's login password lives in the system keychain.
+    /// Where this host's login password lives among the secrets.
     /// Keyed by the endpoint, so renaming or copying a host keeps the
     /// password and two hosts on the same account share one entry.
     pub fn password_secret(&self) -> SecretRef {

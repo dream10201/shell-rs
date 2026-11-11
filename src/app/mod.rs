@@ -23,8 +23,8 @@ pub use computer::computer_name;
 pub use menu_bar::show_menu_bar;
 pub use paths::{
     PORTABLE_DATA, SETUP_UNINSTALLER, compose_history_path, data_dir, database_path,
-    instance_endpoint, instance_socket_path, keys_dir, portable_root, settings_path,
-    terminal_output_dir, updates_dir, window_state_path,
+    instance_endpoint, instance_socket_path, keys_dir, known_hosts_path, portable_root,
+    settings_path, terminal_output_dir, updates_dir, vault_dir, window_state_path,
 };
 pub use quit::{quit_held_back, set_quit_guard};
 pub use rendering::{SOFTWARE_FRAME_INTERVAL, frame_due, note_renderer, software_rendering};

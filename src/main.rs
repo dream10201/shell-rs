@@ -9,6 +9,7 @@ use shellrs::host::{HostDatabase, HostStore};
 use shellrs::settings::{SettingsProblem, SettingsStore};
 
 fn main() {
+    keep_memory_private();
     let args = shellrs::instance::command_line_arguments();
     // `ShellRS ssh://user@host:port` or `ShellRS -url … -newtab 名称`: a
     // bastion host opening ShellRS the way it opens Xshell. On every build,
@@ -33,19 +34,12 @@ fn main() {
         }
     });
     app.run(|cx| {
-        // Read before anything is built: the settings choose the language
-        // every text is in, and 应用 › 窗口 where the window opens.
-        let (settings, settings_problem) = open_settings();
-        let locale = settings.settings().language.resolved();
-        shellrs::i18n::set_locale(locale);
-        // Defaults that become the user's own, the example highlight rules
-        // a first start fills in, are made while reading: read again, now
-        // in the language just chosen.
-        let (settings, settings_problem) = if locale == shellrs::i18n::LOCALES[0] {
-            (settings, settings_problem)
-        } else {
-            open_settings()
-        };
+        // Everything ShellRS keeps is sealed in the vault, the settings
+        // too: until the password is given the window is in the system's
+        // language and the default theme.
+        let vault = std::sync::Arc::new(shellrs::vault::Vault::new(shellrs::app::vault_dir()));
+        shellrs::vault::install(vault.clone());
+        shellrs::i18n::set_locale(shellrs::settings::InterfaceLanguage::default().resolved());
         shellrs::init(cx);
         // 显示或隐藏 ShellRS takes its key from the system; tests never do.
         shellrs::app::listen_for_system_hotkey(cx);
@@ -56,8 +50,11 @@ fn main() {
         cx.activate(true);
 
         let saved = shellrs::workspace::WindowState::load(&shellrs::app::window_state_path());
-        let options =
-            shellrs::workspace::window_options(saved.as_ref(), settings.settings().window, cx);
+        let remember = saved
+            .as_ref()
+            .map(shellrs::workspace::WindowState::remember)
+            .unwrap_or_default();
+        let options = shellrs::workspace::window_options(saved.as_ref(), remember, cx);
         cx.spawn(async move |cx| {
             let window = cx
                 .open_window(options, |window, cx| {
@@ -69,17 +66,12 @@ fn main() {
                     // Drawn by the processor (a virtual machine without 3D),
                     // ShellRS draws fewer frames.
                     shellrs::app::note_renderer(window, cx);
-                    let lock = cx.new(|cx| {
-                        shellrs::app_lock::AppLock::new(
-                            std::sync::Arc::new(shellrs::app_lock::KeychainLockStore),
-                            cx,
-                        )
-                    });
+                    let lock = cx.new(|_| shellrs::app_lock::AppLock::new(vault.clone()));
                     shellrs::app_lock::AppLock::install(lock.clone(), cx);
                     lock.update(cx, |lock, _| {
                         lock.watch_screen(shellrs::app_lock::system_screen())
                     });
-                    shellrs::settings::apply(settings.settings(), window, cx);
+                    shellrs::settings::apply(shellrs::settings::AppSettings::default(), window, cx);
                     let server = match shellrs::instance::InstanceServer::reserve(
                         shellrs::app::instance_socket_path(),
                     ) {
@@ -95,8 +87,14 @@ fn main() {
                             lock,
                             Some(server),
                             move |server, pending_links, window, cx| {
-                                let (store, problem) = open_store();
-                                let store = cx.new(|_| store);
+                                let (settings, settings_problem) = open_settings();
+                                shellrs::settings::apply(settings.settings(), window, cx);
+                                let (store, problem) = open_store(&vault);
+                                let store = cx.new(|cx| {
+                                    let mut store = store;
+                                    store.keep_at(shellrs::app::database_path(), cx);
+                                    store
+                                });
                                 let settings = cx.new(|_| settings);
                                 let workspace = cx.new(|cx| {
                                     shellrs::workspace::Workspace::new_with_instance_server(
@@ -135,17 +133,15 @@ fn main() {
     shellrs::update::start_handed_over();
 }
 
-/// Load the hosts saved on disk. If the database cannot be opened the
+/// Load the hosts kept in the vault. If the database cannot be opened the
 /// window still comes up, on a store that forgets everything when it closes;
 /// the returned message says so.
 ///
-/// Either way the store gets the system keychain, which is where passwords
-/// live. A machine without one still runs; the host form says so and
-/// disables its password field. Pasted and generated private keys go
-/// beside the database; the credentials follow them when the data folder
-/// has moved.
-fn open_store() -> (HostStore, Option<SharedString>) {
-    let secrets = shellrs::secrets::system_secret_store();
+/// Passwords go into the vault's sealed file, pasted and generated private
+/// keys beside the database; the credentials follow them when the data
+/// folder has moved.
+fn open_store(vault: &std::sync::Arc<shellrs::vault::Vault>) -> (HostStore, Option<SharedString>) {
+    let secrets = std::sync::Arc::new(shellrs::vault::VaultSecretStore::new(vault.clone()));
     match load_store() {
         // Keys are kept only with a database to remember them: a store
         // that forgets everything would leave them behind unused.
@@ -167,19 +163,48 @@ fn open_store() -> (HostStore, Option<SharedString>) {
     }
 }
 
-/// Load the settings file. Without a data directory the settings still
-/// work, only for this run; the returned problem says so.
+/// Load the settings: in the language they choose, since the defaults that
+/// become the user's own (the example highlight rules of a first start)
+/// are made while reading.
 fn open_settings() -> (SettingsStore, Option<SettingsProblem>) {
-    match shellrs::app::settings_path() {
-        Ok(path) => SettingsStore::load(path),
-        Err(error) => (
-            SettingsStore::in_memory(),
-            Some(SettingsProblem::Unsaved(error.to_string())),
-        ),
+    let (settings, problem) = SettingsStore::load(shellrs::app::settings_path());
+    let locale = settings.settings().language.resolved();
+    if locale == shellrs::i18n::locale() {
+        return (settings, problem);
     }
+    shellrs::i18n::set_locale(locale);
+    SettingsStore::load(shellrs::app::settings_path())
 }
 
+/// The database, which runs in memory: as its sealed file left it, or new.
 fn load_store() -> anyhow::Result<HostStore> {
-    let path = shellrs::app::database_path()?;
-    Ok(HostStore::load(HostDatabase::open(&path)?)?)
+    let path = shellrs::app::database_path();
+    let image = match shellrs_ssh::files::read(&path) {
+        Ok(image) => Some(image),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    // Before a newer schema replaces it, so the version that wrote it can
+    // still open its data.
+    if let Some(version) = image.as_deref().and_then(HostDatabase::outdated_image) {
+        let mut backup = path.clone().into_os_string();
+        backup.push(format!(".v{version}.bak"));
+        if let Err(error) = std::fs::copy(&path, &backup) {
+            eprintln!("shellrs: cannot back up the database before migrating it: {error}");
+        }
+    }
+    Ok(HostStore::load(HostDatabase::from_image(
+        image.as_deref(),
+    )?)?)
+}
+
+/// Keep the keys in this process's memory out of core dumps and out of
+/// reach of other processes of the same user. Linux only; a program
+/// started from here (a local terminal's shell) is not affected.
+fn keep_memory_private() {
+    #[cfg(target_os = "linux")]
+    // SAFETY: a plain system call on this process.
+    unsafe {
+        libc::prctl(libc::PR_SET_DUMPABLE, 0);
+    }
 }

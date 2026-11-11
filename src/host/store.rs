@@ -5,9 +5,11 @@
 //! the background executor.
 
 use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use gpui_kit::{Context, EventEmitter, SharedString, Task};
+use gpui_kit::{AppContext as _, Context, EventEmitter, SharedString, Task};
 use zeroize::Zeroizing;
 
 use crate::i18n::t;
@@ -30,7 +32,24 @@ use super::{
 /// and everything that only reads are reached through `Deref`.
 pub struct HostStore {
     data: HostData,
+    /// Where the database, which runs in memory, is kept as a file.
+    file: Option<DatabaseFile>,
 }
+
+/// The database's file and how far it is behind.
+struct DatabaseFile {
+    path: PathBuf,
+    /// The database's change count the file has, or is being written with.
+    saved: u64,
+    /// The newest image written, so that a slow older write cannot land
+    /// over it.
+    written: Arc<Mutex<u64>>,
+    saving: Option<Task<()>>,
+    _quit: gpui_kit::Subscription,
+}
+
+/// How long a change waits for more before the file is written.
+const SAVE_DELAY: Duration = Duration::from_millis(300);
 
 /// What the store tells the workspace about, beyond plain change notification.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,7 +93,102 @@ macro_rules! settled {
 
 impl HostStore {
     pub fn new(data: HostData) -> Self {
-        Self { data }
+        Self { data, file: None }
+    }
+
+    /// Keep the database, which runs in memory, in the file at `path`:
+    /// written shortly after each change, when the app locks and when it
+    /// quits.
+    pub fn keep_at(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.file = Some(DatabaseFile {
+            path,
+            // What opening it changed (a migration, a key that moved) is
+            // still to be written.
+            saved: 0,
+            written: Arc::default(),
+            saving: None,
+            _quit: cx.on_app_quit(|this, cx| {
+                this.save_now(cx);
+                async {}
+            }),
+        });
+    }
+
+    /// Write the database's file now, if it is behind. A vault that is
+    /// locked cannot take it: it is written once unlocked.
+    pub fn save_now(&mut self, cx: &mut Context<Self>) {
+        let Some(file) = &mut self.file else {
+            return;
+        };
+        file.saving = None;
+        let Some(image) = self.data.database_image(file.saved) else {
+            return;
+        };
+        let written = image
+            .map_err(std::io::Error::other)
+            .and_then(|(image, changes)| {
+                write_image(&file.path, &image, changes, &file.written).map(|()| changes)
+            });
+        match written {
+            Ok(changes) => file.saved = changes,
+            Err(error) if crate::vault::is_locked(&error) => {}
+            Err(error) => cx.emit(HostStoreEvent::PersistFailed(t!(
+                "host.store.save_failed",
+                error = error
+            ))),
+        }
+    }
+
+    /// Write the file once the changes have stopped coming.
+    fn save_soon(&mut self, cx: &mut Context<Self>) {
+        let changes = self.data.database_changes();
+        let Some(file) = &mut self.file else {
+            return;
+        };
+        if file.saving.is_some() || changes == Some(file.saved) {
+            return;
+        }
+        file.saving = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(SAVE_DELAY).await;
+            let Ok(Some((path, image, changes, written))) = this.update(cx, |this, _| {
+                let file = this.file.as_mut()?;
+                let image = this.data.database_image(file.saved).and_then(Result::ok);
+                let Some((image, changes)) = image else {
+                    // Nothing to write, or a batch is open: the change
+                    // that ends it asks again.
+                    if let Some(task) = file.saving.take() {
+                        task.detach();
+                    }
+                    return None;
+                };
+                Some((file.path.clone(), image, changes, file.written.clone()))
+            }) else {
+                return;
+            };
+            let result = cx
+                .background_spawn(async move { write_image(&path, &image, changes, &written) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                let Some(file) = &mut this.file else {
+                    return;
+                };
+                file.saving = None;
+                match result {
+                    Ok(()) => {
+                        file.saved = file.saved.max(changes);
+                        // What changed while this one was written.
+                        this.save_soon(cx);
+                    }
+                    // Written once unlocked, or with the next change: not
+                    // tried again and again meanwhile.
+                    Err(error) if crate::vault::is_locked(&error) => {}
+                    Err(error) => cx.emit(HostStoreEvent::PersistFailed(t!(
+                        "host.store.save_failed",
+                        error = error
+                    ))),
+                }
+            });
+        }));
     }
 
     /// An empty memory-only store.
@@ -92,7 +206,7 @@ impl HostStore {
         Self::new(HostData::seed())
     }
 
-    /// Attach the system keychain. `main` does this once at startup; the UI
+    /// Attach where passwords are kept. `main` does this once at startup; the UI
     /// tests attach an in-memory store instead.
     pub fn with_secrets(self, secrets: SharedSecretStore) -> Self {
         Self::new(self.data.with_secrets(secrets))
@@ -137,6 +251,7 @@ impl HostStore {
         if changed {
             cx.notify();
         }
+        self.save_soon(cx);
     }
 
     settled! {
@@ -332,6 +447,23 @@ impl HostStore {
     }
 }
 
+/// Write `image`, the database after `changes` changes, unless a newer one
+/// is there already.
+fn write_image(
+    path: &Path,
+    image: &[u8],
+    changes: u64,
+    written: &Mutex<u64>,
+) -> std::io::Result<()> {
+    let mut written = written.lock().unwrap_or_else(|error| error.into_inner());
+    if *written > changes {
+        return Ok(());
+    }
+    shellrs_ssh::files::write(path, image)?;
+    *written = changes;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,6 +471,62 @@ mod tests {
 
     fn draft(name: &str, group: Option<GroupId>) -> HostDraft {
         HostDraft::new(name, "10.0.0.1", 22, "root", AuthKind::Password, group)
+    }
+
+    /// The database in memory reaches its file a moment after a change,
+    /// whole batches only, and at once when asked.
+    #[gpui_kit::test]
+    fn the_database_in_memory_is_kept_in_its_file(cx: &mut gpui_kit::TestAppContext) {
+        use gpui_kit::AppContext as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shellrs.db");
+        let store = cx.new(|cx| {
+            let mut store = HostStore::load(HostDatabase::from_image(None).unwrap()).unwrap();
+            store.keep_at(path.clone(), cx);
+            store
+        });
+        let kept = |path: &Path| {
+            let image = std::fs::read(path).unwrap();
+            let data = HostData::load(HostDatabase::from_image(Some(&image)).unwrap()).unwrap();
+            data.hosts()
+                .iter()
+                .map(|host| host.name.to_string())
+                .collect::<Vec<_>>()
+        };
+        let wait = |cx: &mut gpui_kit::TestAppContext| {
+            cx.executor().advance_clock(SAVE_DELAY * 2);
+            cx.run_until_parked();
+        };
+
+        store.update(cx, |store, cx| store.insert(draft("web", None), cx));
+        assert!(!path.exists());
+        wait(cx);
+        assert_eq!(kept(&path), ["web"]);
+
+        // A batch is written once it has ended, not half of it.
+        store.update(cx, |store, cx| {
+            store.in_one_transaction(cx, |store, cx| {
+                store.insert(draft("db", None), cx);
+                store.save_now(cx);
+                store.insert(draft("cache", None), cx);
+            })
+        });
+        assert_eq!(kept(&path), ["web"]);
+        wait(cx);
+        assert_eq!(kept(&path), ["web", "db", "cache"]);
+
+        // Locking and quitting do not wait.
+        store.update(cx, |store, cx| {
+            store.insert(draft("mail", None), cx);
+            store.save_now(cx);
+        });
+        assert_eq!(kept(&path).len(), 4);
+        // Nothing changed: nothing is written.
+        std::fs::remove_file(&path).unwrap();
+        store.update(cx, |store, cx| store.save_now(cx));
+        wait(cx);
+        assert!(!path.exists());
     }
 
     #[gpui_kit::test]
@@ -433,7 +621,7 @@ mod tests {
             store.write_secret(secret, Some("hunter2".into()), cx)
         });
         let failure = cx.foreground_executor.block_test(write).unwrap_err();
-        assert!(failure.starts_with("密码未能写入系统钥匙串"), "{failure}");
+        assert!(failure.starts_with("密码未能加密保存"), "{failure}");
     }
 
     #[gpui_kit::test]

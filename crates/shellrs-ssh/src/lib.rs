@@ -10,6 +10,7 @@
 
 mod connection;
 mod error;
+pub mod files;
 mod latency;
 mod login;
 #[cfg(target_vendor = "apple")]

@@ -16,6 +16,8 @@ on:
     paths:
       - "src/instance/**"
       - "src/app_lock/**"
+      - "src/vault/**"
+      - "crates/shellrs-ssh/src/files.rs"
       - "src/update/**"
       - "src/app/mod.rs"
       - "src/app/paths.rs"
@@ -92,6 +94,9 @@ jobs:
       - run: "cargo test --locked --test ui workspace::close_shortcut"
       - run: "cargo test --locked --lib app::tray::"
       - run: "cargo test --lib instance::"
+      - run: "cargo test --lib vault::"
+      - run: "cargo test --lib app_lock::"
+      - run: "cargo test --lib host::store"
       - run: "cargo test --lib update::"
       - run: "cargo test --lib app::paths"
       - run: "cargo test --locked -p shellrs-hosts private_key::"

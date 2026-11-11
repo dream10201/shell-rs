@@ -1,5 +1,5 @@
 use std::{
-    fs, io,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -60,7 +60,7 @@ impl SettingsStore {
     /// An unreadable one also gives the defaults, together with the problem
     /// to tell; the file stays as it is until the next change replaces it.
     pub fn load(path: PathBuf) -> (Self, Option<SettingsProblem>) {
-        let loaded = match fs::read(&path) {
+        let loaded = match shellrs_ssh::files::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| error.to_string()),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(AppSettings::default()),
             Err(error) => Err(error.to_string()),
@@ -122,13 +122,8 @@ impl SettingsStore {
 /// Replace the file in one step, so a crash mid-write cannot leave half a
 /// file behind.
 fn write(path: &Path, settings: &AppSettings) -> io::Result<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
     let json = serde_json::to_vec_pretty(settings).map_err(io::Error::other)?;
-    let temporary = path.with_extension("json.tmp");
-    fs::write(&temporary, json)?;
-    fs::rename(&temporary, path)
+    shellrs_ssh::files::write(path, &json)
 }
 
 #[cfg(test)]

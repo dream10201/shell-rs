@@ -245,6 +245,17 @@ impl SshForwardTransport {
         let mut first = true;
         let mut attempt = 0;
         loop {
+            // Locked, ShellRS can read neither the login's password nor
+            // its key: the attempt waits for the unlock instead of failing.
+            while !first && crate::vault::installed().is_some_and(|vault| !vault.is_unlocked()) {
+                let wait = tokio::time::sleep(Duration::from_secs(1));
+                if turning_away(wait, &mut incoming, &mut shutdown)
+                    .await
+                    .is_none()
+                {
+                    return Ok(());
+                }
+            }
             let login = if first {
                 let _ = events.send(ForwardEvent::Connecting).await;
                 turning_away(

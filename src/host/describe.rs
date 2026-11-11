@@ -385,7 +385,7 @@ mod tests {
         let error = NoSecretStore
             .set(&SecretRef::password("root", "10.0.0.1", 22), "hunter2")
             .unwrap_err();
-        assert_eq!(secret_error(&error), "系统钥匙串不可用，密码无法保存");
+        assert_eq!(secret_error(&error), "密码存储不可用，密码无法保存");
         let other = anyhow::anyhow!("钥匙串被锁定");
         assert_eq!(secret_error(&other), "钥匙串被锁定");
     }

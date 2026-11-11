@@ -1,7 +1,7 @@
-//! 秘密的读写接口和不碰系统钥匙串的几种实现。系统钥匙串本身
-//! （`KeychainSecretStore`）在应用里。
+//! 秘密的读写接口和不落地的几种实现。真正保存秘密的那个实现在应用里
+//! （保险库里加密的一个文件）。
 //!
-//! ShellRS 的秘密只存在钥匙串里。数据库里永远不出现密码或口令，`database.rs`
+//! ShellRS 的秘密只存在那里。数据库里永远不出现密码或口令，`database.rs`
 //! 的 `schema_never_contains_secret_columns` 守着这条不变量。
 
 mod memory;
@@ -16,7 +16,7 @@ pub use memory::{InMemorySecretStore, NoSecretStore, SecretsUnavailable};
 pub use shellrs_ssh::{SecretRef, SecretSource, SharedSecretSource};
 pub use temporary::TemporarySecretStore;
 
-/// 系统钥匙串的读写。
+/// 秘密存储的读写。
 ///
 /// 每个方法都是阻塞的，在 macOS 上还可能弹出系统授权框，所以只能在后台执行器
 /// 或传输层自己的工作线程上调用，**永远不要在 UI 线程上调用**。
@@ -26,13 +26,13 @@ pub trait SecretStore: Send + Sync + 'static {
     fn set(&self, secret: &SecretRef, value: &str) -> Result<()>;
     /// 删一条秘密。条目本来就不存在也算成功。
     fn delete(&self, secret: &SecretRef) -> Result<()>;
-    /// 这台机器上钥匙串是否可用。为 false 时 `set` 一定失败。
+    /// 秘密存储是否可用。为 false 时 `set` 一定失败。
     fn is_available(&self) -> bool;
 }
 
 pub type SharedSecretStore = Arc<dyn SecretStore>;
 
-/// 钥匙串交给连接用的那一面：只读。
+/// 秘密存储交给连接用的那一面：只读。
 pub struct KeychainSource(SharedSecretStore);
 
 impl KeychainSource {

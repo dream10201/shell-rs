@@ -7,8 +7,7 @@
 //! any other. Logging in never needs to know where a key came from.
 
 use std::fmt;
-use std::fs::File;
-use std::io::{self, Read as _, Write as _};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use russh::keys::ssh_key::LineEnding;
@@ -226,13 +225,11 @@ pub fn read_public_key(path: &Path) -> Option<String> {
 /// picked by mistake is not read whole.
 pub fn read_small(path: &Path) -> Option<Zeroizing<String>> {
     const LARGEST_KEY: u64 = 64 * 1024;
-    let mut file = File::open(path).ok()?;
-    if file.metadata().ok()?.len() > LARGEST_KEY {
+    if std::fs::metadata(path).ok()?.len() > LARGEST_KEY {
         return None;
     }
-    let mut text = Zeroizing::new(String::new());
-    file.read_to_string(&mut text).ok()?;
-    Some(text)
+    let bytes = Zeroizing::new(shellrs_ssh::files::read(path).ok()?);
+    Some(Zeroizing::new(std::str::from_utf8(&bytes).ok()?.to_owned()))
 }
 
 /// Write a private key file into `dir`, where ShellRS keeps the keys it was
@@ -248,16 +245,8 @@ pub fn write_key_file(dir: &Path, replace: Option<&Path>, text: &str) -> io::Res
         Some(path) => path.to_path_buf(),
         None => unused_name(dir),
     };
-    let temporary = dir.join(format!(".{}.tmp", PublicId::generate()));
-    let written = create_private_file(&temporary).and_then(|mut file| {
-        file.write_all(text.as_bytes())?;
-        file.sync_all()
-    });
-    let result = written.and_then(|()| std::fs::rename(&temporary, &path));
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temporary);
-    }
-    result.map(|()| path)
+    shellrs_ssh::files::write(&path, text.as_bytes())?;
+    Ok(path)
 }
 
 /// Whether `path` is one of the key files ShellRS keeps in `dir`.
@@ -271,13 +260,14 @@ pub fn is_kept_in(dir: &Path, path: &Path) -> bool {
 /// another copy's data is copied in, they still name the old folder; the
 /// file came along under its random name.
 pub fn moved_key(dir: &Path, path: &Path) -> Option<PathBuf> {
-    let folder = path.parent()?;
-    let name = path.file_name()?.to_str()?;
-    let same_kind = folder
+    // The path may be another system's: a folder that came from Windows
+    // names its keys with `\`, which is no separator here.
+    let mut parts = path.to_str()?.rsplit(['/', '\\']);
+    let (name, folder) = (parts.next()?, parts.next()?);
+    let same_kind = dir
         .file_name()
-        .zip(dir.file_name())
-        .is_some_and(|(old, new)| old.eq_ignore_ascii_case(new));
-    if folder == dir || !same_kind || !PublicId::has_shape(name) {
+        .is_some_and(|new| new.eq_ignore_ascii_case(folder));
+    if path.parent() == Some(dir) || !same_kind || !PublicId::has_shape(name) {
         return None;
     }
     let moved = dir.join(name);
@@ -307,26 +297,6 @@ fn create_private_dir(dir: &Path) -> io::Result<()> {
     std::fs::create_dir_all(dir)
 }
 
-#[cfg(unix)]
-fn create_private_file(path: &Path) -> io::Result<File> {
-    use std::os::unix::fs::OpenOptionsExt as _;
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)
-}
-
-/// On Windows the data directory is the user's own, and a new file takes
-/// its permissions.
-#[cfg(not(unix))]
-fn create_private_file(path: &Path) -> io::Result<File> {
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +311,12 @@ mod tests {
         let old = Path::new("/Volumes/OLD/ShellRS/data/keys");
         assert_eq!(
             moved_key(&dir, &old.join(name.as_str())),
+            Some(dir.join(name.as_str()))
+        );
+        // A folder that came from Windows, wherever it is now.
+        let windows = format!(r"D:\Tools\ShellRS\data\vault\keys\{name}");
+        assert_eq!(
+            moved_key(&dir, Path::new(&windows)),
             Some(dir.join(name.as_str()))
         );
         // Already here, or not one ShellRS keeps.

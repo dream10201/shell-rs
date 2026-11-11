@@ -1,12 +1,11 @@
-//! Application password lock. Independent of settings and workspace, with
-//! one process-wide entity controlling both the UI gate and CLI access.
+//! The application lock: the password that opens the vault everything is
+//! sealed in. One process-wide entity gates the UI; locking forgets the
+//! vault's key, so nothing sealed can be read until the password comes
+//! again.
 mod activity;
-mod password;
 mod password_form;
 mod screen;
-mod storage;
 pub use screen::{NoScreen, ScreenState, system_screen};
-pub use storage::{InMemoryLockStore, KeychainLockStore, LockRecordStore};
 
 pub use activity::activity_tracker;
 use gpui_kit::*;
@@ -17,38 +16,31 @@ use std::{
 use zeroize::Zeroizing;
 
 use crate::i18n::t;
-use password::Verifier;
+use crate::vault::{Vault, VaultError};
 pub use password_form::{UnlockScreen, open_password_dialog};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// The shortest password a vault is made with.
+pub const SHORTEST_PASSWORD: usize = 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PasswordOperation {
-    Enable,
+    /// The first start: choose the password.
+    Create,
     Change,
-    Disable,
     Unlock,
 }
 
-enum PasswordFailure {
-    Incorrect,
-    Verify(String),
-    Save(String),
-}
-
-impl PasswordFailure {
-    fn message(self) -> SharedString {
-        match self {
-            Self::Incorrect => t!("app_lock.wrong_password"),
-            Self::Verify(error) => t!("app_lock.failed", error = error),
-            Self::Save(error) => t!("app_lock.save_failed", error = error),
-        }
+fn failure(error: VaultError) -> SharedString {
+    match error {
+        VaultError::WrongPassword => t!("app_lock.wrong_password"),
+        VaultError::Damaged => t!("app_lock.damaged"),
+        VaultError::Locked | VaultError::Unexpected => t!("app_lock.unavailable"),
+        VaultError::Io(error) => t!("app_lock.failed", error = error),
     }
 }
 
 pub struct AppLock {
-    store: Arc<dyn LockRecordStore>,
-    loading: bool,
-    verifier: Option<Verifier>,
-    load_error: Option<String>,
+    vault: Arc<Vault>,
     locked: bool,
     busy: bool,
     last_activity: Option<Instant>,
@@ -61,61 +53,17 @@ struct LockGlobal(Entity<AppLock>);
 impl Global for LockGlobal {}
 
 impl AppLock {
-    /// Start locked while the keychain is checked on a worker. No host data or
-    /// background CLI may be opened until this check has finished successfully.
-    pub fn new(store: Arc<dyn LockRecordStore>, cx: &mut Context<Self>) -> Self {
-        let mut this = Self {
-            store,
-            loading: false,
-            verifier: None,
-            load_error: None,
-            locked: true,
+    /// Locked until the vault's password is given, or chosen on a first
+    /// start. No data is read before that.
+    pub fn new(vault: Arc<Vault>) -> Self {
+        Self {
+            locked: !vault.is_unlocked(),
+            vault,
             busy: false,
             last_activity: None,
             screen: Arc::new(NoScreen),
             _keyboard_activity: None,
-        };
-        this.reload(cx);
-        this
-    }
-
-    pub fn is_loading(&self) -> bool {
-        self.loading
-    }
-
-    pub fn is_ready(&self) -> bool {
-        !self.loading && self.load_error.is_none()
-    }
-
-    pub fn reload(&mut self, cx: &mut Context<Self>) {
-        if self.busy {
-            return;
         }
-        self.loading = true;
-        self.busy = true;
-        self.locked = true;
-        self.load_error = None;
-        cx.notify();
-        let store = self.store.clone();
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_spawn(async move { storage::load(store.as_ref()) })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                this.loading = false;
-                this.busy = false;
-                match result {
-                    Ok(verifier) => {
-                        this.locked = verifier.is_some();
-                        this.verifier = verifier;
-                        this.record_activity(cx);
-                    }
-                    Err(error) => this.load_error = Some(format!("{error:#}")),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
     }
 
     pub fn install(lock: Entity<Self>, cx: &mut App) {
@@ -135,14 +83,12 @@ impl AppLock {
     pub fn is_locked(&self) -> bool {
         self.locked
     }
-    pub fn is_enabled(&self) -> bool {
-        self.loading || self.verifier.is_some() || self.load_error.is_some()
+    /// Whether this is a first start: there is no password yet.
+    pub fn needs_password(&self) -> bool {
+        self.locked && !self.vault.exists()
     }
     pub fn is_busy(&self) -> bool {
         self.busy
-    }
-    pub fn load_error(&self) -> Option<&str> {
-        self.load_error.as_deref()
     }
 
     /// Input does not notify observers: activity must not redraw the app.
@@ -154,7 +100,6 @@ impl AppLock {
 
     pub fn is_idle(&self, timeout: Duration, cx: &App) -> bool {
         !timeout.is_zero()
-            && self.is_enabled()
             && !self.locked
             && !self.busy
             && self.last_activity.is_some_and(|last| {
@@ -172,11 +117,14 @@ impl AppLock {
 
     /// Whether the computer's lock screen is showing over an open ShellRS.
     pub fn screen_locked(&self) -> bool {
-        self.is_enabled() && !self.locked && !self.busy && self.screen.is_locked()
+        !self.locked && !self.busy && self.screen.is_locked()
     }
 
+    /// Lock, and forget the vault's key. The caller has written what was
+    /// still to be written: after this nothing can be sealed.
     pub fn lock(&mut self, cx: &mut Context<Self>) {
-        if self.is_enabled() && !self.busy {
+        if !self.locked && !self.busy {
+            self.vault.lock();
             self.locked = true;
             cx.notify();
         }
@@ -189,64 +137,35 @@ impl AppLock {
         new: Zeroizing<String>,
         cx: &mut Context<Self>,
     ) -> Task<Result<(), SharedString>> {
-        if self.busy
-            || self.load_error.is_some()
-            || (operation == PasswordOperation::Enable) == self.verifier.is_some()
-        {
+        let expected = match operation {
+            PasswordOperation::Create => self.needs_password(),
+            PasswordOperation::Unlock => self.locked && self.vault.exists(),
+            PasswordOperation::Change => !self.locked,
+        };
+        if self.busy || !expected {
             return Task::ready(Err(t!("app_lock.unavailable")));
         }
-        if operation != PasswordOperation::Unlock && self.locked {
-            return Task::ready(Err(t!("app_lock.unavailable")));
-        }
-        if matches!(
-            operation,
-            PasswordOperation::Enable | PasswordOperation::Change
-        ) && new.chars().count() < 8
-        {
+        if operation != PasswordOperation::Unlock && new.chars().count() < SHORTEST_PASSWORD {
             return Task::ready(Err(t!("app_lock.too_short")));
         }
         self.busy = true;
         cx.notify();
-        let verifier = self.verifier.clone();
-        let store = self.store.clone();
+        let vault = self.vault.clone();
         // Keep the service alive even if its dialog is dismissed during work.
         let service = cx.entity();
         cx.spawn(async move |_, cx| {
             let result = cx
                 .background_spawn(async move {
-                    if let Some(old) = &verifier {
-                        match old.verify(&current) {
-                            Ok(true) => {}
-                            Ok(false) => return Err(PasswordFailure::Incorrect),
-                            Err(error) => return Err(PasswordFailure::Verify(error.to_string())),
-                        }
+                    match operation {
+                        PasswordOperation::Create => vault.create(&new),
+                        PasswordOperation::Unlock => vault.unlock(&current),
+                        PasswordOperation::Change => vault.change_password(&current, &new),
                     }
-                    let next = match operation {
-                        PasswordOperation::Enable | PasswordOperation::Change => Some(
-                            Verifier::new(&new)
-                                .map_err(|error| PasswordFailure::Verify(error.to_string()))?,
-                        ),
-                        PasswordOperation::Disable => None,
-                        // Made with less than verifiers are now: made again
-                        // from the password just proven, when that saves.
-                        PasswordOperation::Unlock => {
-                            let renewed = verifier
-                                .as_ref()
-                                .filter(|old| old.is_outdated())
-                                .and_then(|_| Verifier::new(&current).ok())
-                                .filter(|new| storage::save(store.as_ref(), Some(new)).is_ok());
-                            return Ok(renewed.or(verifier));
-                        }
-                    };
-                    storage::save(store.as_ref(), next.as_ref())
-                        .map_err(|error| PasswordFailure::Save(error.to_string()))?;
-                    Ok(next)
                 })
                 .await;
             service.update(cx, |this, cx| {
                 this.busy = false;
-                let outcome = result.map_err(PasswordFailure::message).map(|verifier| {
-                    this.verifier = verifier;
+                let outcome = result.map_err(failure).map(|()| {
                     this.locked = false;
                     this.record_activity(cx);
                 });
@@ -257,23 +176,23 @@ impl AppLock {
     }
 }
 
-/// CLI and shell use the same gate; tests without an installed gate are unlocked.
+/// Tests without an installed gate are unlocked.
 pub fn is_locked(cx: &App) -> bool {
     AppLock::global(cx).is_some_and(|lock| lock.read(cx).is_locked())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::storage::tests::FailingStore;
-    use super::{AppLock, InMemoryLockStore, LockRecordStore, PasswordOperation};
+    use super::{AppLock, PasswordOperation, ScreenState};
+    use crate::vault::{Vault, tests::QUICK};
     use gpui_kit::{AppContext as _, Entity, TestAppContext};
     use std::sync::{Arc, atomic::Ordering};
     use zeroize::Zeroizing;
 
-    fn open(cx: &mut TestAppContext, store: Arc<dyn LockRecordStore>) -> Entity<AppLock> {
-        let lock = cx.update(|cx| cx.new(|cx| AppLock::new(store, cx)));
-        cx.run_until_parked();
-        lock
+    fn open(cx: &mut TestAppContext, dir: &std::path::Path) -> (Entity<AppLock>, Arc<Vault>) {
+        let vault = Arc::new(Vault::with_cost(dir, QUICK));
+        let lock = cx.update(|cx| cx.new(|_| AppLock::new(vault.clone())));
+        (lock, vault)
     }
 
     fn submit(
@@ -297,152 +216,54 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn password_lifecycle_survives_restart_and_rejects_wrong_passwords(cx: &mut TestAppContext) {
-        let store = Arc::new(InMemoryLockStore::default());
-        let lock = open(cx, store.clone());
-        assert!(!submit(cx, &lock, PasswordOperation::Enable, "", "short"));
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Enable,
-            "",
-            "first password"
-        ));
-        let lock = open(cx, store.clone());
-        cx.update(|cx| assert!(lock.read(cx).is_locked()));
+    fn the_password_is_chosen_once_then_asked_for_and_can_be_changed(cx: &mut TestAppContext) {
+        use PasswordOperation::{Change, Create, Unlock};
+        let dir = tempfile::tempdir().unwrap();
+        let (lock, vault) = open(cx, dir.path());
+        cx.update(|cx| assert!(lock.read(cx).is_locked() && lock.read(cx).needs_password()));
+        assert!(!submit(cx, &lock, Unlock, "first password", ""));
+        assert!(!submit(cx, &lock, Create, "", "short"));
+        assert!(submit(cx, &lock, Create, "", "first password"));
+        cx.update(|cx| assert!(!lock.read(cx).is_locked()));
+        assert!(vault.is_unlocked());
+        assert!(!submit(cx, &lock, Create, "", "another password"));
+
+        // Locking forgets the key; only the password brings it back.
+        cx.update(|cx| lock.update(cx, |lock, cx| lock.lock(cx)));
+        assert!(!vault.is_unlocked());
+        cx.update(|cx| assert!(lock.read(cx).is_locked() && !lock.read(cx).needs_password()));
         assert!(!submit(
             cx,
             &lock,
-            PasswordOperation::Unlock,
-            "incorrect",
-            ""
-        ));
-        cx.update(|cx| assert!(lock.read(cx).is_locked()));
-        // Changing the verifier is impossible until the gate is open.
-        assert!(!submit(
-            cx,
-            &lock,
-            PasswordOperation::Change,
+            Change,
             "first password",
             "second password"
         ));
+        assert!(!submit(cx, &lock, Unlock, "incorrect", ""));
+        assert!(!vault.is_unlocked());
+        assert!(submit(cx, &lock, Unlock, "first password", ""));
+        assert!(vault.is_unlocked());
+
+        assert!(!submit(cx, &lock, Change, "incorrect", "second password"));
+        assert!(!submit(cx, &lock, Change, "first password", "short"));
         assert!(submit(
             cx,
             &lock,
-            PasswordOperation::Unlock,
-            "first password",
-            ""
-        ));
-        assert!(!submit(
-            cx,
-            &lock,
-            PasswordOperation::Change,
-            "incorrect",
-            "second password"
-        ));
-        assert!(!submit(
-            cx,
-            &lock,
-            PasswordOperation::Disable,
-            "incorrect",
-            ""
-        ));
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Change,
+            Change,
             "first password",
             "second password"
         ));
-        let lock = open(cx, store.clone());
-        assert!(!submit(
-            cx,
-            &lock,
-            PasswordOperation::Unlock,
-            "first password",
-            ""
-        ));
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Unlock,
-            "second password",
-            ""
-        ));
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Disable,
-            "second password",
-            ""
-        ));
-        let restarted = open(cx, store);
-        cx.update(|cx| {
-            assert!(!restarted.read(cx).is_enabled());
-            assert!(!restarted.read(cx).is_locked());
-        });
-    }
 
-    #[gpui_kit::test]
-    fn unlocking_renews_a_verifier_made_with_less(cx: &mut TestAppContext) {
-        let store = Arc::new(FailingStore::default());
-        let old = crate::app_lock::password::tests::first_version("first password");
-        super::storage::save(&store.memory, Some(&old)).unwrap();
-        let saved = store.memory.read().unwrap().unwrap();
-
-        // The keychain refuses the write: the old one keeps working.
-        store.fail_write.store(true, Ordering::SeqCst);
-        let lock = open(cx, store.clone());
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Unlock,
-            "first password",
-            ""
-        ));
-        assert_eq!(
-            store.memory.read().unwrap().unwrap().as_str(),
-            saved.as_str()
-        );
-
-        store.fail_write.store(false, Ordering::SeqCst);
-        let lock = open(cx, store.clone());
-        assert!(!submit(
-            cx,
-            &lock,
-            PasswordOperation::Unlock,
-            "incorrect",
-            ""
-        ));
-        assert_eq!(
-            store.memory.read().unwrap().unwrap().as_str(),
-            saved.as_str()
-        );
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Unlock,
-            "first password",
-            ""
-        ));
-        let renewed = store.memory.read().unwrap().unwrap();
-        assert!(renewed.contains(r#""version":2"#) && renewed.contains("cost"));
-        let lock = open(cx, store.clone());
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Unlock,
-            "first password",
-            ""
-        ));
-        assert_eq!(
-            store.memory.read().unwrap().unwrap().as_str(),
-            renewed.as_str()
-        );
+        // A restart asks for the new one.
+        let (lock, vault) = open(cx, dir.path());
+        cx.update(|cx| assert!(lock.read(cx).is_locked() && !lock.read(cx).needs_password()));
+        assert!(!submit(cx, &lock, Unlock, "first password", ""));
+        assert!(submit(cx, &lock, Unlock, "second password", ""));
+        assert!(vault.is_unlocked());
     }
 
     struct Screen(std::sync::atomic::AtomicBool);
-    impl super::ScreenState for Screen {
+    impl ScreenState for Screen {
         fn is_locked(&self) -> bool {
             self.0.load(Ordering::SeqCst)
         }
@@ -451,16 +272,16 @@ mod tests {
     #[gpui_kit::test]
     fn the_computers_lock_screen_counts_only_over_an_open_lock(cx: &mut TestAppContext) {
         let screen = Arc::new(Screen(true.into()));
-        let lock = open(cx, Arc::new(InMemoryLockStore::default()));
+        let dir = tempfile::tempdir().unwrap();
+        let (lock, _) = open(cx, dir.path());
         cx.update(|cx| {
             lock.update(cx, |lock, _| lock.watch_screen(screen.clone()));
-            // No app lock to close.
             assert!(!lock.read(cx).screen_locked());
         });
         assert!(submit(
             cx,
             &lock,
-            PasswordOperation::Enable,
+            PasswordOperation::Create,
             "",
             "first password"
         ));
@@ -468,88 +289,6 @@ mod tests {
             assert!(lock.read(cx).screen_locked());
             lock.update(cx, |lock, cx| lock.lock(cx));
             assert!(!lock.read(cx).screen_locked());
-        });
-        screen.0.store(false, Ordering::SeqCst);
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Unlock,
-            "first password",
-            ""
-        ));
-        cx.update(|cx| assert!(!lock.read(cx).screen_locked()));
-    }
-
-    #[gpui_kit::test]
-    fn failed_keychain_writes_keep_the_original_lock(cx: &mut TestAppContext) {
-        let store = Arc::new(FailingStore::default());
-        let lock = open(cx, store.clone());
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Enable,
-            "",
-            "first password"
-        ));
-        let saved = store.memory.read().unwrap().unwrap();
-        store.fail_write.store(true, Ordering::SeqCst);
-        assert!(!submit(
-            cx,
-            &lock,
-            PasswordOperation::Disable,
-            "first password",
-            ""
-        ));
-        assert!(!submit(
-            cx,
-            &lock,
-            PasswordOperation::Change,
-            "first password",
-            "second password"
-        ));
-        assert_eq!(
-            store.memory.read().unwrap().unwrap().as_str(),
-            saved.as_str()
-        );
-        cx.update(|cx| lock.update(cx, |lock, cx| lock.lock(cx)));
-        assert!(submit(
-            cx,
-            &lock,
-            PasswordOperation::Unlock,
-            "first password",
-            ""
-        ));
-        assert!(open(cx, store).read_with(cx, |lock, _| lock.is_locked()));
-    }
-
-    #[gpui_kit::test]
-    fn loading_and_keychain_read_failures_remain_locked_until_retry(cx: &mut TestAppContext) {
-        let store = Arc::new(FailingStore::default());
-        store.fail_read.store(true, Ordering::SeqCst);
-        let lock = cx.update(|cx| cx.new(|cx| AppLock::new(store.clone(), cx)));
-        cx.update(|cx| {
-            assert!(lock.read(cx).is_loading());
-            assert!(lock.read(cx).is_locked());
-        });
-        cx.run_until_parked();
-        cx.update(|cx| {
-            assert!(!lock.read(cx).is_loading());
-            assert!(lock.read(cx).is_locked());
-            assert!(lock.read(cx).load_error().is_some());
-        });
-        assert!(!submit(
-            cx,
-            &lock,
-            PasswordOperation::Enable,
-            "",
-            "new password"
-        ));
-        store.fail_read.store(false, Ordering::SeqCst);
-        cx.update(|cx| lock.update(cx, |lock, cx| lock.reload(cx)));
-        cx.run_until_parked();
-        cx.update(|cx| {
-            assert!(lock.read(cx).load_error().is_none());
-            assert!(!lock.read(cx).is_locked());
         });
     }
 }

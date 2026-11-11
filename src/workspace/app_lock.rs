@@ -1,43 +1,19 @@
 use super::Workspace;
-use crate::app::{ChangeAppLockPassword, DisableAppLock, EnableAppLock, LockApp};
-use crate::app_lock::{AppLock, PasswordOperation, open_password_dialog};
+use crate::app::{ChangeAppLockPassword, LockApp};
+use crate::app_lock::{AppLock, open_password_dialog};
 use gpui_kit::*;
 use std::time::Duration;
 
 impl Workspace {
-    fn configure_app_lock(
-        &self,
-        operation: PasswordOperation,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(lock) = AppLock::global(cx) {
-            open_password_dialog(lock, operation, window, cx);
-        }
-    }
-    pub(super) fn on_enable_app_lock(
-        &mut self,
-        _: &EnableAppLock,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.configure_app_lock(PasswordOperation::Enable, window, cx);
-    }
     pub(super) fn on_change_app_lock_password(
         &mut self,
         _: &ChangeAppLockPassword,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.configure_app_lock(PasswordOperation::Change, window, cx);
-    }
-    pub(super) fn on_disable_app_lock(
-        &mut self,
-        _: &DisableAppLock,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.configure_app_lock(PasswordOperation::Disable, window, cx);
+        if let Some(lock) = AppLock::global(cx) {
+            open_password_dialog(lock, window, cx);
+        }
     }
     pub(super) fn on_lock_app(&mut self, _: &LockApp, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(lock) = AppLock::global(cx) {
@@ -45,10 +21,13 @@ impl Workspace {
         }
     }
 
+    /// Lock, after writing what is still to be written: the key that
+    /// seals it is forgotten with the lock.
     fn lock_app(&mut self, lock: &Entity<AppLock>, cx: &mut Context<Self>) {
-        if !lock.read(cx).is_enabled() || lock.read(cx).is_busy() {
+        if lock.read(cx).is_locked() || lock.read(cx).is_busy() {
             return;
         }
+        self.store().update(cx, |store, cx| store.save_now(cx));
         lock.update(cx, |lock, cx| lock.lock(cx));
     }
 

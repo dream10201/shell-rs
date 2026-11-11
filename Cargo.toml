@@ -22,7 +22,7 @@ gpui-kit = "0.9.1"
 alacritty_terminal = "0.26"
 anyhow = "1"
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
-subtle = "2"
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "zeroize"] }
 async-channel = "2"
 # A terminal's parser thread waits for output only until a synchronized
 # update has to be drawn.
@@ -55,7 +55,6 @@ unicode-width = "0.2"
 url = "2"
 percent-encoding = "2"
 zeroize = "1"
-keyring = "4"
 # Sync between devices; its own crate, under MIT.
 shellrs-sync = { path = "crates/shellrs-sync" }
 # Logins, channels and file transfers through the shell; its own crate,
@@ -119,6 +118,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
     "Win32_System_Pipes",
     "Win32_System_RemoteDesktop",
     "Win32_System_Threading",
