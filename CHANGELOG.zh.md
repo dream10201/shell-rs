@@ -4,6 +4,12 @@
 
 每个版本一节，标题写成 `## [版本号]`，可以在后面加日期。每一节同时写中文（这里）和英文（[CHANGELOG.md](CHANGELOG.md)），在同一次提交里。发布流程（`.github/workflows/release.yml`）把英文版里与 tag 同版本的那一节原样作为 GitHub Release 的说明；ShellRS 的更新对话框用「查看更新内容」打开 GitHub 上的更新日志：中文界面打开这一份，其他语言打开英文版。用 Markdown 书写，面向使用者。
 
+## [1.0.1]
+
+### 移除
+
+- 去掉「外部 CLI」：`shellrs` 命令（`hosts`、`credentials`、`exec`、`upload`、`download`、`sync`）、设置里的「外部 CLI」一页、Agent Skills，以及应用锁的「锁定时允许外部 CLI 访问」。Windows 的安装包和便携版不再带 `shellrs-cli.exe`。从堡垒机用 `ssh://`、`sftp://` 链接打开 ShellRS 不受影响。
+
 ## [1.0.0]
 
 ### 新增

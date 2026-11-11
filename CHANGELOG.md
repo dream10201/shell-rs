@@ -4,6 +4,12 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.1]
+
+### Removed
+
+- The external CLI is gone: the `shellrs` command (`hosts`, `credentials`, `exec`, `upload`, `download`, `sync`), the External CLI page in Settings, Agent Skills, and the app lock’s “Allow the external CLI while locked”. The Windows installer and portable zip no longer include `shellrs-cli.exe`. Opening ShellRS from a bastion host with `ssh://` and `sftp://` links works as before.
+
 ## [1.0.0]
 
 ### Added
