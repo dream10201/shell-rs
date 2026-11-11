@@ -317,7 +317,7 @@ fn the_window_settings_are_on_until_turned_off(cx: &mut TestAppContext) {
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
     // 应用 comes right before 关于.
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-6", cx)
+        window.within("settings").click("0-5", cx)
     });
     let switch = |item: usize| {
         move |window: &mut gpui_kit::Window| {
@@ -349,7 +349,7 @@ fn closing_to_the_tray_is_off_and_offered_only_on_windows(cx: &mut TestAppContex
     let (handle, workspace) = open_workspace(cx);
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-6", cx);
+        window.within("settings").click("0-5", cx);
     });
     in_frame(cx, handle, |window, _| {
         let offered = gpui_kit::base::test_support::snapshots(window)
@@ -606,40 +606,6 @@ fn the_interface_font_size_is_set_on_the_appearance_page(cx: &mut TestAppContext
     cx.update(|cx| assert_eq!(cx.theme().font_size.as_f32(), 18.));
 }
 
-/// 设置 › SFTP › 传输: 最大同时传输数量 shows three, marked as the default,
-/// and then what the settings hold.
-#[gpui_kit::test]
-fn the_sftp_page_says_how_many_files_move_at_once(cx: &mut TestAppContext) {
-    let (handle, workspace) = open_workspace(cx);
-    in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
-    // SFTP comes right after 终端.
-    in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-2", cx)
-    });
-    let shown = |window: &mut gpui_kit::Window| {
-        window
-            .within("settings")
-            .within("group-0")
-            .within("item-0")
-            .find("btn")
-            .label()
-            .map(str::to_string)
-    };
-    in_frame(cx, handle, |window, _| {
-        assert_eq!(shown(window).as_deref(), Some("3（默认）"))
-    });
-    let settings = cx.update(|cx| workspace.read(cx).settings().clone());
-    cx.update(|cx| {
-        settings.update(cx, |settings, cx| {
-            settings.update(|settings| settings.transfers.parallel = 5, cx)
-        })
-    });
-    cx.run_until_parked();
-    in_frame(cx, handle, |window, _| {
-        assert_eq!(shown(window).as_deref(), Some("5"))
-    });
-}
-
 /// The 关键字高亮 rules, as the settings hold them.
 fn highlight_rules(
     workspace: &Entity<Workspace>,
@@ -683,10 +649,10 @@ async fn highlight_rules_are_edited_in_place_on_their_page(cx: &mut TestAppConte
 
     let (handle, workspace) = open_workspace(cx);
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
-    // 关键字高亮 comes after 终端 and SFTP, with the examples a new
+    // 关键字高亮 comes after 终端, with the examples a new
     // installation starts with: rows 0 to 2.
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-3", cx)
+        window.within("settings").click("0-2", cx)
     });
     let ip = r"\b\d{1,3}(\.\d{1,3}){3}\b";
     assert_eq!(

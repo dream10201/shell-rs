@@ -7,9 +7,7 @@ pub use crate::sync::SyncLocation;
 use std::collections::BTreeMap;
 
 use crate::app::{ShortcutOverrides, ToolKind};
-use crate::explorer::{FileIconStyle, FileSizeFormat, ShowHiddenFiles};
 use crate::i18n::t;
-use crate::sftp::{DEFAULT_PARALLEL_TRANSFERS, PARALLEL_TRANSFERS_RANGE};
 use crate::terminal::{
     DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT, FONT_SIZE_RANGE, HighlightRule, LINE_HEIGHT_RANGE,
     RightClick, TerminalCursorStyle, TerminalInteraction, TerminalTheme, default_rules,
@@ -53,18 +51,6 @@ pub struct AppSettings {
     pub update: UpdateSettings,
     /// 关于 → 隐私.
     pub analytics: AnalyticsSettings,
-    /// The SFTP 大小 column, switched from the column title's menu rather
-    /// than the settings page, as in WinSCP.
-    pub file_size_format: FileSizeFormat,
-    /// 显示隐藏文件 in the SFTP lists, each side on its own, switched from
-    /// their toolbars and menus.
-    pub show_hidden: ShowHiddenFiles,
-    /// SFTP → 传输.
-    pub transfers: TransferSettings,
-    /// SFTP → 图标风格.
-    pub file_icon_style: FileIconStyle,
-    /// SFTP → 文件侧栏.
-    pub file_sidebar: FileSidebarSettings,
     /// 终端 → 通知.
     pub notifications: NotificationSettings,
     /// 关键字高亮.
@@ -124,43 +110,6 @@ impl SidebarWidths {
         Self {
             left: width(self.left),
             right: width(self.right),
-        }
-    }
-}
-
-/// SFTP → 传输.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct TransferSettings {
-    /// 最大同时传输数量: how many files of an upload or a download move at
-    /// once; the rest wait their turn.
-    pub parallel: usize,
-}
-
-impl Default for TransferSettings {
-    fn default() -> Self {
-        Self {
-            parallel: DEFAULT_PARALLEL_TRANSFERS,
-        }
-    }
-}
-
-/// SFTP → 文件侧栏: the right sidebar's 文件.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct FileSidebarSettings {
-    /// 自动检测目录配置: on showing 文件, see whether the host's shell reports
-    /// its folder and offer to set it up if not; also whether 文件 follows
-    /// the terminal's folder to begin with, on a host whose 目录跟随 the
-    /// user has not switched (`Host::directory_follow`). On unless turned
-    /// off.
-    pub detect_directory_follow: bool,
-}
-
-impl Default for FileSidebarSettings {
-    fn default() -> Self {
-        Self {
-            detect_directory_follow: true,
         }
     }
 }
@@ -468,24 +417,6 @@ impl Choice for Channel {
     }
 }
 
-impl Choice for FileIconStyle {
-    const ALL: &'static [Self] = &[Self::Monochrome, Self::Color];
-
-    fn key(self) -> &'static str {
-        match self {
-            Self::Monochrome => "monochrome",
-            Self::Color => "color",
-        }
-    }
-
-    fn label(self) -> SharedString {
-        match self {
-            Self::Monochrome => t!("settings.file_icons.monochrome"),
-            Self::Color => t!("settings.file_icons.color"),
-        }
-    }
-}
-
 impl Choice for TerminalCursorStyle {
     const ALL: &'static [Self] = &[Self::Block, Self::Underline, Self::Beam];
 
@@ -544,10 +475,6 @@ impl AppSettings {
             DEFAULT_INTERFACE_FONT_SIZE
         };
         self.sidebar_widths = self.sidebar_widths.normalized();
-        self.transfers.parallel = self.transfers.parallel.clamp(
-            *PARALLEL_TRANSFERS_RANGE.start(),
-            *PARALLEL_TRANSFERS_RANGE.end(),
-        );
         self.local_terminal.shell = self
             .local_terminal
             .shell
@@ -739,7 +666,6 @@ mod tests {
         check::<Appearance>();
         check::<RightClick>();
         check::<TerminalCursorStyle>();
-        check::<FileIconStyle>();
         assert_eq!(Appearance::from_key("sepia"), None);
     }
 
@@ -751,29 +677,6 @@ mod tests {
         assert_eq!(settings.language, InterfaceLanguage::default());
         let settings: AppSettings = serde_json::from_str(r#"{"later":1}"#).unwrap();
         assert_eq!(settings, AppSettings::default());
-        assert_eq!(settings.file_size_format, FileSizeFormat::Kilobytes);
-        let settings: AppSettings =
-            serde_json::from_str(r#"{"file_size_format":"short"}"#).unwrap();
-        assert_eq!(settings.file_size_format, FileSizeFormat::Short);
-        // The SFTP lists show color icons, as in WinSCP, unless asked not to.
-        assert_eq!(AppSettings::default().file_icon_style, FileIconStyle::Color);
-        // Hidden files are left out unless the file says otherwise, for
-        // each side on its own.
-        assert_eq!(
-            AppSettings::default().show_hidden,
-            ShowHiddenFiles::default()
-        );
-        let settings: AppSettings =
-            serde_json::from_str(r#"{"show_hidden":{"remote":true}}"#).unwrap();
-        assert!(settings.show_hidden.remote);
-        assert!(!settings.show_hidden.local);
-        // 文件 looks for and follows the terminal's folder unless told not to.
-        assert!(AppSettings::default().file_sidebar.detect_directory_follow);
-        let settings: AppSettings = serde_json::from_str(r#"{"file_sidebar":{}}"#).unwrap();
-        assert!(settings.file_sidebar.detect_directory_follow);
-        let settings: AppSettings =
-            serde_json::from_str(r#"{"file_sidebar":{"detect_directory_follow":false}}"#).unwrap();
-        assert!(!settings.file_sidebar.detect_directory_follow);
     }
 
     /// 侧栏功能: every tool but GPU/NPU until the user says otherwise, and
@@ -882,25 +785,6 @@ mod tests {
                 ..AppSettings::default()
             };
             assert_eq!(settings.normalized().interface.font_size, kept, "{written}");
-        }
-    }
-
-    /// 最大同时传输数量: three unless the file says otherwise, and never
-    /// beyond what the settings page offers.
-    #[test]
-    fn transfers_run_three_at_once_unless_the_file_says_otherwise() {
-        assert_eq!(AppSettings::default().transfers.parallel, 3);
-        let settings: AppSettings = serde_json::from_str(r#"{"transfers":{}}"#).unwrap();
-        assert_eq!(settings.transfers.parallel, 3);
-        let settings: AppSettings =
-            serde_json::from_str(r#"{"transfers":{"parallel":6}}"#).unwrap();
-        assert_eq!(settings.normalized().transfers.parallel, 6);
-        for (written, kept) in [(0, 1), (50, 10)] {
-            let settings = AppSettings {
-                transfers: TransferSettings { parallel: written },
-                ..AppSettings::default()
-            };
-            assert_eq!(settings.normalized().transfers.parallel, kept);
         }
     }
 

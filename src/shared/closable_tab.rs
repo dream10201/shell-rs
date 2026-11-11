@@ -49,7 +49,6 @@ pub struct ClosableTabTitle {
     label: SharedString,
     close: Option<(ElementId, Box<dyn Action>)>,
     menu: Option<MenuBuilder>,
-    modified: bool,
     connection_state: Option<ConnectionState>,
 }
 
@@ -67,7 +66,6 @@ impl ClosableTabTitle {
             label: label.into(),
             close: None,
             menu: None,
-            modified: false,
             connection_state: None,
         }
     }
@@ -79,13 +77,6 @@ impl ClosableTabTitle {
     /// connection leave this unset.
     pub fn connection_state(mut self, state: ConnectionState) -> Self {
         self.connection_state = Some(state);
-        self
-    }
-
-    /// Mark the tab as holding changes not saved yet: a dot after the label,
-    /// as editors do.
-    pub fn modified(mut self, modified: bool) -> Self {
-        self.modified = modified;
         self
     }
 
@@ -132,17 +123,6 @@ impl RenderOnce for ClosableTabTitle {
                     })
                     .child(self.label.clone()),
             )
-            .when(self.modified, |row| {
-                row.child(
-                    div()
-                        .id("modified")
-                        .test_support()
-                        .aria_label(t!("shared.tab.unsaved"))
-                        .size_1p5()
-                        .rounded_full()
-                        .bg(cx.theme().muted_foreground),
-                )
-            })
             .when_some(self.close, |row, (id, action)| {
                 row.child(
                     Button::new(id)

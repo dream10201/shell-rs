@@ -18,7 +18,7 @@ Windows 只在 CI（`.github/workflows/windows.yml`）上编译和测试。C 运
 
 ## 运行和验证
 
-工具链固定 Rust 1.98.1，`russh-sftp` 固定 3.0.0；保持仓库锁定的 GPUI 与 russh 版本。
+工具链固定 Rust 1.98.1；保持仓库锁定的 GPUI 与 russh 版本。
 
 ```sh
 cargo run
@@ -30,34 +30,17 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-仓库是 Cargo workspace：根包是桌面应用，`crates/shellrs-sync` 是同步核心（MIT 许可，文件格式见 `crates/shellrs-sync/FORMAT.md`），`crates/shellrs-ssh` 是 SSH 核心（MIT 许可，登录、通道和 SFTP 传输引擎，桌面和手机共用），`crates/shellrs-hosts` 是主机核心（MIT 许可，主机、凭据等的模型和数据库，以及同步的一轮，桌面和手机共用），`crates/shellrs-mobile` 是手机端的接口（见下文「手机端」）。不带 `-p` 的 `cargo` 命令覆盖前四个。
+仓库是 Cargo workspace：根包是桌面应用，`crates/shellrs-sync` 是同步核心（MIT 许可，文件格式见 `crates/shellrs-sync/FORMAT.md`），`crates/shellrs-ssh` 是 SSH 核心（MIT 许可，登录、通道和经主机 shell 的文件传输），`crates/shellrs-hosts` 是主机核心（MIT 许可，主机、凭据等的模型和数据库，以及同步的一轮）。`cargo` 命令覆盖全部四个。
 
 数据目录依次是：`SHELLRS_DATA_DIR`；Windows 便携版（`shellrs.exe` 旁边有 `data` 文件夹、旁边没有安装程序留下的 `unins000.exe`）的 `data`；系统应用数据目录中的 `shellrs`。主机、端口转发规则和凭据（不含密码）保存在 `shellrs.db`，主机信任记录保存在该目录的 `known_hosts`，凭据里粘贴或生成的私钥保存在该目录的 `keys/` 下，密码和私钥口令使用系统钥匙串（服务名 `shellrs`；账户名是主机端点的 `password:<用户>@<地址>:<端口>`、私钥的 `passphrase:<路径>`、密码凭据的 `credential:<随机 ID>` 和代理的 `proxy:<用户>@<代理地址>:<端口>`）。
 
-`crates/shellrs-ssh/src/sftp/tests.rs` 使用临时目录与故障注入覆盖上传和下载的文件内容、空目录、链接、覆盖、权限、取消、源文件变化、乱序与短读、续传及替换各阶段恢复，以及删除、重命名、新建和递归改权限不跟随链接。Unix 协议测试使用本机 OpenSSH `sftp-server`（macOS `/usr/libexec/sftp-server`，Linux `/usr/lib/openssh/sftp-server`）；工作线程测试仅监听 `127.0.0.1` 的随机端口，使用测试凭据。限制本地套接字的沙箱会跳过该部分，需要在允许回环套接字的环境运行。
+文件传输（`crates/shellrs-ssh/src/transfer.rs`）不用 SFTP，也不用 `scp`：每一步是在终端自己的连接上另开通道执行的一行 `sh -c '…'`，文件内容经 `cat` 进出。它的测试用本机的 `sh` 真跑这些命令（上传、下载、文件夹、权限位、取消、主机上没有的路径）；`src/ssh/transport.rs` 里另有一条测试经进程内的 SSH 服务器把同样的命令交给本机的 `sh`，走一遍真实的通道。只监听 `127.0.0.1` 的随机端口，使用测试凭据；限制本地套接字的沙箱会跳过该部分。
 
 `src/forward/protocol_tests.rs` 用进程内的 SSH 服务器和本机的回显服务测试真实的转发工作线程：三种转发的往返、目标不可达、服务器禁止转发、端口被占用、空闲断线后重连、重试耗尽和停止后的清理，同样只监听 `127.0.0.1` 的随机端口。
 
-`tests/ui/` 里的 UI 测试驱动真实 `Workspace`，通过 `Workspace::new_with_services` 注入 SFTP、本地目录、终端和端口转发服务，不连接用户服务器或真实钥匙串；在线升级的测试给 `workspace.updater()` 注入假的更新服务器和安装器，不联网、不改任何安装。Finder 的系统原生拖放仍需在真实 macOS 窗口中补充人工验收；无头测试覆盖原生文件拖入事件和面板内部拖放。
+`tests/ui/` 里的 UI 测试驱动真实 `Workspace`，通过 `Workspace::new_with_services` 注入终端和端口转发服务，不连接用户服务器或真实钥匙串；在线升级的测试给 `workspace.updater()` 注入假的更新服务器和安装器，不联网、不改任何安装。
 
 开发构建（`cargo run`）不检查更新。要在本机走一遍更新流程，用 debug 构建加环境变量 `SHELLRS_UPDATE_CHANNEL=beta` 编译，运行时用 `SHELLRS_UPDATE_URL=http://127.0.0.1:8000/{channel}.json` 指向本地的静态服务器（`python3 -m http.server`），清单用 `packaging/make-manifest.sh` 和自己生成的测试密钥签名，测试公钥放在环境变量 `SHELLRS_UPDATE_PUBLIC_KEY` 里。release 构建不认这两个环境变量。
-
-上传交互参考 [WinSCP 上传流程](https://winscp.net/eng/docs/task_upload)，协议适配参考 [russh-sftp 请求接口](https://docs.rs/russh-sftp/3.0.0/russh_sftp/client/struct.RawSftpSession.html) 与 [OpenSSH 扩展规范](https://raw.githubusercontent.com/openssh/openssh-portable/master/PROTOCOL)。
-
-## 手机端
-
-iOS、Android App 经 `crates/shellrs-mobile` 链接 SSH 核心和主机核心（保存的主机、凭据和同步）：它用 [UniFFI](https://mozilla.github.io/uniffi-rs/) 生成 Swift 和 Kotlin 绑定，是 App 唯一依赖的稳定接口。它不在 `default-members` 里，命令要带 `-p shellrs-mobile`：
-
-```sh
-cargo test -p shellrs-mobile   # 对测试进程里的 SSH 服务器、内存钥匙串和本机文件夹的同步走一遍接口
-cargo clippy -p shellrs-mobile --all-targets -- -D warnings
-scripts/build-ios.sh           # target/mobile/ios：xcframework 和 Swift 绑定
-scripts/build-android.sh       # target/mobile/android：jniLibs 和 Kotlin 绑定
-crates/shellrs-mobile/tests/swift/run.sh    # 编译 Swift 绑定，对本机构建跑一遍
-crates/shellrs-mobile/tests/kotlin/run.sh   # 同上，Kotlin；CLASSPATH 给 kotlin-stdlib、kotlinx-coroutines-core-jvm、JNA
-```
-
-iOS 需要 Xcode 和 `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`；Android 需要 NDK r28 或更新（`ANDROID_NDK_HOME`）、`cargo install cargo-ndk` 和 `rustup target add aarch64-linux-android x86_64-linux-android`。Android 上同步走 HTTPS 时由系统校验证书，App 要先调 `Tls.setUp(context)` 并加上 `rustls-platform-verifier` 的 AAR。用法、线程规则、什么时候同步和前后台切换时 App 该做什么见 `crates/shellrs-mobile/README.md`；CI 在 `.github/workflows/mobile.yml`。
 
 ## Kubernetes
 

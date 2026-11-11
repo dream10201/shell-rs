@@ -40,9 +40,6 @@ settings.category.appearance:
 settings.category.terminal:
   zh-CN: 终端
   en: Terminal
-settings.category.sftp:
-  zh-CN: SFTP
-  en: SFTP
 settings.category.highlight:
   zh-CN: 关键字高亮
   en: Highlighting
@@ -185,9 +182,6 @@ settings.sidebar_tools.snippets:
 settings.sidebar_tools.history:
   zh-CN: 主机上 bash 的历史命令。
   en: The host’s bash history.
-settings.sidebar_tools.files:
-  zh-CN: 终端连接上的远程文件列表，可以跟随终端目录。
-  en: The host’s files over the terminal’s connection, following its folder.
 settings.sidebar_tools.tmux:
   zh-CN: 主机上的 tmux 会话：新建、连接、退出、重命名和结束。
   en: The host’s tmux sessions, to start, attach, detach, rename and end.
@@ -278,55 +272,6 @@ settings.local_terminal.keep_output_description:
 settings.local_terminal.keep_output_keywords:
   zh-CN: 保留,内容,输出,回滚,历史,恢复,项目
   en: keep,output,scrollback,history,restore,projects
-
-settings.sftp.transfers:
-  zh-CN: 传输
-  en: Transfers
-settings.sftp.parallel:
-  zh-CN: 最大同时传输数量
-  en: Maximum concurrent transfers
-settings.sftp.parallel_description:
-  zh-CN: 同时进行上传和下载的任务数量，超出的任务将排队等待。
-  en: How many uploads and downloads run at the same time. The rest wait in the queue.
-settings.sftp.parallel_keywords:
-  zh-CN: 同时,并发,并行,上传,下载,队列,速度
-  en: concurrent,parallel,simultaneous,upload,download,queue,speed
-settings.sftp.file_sidebar:
-  zh-CN: 文件侧栏
-  en: Files sidebar
-settings.sftp.detect_follow:
-  zh-CN: 自动检测目录配置
-  en: Detect folder reporting
-settings.sftp.detect_follow_description:
-  zh-CN: 打开「文件」侧栏时，自动检测远端 shell 是否已配置目录跟随，未配置时提示自动安装。
-  en: When the Files sidebar opens, check whether the host’s shell reports its folder for Files to follow, and offer to set it up if not.
-settings.sftp.follow_keywords:
-  zh-CN: 目录跟随,文件,侧栏,当前目录,OSC 7,bashrc,zshrc
-  en: follow,folder,files,sidebar,current directory,OSC 7,bashrc,zshrc
-settings.sftp.file_list:
-  zh-CN: 文件列表
-  en: File list
-settings.sftp.icon_style:
-  zh-CN: 图标风格
-  en: Icon style
-settings.sftp.icon_style_description:
-  zh-CN: 彩色图标按文件类型和常见的文件夹名区分。
-  en: Color icons tell file types and common folder names apart.
-settings.sftp.preview_folder:
-  zh-CN: 文件夹
-  en: Folder
-settings.sftp.preview_file:
-  zh-CN: 普通文件
-  en: File
-settings.sftp.keywords:
-  zh-CN: 图标,彩色,单色,文件,文件夹,预览
-  en: icons,color,monochrome,files,folders,preview
-settings.file_icons.monochrome:
-  zh-CN: 单色
-  en: Monochrome
-settings.file_icons.color:
-  zh-CN: 彩色
-  en: Color
 
 settings.highlight.options:
   zh-CN: 常规

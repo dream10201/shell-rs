@@ -472,9 +472,6 @@ host.panel.search:
 host.menu.connect:
   zh-CN: 连接
   en: Connect
-host.menu.open_sftp:
-  zh-CN: 打开 SFTP
-  en: Open SFTP
 host.menu.edit_host:
   zh-CN: 编辑主机…
   en: Edit host…
@@ -574,11 +571,11 @@ host.snippet_draft.command:
   en: Enter a command
 
 host.link.missing:
-  zh-CN: 启动参数里没有要连接的地址，应为 ssh://用户@地址[:端口]（打开 SFTP 用 sftp://）。
-  en: The launch arguments have no address to connect to. Use ssh://user@address[:port], or sftp:// to open SFTP.
+  zh-CN: 启动参数里没有要连接的地址，应为 ssh://用户@地址[:端口]。
+  en: The launch arguments have no address to connect to. Use ssh://user@address[:port].
 host.link.malformed:
-  zh-CN: 链接的格式不对，应为 ssh://用户[:密码]@地址[:端口]（打开 SFTP 用 sftp://）。
-  en: The link isn’t in the right format. Use ssh://user[:password]@address[:port], or sftp:// to open SFTP.
+  zh-CN: 链接的格式不对，应为 ssh://用户[:密码]@地址[:端口]。
+  en: The link isn’t in the right format. Use ssh://user[:password]@address[:port].
 host.link.invalid_port:
   zh-CN: 链接里的端口无效。
   en: The port in the link isn’t valid.
@@ -586,11 +583,11 @@ host.link.no_address:
   zh-CN: 链接里没有地址。
   en: The link has no address.
 host.link.unsupported_scheme:
-  zh-CN: 只支持 ssh:// 和 sftp:// 链接，不支持 %{scheme}://。
-  en: Only ssh:// and sftp:// links are supported, not %{scheme}://.
+  zh-CN: 只支持 ssh:// 链接，不支持 %{scheme}://。
+  en: Only ssh:// links are supported, not %{scheme}://.
 host.link.no_user:
-  zh-CN: 链接里没有用户名，应为 %{scheme}://用户@地址[:端口]。
-  en: The link has no username. Use %{scheme}://user@address[:port].
+  zh-CN: 链接里没有用户名，应为 ssh://用户@地址[:端口]。
+  en: The link has no username. Use ssh://user@address[:port].
 host.link.unreadable:
   zh-CN: 链接里有无法识别的字符。
   en: The link has characters that can’t be read.

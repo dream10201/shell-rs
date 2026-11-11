@@ -1,7 +1,6 @@
 use gpui_kit::component::{ActiveTheme as _, Theme, ThemeMode};
 use gpui_kit::*;
 
-use crate::explorer::{FileIconStyle, FileSizeFormat, ShowHiddenFiles};
 use crate::i18n::UiLocale;
 use crate::terminal::{
     TerminalColors, TerminalFont, TerminalHighlights, TerminalInteraction, is_font_installed,
@@ -12,10 +11,8 @@ use super::app_theme::{ui_theme, ui_theme_name};
 
 /// Bring the window in line with the settings: the theme chosen for the
 /// appearance, in the app and its terminals, the interface's font size, the
-/// locale, the terminal font,
-/// mouse and highlight rules, the keyboard shortcuts, the SFTP size format and
-/// icons, how many files SFTP moves at once, and whether it shows hidden
-/// files.
+/// locale, the terminal font, mouse and highlight rules, and the keyboard
+/// shortcuts.
 /// Does nothing where they already agree, so it can run on every settings
 /// change and every change of the system appearance.
 pub fn apply(settings: AppSettings, window: &mut Window, cx: &mut App) {
@@ -101,22 +98,4 @@ pub fn apply(settings: AppSettings, window: &mut Window, cx: &mut App) {
     // Rebuilds the keymap only when the user's changes differ from the
     // ones it was built with.
     crate::app::apply_shortcuts(&settings.shortcuts, cx);
-
-    if cx.try_global::<FileSizeFormat>() != Some(&settings.file_size_format) {
-        cx.set_global(settings.file_size_format);
-        window.refresh();
-    }
-
-    if cx.try_global::<FileIconStyle>() != Some(&settings.file_icon_style) {
-        cx.set_global(settings.file_icon_style);
-        window.refresh();
-    }
-
-    // For the SFTP worker threads, which have no app to look in.
-    crate::sftp::set_parallel_transfers(settings.transfers.parallel);
-
-    // The SFTP lists observe it and list their rows again.
-    if cx.try_global::<ShowHiddenFiles>() != Some(&settings.show_hidden) {
-        cx.set_global(settings.show_hidden);
-    }
 }

@@ -302,15 +302,6 @@ ssh.test.host_key_declined:
 ssh.terminal.shell_only:
   zh-CN: 这个终端经由堡垒机打开，只能使用终端本身，不能另外执行命令
   en: This terminal was opened by a bastion host and can’t run commands beside the shell
-ssh.terminal.shell_only_sftp:
-  zh-CN: 这个终端经由堡垒机打开，只能使用终端本身，不能另外打开文件
-  en: This terminal was opened by a bastion host and can’t open files beside the shell
-ssh.terminal.sftp_refused:
-  zh-CN: 服务器没有开启 SFTP
-  en: The server doesn’t offer SFTP
-ssh.terminal.sftp_timeout:
-  zh-CN: 打开 SFTP 超时
-  en: Opening SFTP timed out
 ssh.terminal.runtime_failed:
   zh-CN: 无法启动 SSH 运行时
   en: Couldn’t start the SSH runtime
@@ -349,21 +340,3 @@ ssh.exec.refused:
 ssh.exec.timeout:
   zh-CN: 命令超时
   en: The command timed out
-ssh.exec.runtime_failed:
-  zh-CN: 无法启动连接：%{error}
-  en: "Couldn’t start the connection: %{error}"
-ssh.exec.command_failed:
-  zh-CN: 无法执行命令：%{error}
-  en: "Couldn’t run the command: %{error}"
-ssh.exec.aborted:
-  zh-CN: 输出已无人接收，命令已放弃
-  en: Nothing was reading the output, so the command was abandoned
-ssh.exec.disconnected:
-  zh-CN: 连接在命令结束前断开
-  en: The connection closed before the command finished
-ssh.exec.host_key_changed:
-  zh-CN: "%{endpoint} 的主机密钥与已保存的不一致，已拒绝连接。请先核实服务器身份"
-  en: The host key of %{endpoint} doesn’t match the saved one, so the connection was refused. Verify the server’s identity first
-ssh.exec.host_key_unknown:
-  zh-CN: 尚未信任 %{endpoint} 的主机密钥：请先在 ShellRS 中连接一次这台主机
-  en: The host key of %{endpoint} isn’t trusted yet. Connect to this host in ShellRS once first

@@ -1,7 +1,8 @@
 use super::describe::{describe_channel_error, describe_error, describe_login_error};
+use super::transfer::{ChannelCommand, RunningCommand};
 use super::{
     ChannelError, ConnectError, HostOsProbe, LATENCY_INTERVAL, ProbeOutcome, PtySize,
-    SshConnectionConfig, SshConnector, SshHandle, SshPrompts, open_probe, open_sftp_channel,
+    SshConnectionConfig, SshConnector, SshHandle, SshPrompts, open_command_channel, open_probe,
     open_shell, resize_pty, round_trip, run_exec, run_terminal_worker, write_shell,
 };
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
     host::{HostLogin, HostOs},
     i18n::t,
     terminal::{
-        ExecRequest, RemoteTerminalTransportProvider, SftpChannel, SftpChannelRequest,
+        CommandRequest, ExecRequest, RemoteTerminalTransportProvider,
         SharedTerminalTransportFactory, TerminalSize, TerminalTransport, TerminalTransportCommand,
         TerminalTransportEvent, TerminalTransportFactory,
     },
@@ -88,7 +89,7 @@ impl SshTerminalTransport {
         events: Sender<TerminalTransportEvent>,
     ) -> Result<()> {
         // Said in the terminal: down to the cause, which says what to fix.
-        let (handle, fingerprint) = self
+        let (handle, _) = self
             .connector
             .connect(&self.config, broker.clone())
             .await
@@ -131,8 +132,8 @@ impl SshTerminalTransport {
         latency_ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let mut ping: Option<Pin<Box<dyn Future<Output = Latency> + Send + '_>>> = None;
 
-        // Channels for the right sidebar, one at a time: its tools' commands
-        // and 文件's SFTP. A tool asking again before its last answer came
+        // Channels beside the shell, opened one at a time: the right
+        // sidebar's tools' commands and a file transfer's. A tool asking again before its last answer came
         // back waits its turn rather than piling channels onto the server.
         // Each future starts when it is first polled, so a queued one has
         // done nothing yet.
@@ -176,11 +177,11 @@ impl SshTerminalTransport {
                     Some(TerminalTransportCommand::Exec(request)) => {
                         side_queue.push_back(Box::pin(answer_exec(&handle, request)));
                     }
-                    Some(TerminalTransportCommand::OpenSftp(request)) if shell_only => {
-                        let _ = request.reply.send(Err(describe_channel_error(&ChannelError::ShellOnlySftp)));
+                    Some(TerminalTransportCommand::StartCommand(request)) if shell_only => {
+                        let _ = request.reply.send(Err(describe_channel_error(&ChannelError::ShellOnly)));
                     }
-                    Some(TerminalTransportCommand::OpenSftp(request)) => {
-                        side_queue.push_back(Box::pin(answer_sftp(&handle, fingerprint.clone(), request)));
+                    Some(TerminalTransportCommand::StartCommand(request)) => {
+                        side_queue.push_back(Box::pin(answer_command(&handle, request)));
                     }
                     Some(TerminalTransportCommand::PromptReply { .. })
                     | Some(TerminalTransportCommand::SendBreak) => {}
@@ -279,17 +280,18 @@ async fn answer_exec(handle: &SshHandle, request: ExecRequest) {
     let _ = reply.send(result);
 }
 
-/// Open an SFTP channel beside the shell and answer its request with the
-/// channel's stream. The stream goes on to the SFTP worker's own runtime;
-/// the connection's session task stays here, on the terminal's.
-async fn answer_sftp(handle: &SshHandle, fingerprint: String, request: SftpChannelRequest) {
-    let result = open_sftp_channel(handle, EXEC_TIMEOUT)
-        .await
-        .map(|stream| SftpChannel {
-            stream,
-            fingerprint,
-        })
-        .map_err(|error| describe_error(&error));
+/// Start a file transfer's command on a channel beside the shell and
+/// answer its request with the command, running. Its input and output go
+/// on on the asker's own runtime; the connection's session task stays here,
+/// on the terminal's.
+async fn answer_command(handle: &SshHandle, request: CommandRequest) {
+    let result = async {
+        let channel = open_command_channel(handle, EXEC_TIMEOUT).await?;
+        let command = ChannelCommand::start(channel, request.command).await?;
+        Ok::<_, anyhow::Error>(Box::new(command) as Box<dyn RunningCommand>)
+    }
+    .await
+    .map_err(|error| describe_error(&error));
     // The asker may have stopped waiting.
     let _ = request.reply.send(result);
 }
@@ -309,13 +311,11 @@ mod tests {
     use russh::server::{self, Server as _};
     use russh::{MethodKind, MethodSet};
     use std::borrow::Cow;
+    use std::collections::HashMap;
     use std::thread;
     use std::{path::Path, sync::Mutex};
 
     const TEST_PASSWORD: &str = "test-password";
-    /// What `run_command` runs in these tests: output on both
-    /// streams, then an exit status that arrives after the EOF.
-    const EXEC_COMMAND: &str = "printf out; printf err >&2; exit 3";
 
     #[derive(Default)]
     struct ServerState {
@@ -324,6 +324,9 @@ mod tests {
         input: Vec<u8>,
         /// Every command run through an exec channel, in order.
         execs: Vec<String>,
+        /// Where a file transfer's commands run, with this machine's `sh`:
+        /// the login folder of a server that has one.
+        home: Option<std::path::PathBuf>,
     }
 
     #[derive(Clone)]
@@ -335,6 +338,8 @@ mod tests {
         /// This connection answered [`TestAuth::KeyboardPassword`]'s
         /// password question correctly.
         password_answered: bool,
+        /// The input of the commands running with `sh`, by their channel.
+        inputs: Arc<tokio::sync::Mutex<HashMap<russh::ChannelId, tokio::process::ChildStdin>>>,
     }
 
     #[derive(Clone)]
@@ -527,13 +532,55 @@ mod tests {
                 .execs
                 .push(String::from_utf8_lossy(command).into_owned());
             session.channel_success(channel)?;
-            if command == EXEC_COMMAND.as_bytes() {
-                session.data(channel, b"out".to_vec())?;
-                session.extended_data(channel, 1, b"err".to_vec())?;
-                // After the EOF, which servers are free to do.
-                session.eof(channel)?;
-                session.exit_status_request(channel, 3)?;
-                session.close(channel)?;
+            let home = self
+                .state
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .home
+                .clone();
+            if let Some(home) = home.filter(|_| command.starts_with(b"sh -c '")) {
+                let mut child = {
+                    let _forks = crate::testing::no_forks();
+                    tokio::process::Command::new("sh")
+                        .args(["-c", &String::from_utf8_lossy(command)])
+                        .current_dir(&home)
+                        .env("HOME", &home)
+                        .stdin(std::process::Stdio::piped())
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .kill_on_drop(true)
+                        .spawn()
+                        .map_err(russh::Error::IO)?
+                };
+                if let Some(input) = child.stdin.take() {
+                    self.inputs.lock().await.insert(channel, input);
+                }
+                let handle = session.handle();
+                tokio::spawn(async move {
+                    use tokio::io::AsyncReadExt as _;
+                    let mut output = child.stdout.take().expect("piped");
+                    let mut buffer = vec![0; 32 * 1024];
+                    while let Ok(read) = output.read(&mut buffer).await {
+                        if read == 0 {
+                            break;
+                        }
+                        let _ = handle.data(channel, buffer[..read].to_vec()).await;
+                    }
+                    let mut said = Vec::new();
+                    if let Some(mut errors) = child.stderr.take() {
+                        let _ = errors.read_to_end(&mut said).await;
+                    }
+                    if !said.is_empty() {
+                        let _ = handle.extended_data(channel, 1, said).await;
+                    }
+                    let code = child.wait().await.ok().and_then(|status| status.code());
+                    let _ = handle.eof(channel).await;
+                    // After the EOF, which servers are free to do.
+                    let _ = handle
+                        .exit_status_request(channel, code.unwrap_or(255) as u32)
+                        .await;
+                    let _ = handle.close(channel).await;
+                });
                 return Ok(());
             }
             if let Some(reply) = (self.probe_reply)(&String::from_utf8_lossy(command)) {
@@ -560,12 +607,27 @@ mod tests {
             Ok(())
         }
 
+        async fn channel_eof(
+            &mut self,
+            channel: russh::ChannelId,
+            _: &mut server::Session,
+        ) -> Result<(), Self::Error> {
+            // The command's input ends with the channel's.
+            self.inputs.lock().await.remove(&channel);
+            Ok(())
+        }
+
         async fn data(
             &mut self,
             channel: russh::ChannelId,
             data: &[u8],
             session: &mut server::Session,
         ) -> Result<(), Self::Error> {
+            if let Some(input) = self.inputs.lock().await.get_mut(&channel) {
+                use tokio::io::AsyncWriteExt as _;
+                input.write_all(data).await.map_err(russh::Error::IO)?;
+                return Ok(());
+            }
             self.state
                 .lock()
                 .unwrap_or_else(|error| error.into_inner())
@@ -655,6 +717,7 @@ mod tests {
                     auth,
                     probe_reply,
                     password_answered: false,
+                    inputs: Arc::default(),
                 };
                 let running = server.run_on_socket(config, &listener);
                 ready_tx.send(Ok((port, running.handle()))).unwrap();
@@ -1036,35 +1099,124 @@ mod tests {
         ))
     }
 
-    /// The core's `run_command` against the test server, on a thread of its own so
-    /// a login that waits instead of failing shows up as a timeout.
-    fn run_exec_command(
-        host: &Host,
-        known_hosts: &Path,
-        keychain: Arc<InMemorySecretStore>,
-    ) -> (
-        Result<crate::ssh::ExecExit, crate::ssh::ExecError>,
-        Vec<u8>,
-        Vec<u8>,
-    ) {
-        let connector = SshConnector::new(known_hosts, keychain);
-        let config = SshConnectionConfig::from(&HostLogin::of(host, None));
-        let (done_tx, done_rx) = mpsc::channel();
-        thread::spawn(move || {
-            let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-            let result =
-                crate::ssh::run_command(&connector, &config, EXEC_COMMAND, &mut |stream, bytes| {
-                    match stream {
-                        crate::ssh::ExecStream::Stdout => stdout.extend_from_slice(bytes),
-                        crate::ssh::ExecStream::Stderr => stderr.extend_from_slice(bytes),
-                    }
-                    Ok(())
-                });
-            let _ = done_tx.send((result, stdout, stderr));
+    /// A file transfer's commands, started beside the shell of a running
+    /// terminal transport.
+    struct TransportRunner(mpsc::Sender<TerminalTransportCommand>);
+
+    impl crate::ssh::transfer::CommandRunner for TransportRunner {
+        fn start(
+            &mut self,
+            command: String,
+        ) -> futures::future::BoxFuture<'_, Result<Box<dyn RunningCommand>>> {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            self.0
+                .send(TerminalTransportCommand::StartCommand(CommandRequest {
+                    command,
+                    reply,
+                }))
+                .unwrap();
+            Box::pin(async move { answer.await?.map_err(|reason| anyhow!(reason)) })
+        }
+    }
+
+    #[test]
+    fn files_go_up_and_come_back_over_the_terminals_own_connection() {
+        use crate::ssh::transfer::{self, TransferFailure, TransferSummary};
+
+        let Some(server) = start_server(TestAuth::Password) else {
+            eprintln!("loopback sockets are unavailable in this sandbox; skipping");
+            return;
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let home = directory.path().join("home");
+        std::fs::create_dir(&home).unwrap();
+        server.state.lock().unwrap().home = Some(home.clone());
+        let known_hosts = directory.path().join("known_hosts");
+        trust_server(server.port, &known_hosts);
+        let host = password_host(server.port);
+        let keychain = Arc::new(InMemorySecretStore::default());
+        keychain
+            .set(&host.password_secret(), TEST_PASSWORD)
+            .unwrap();
+
+        let provider =
+            SshTerminalTransportProvider::with_connector(SshConnector::new(&known_hosts, keychain));
+        let factory = provider.factory_for(&HostLogin::of(&host, None));
+        let (command_tx, command_rx) = mpsc::channel();
+        let (event_tx, event_rx) = async_channel::unbounded();
+        let worker = thread::spawn(move || {
+            factory
+                .create()
+                .run(TerminalSize::DEFAULT, command_rx, event_tx)
         });
-        done_rx
-            .recv_timeout(Duration::from_secs(10))
-            .expect("exec waited instead of finishing")
+        loop {
+            match event_rx.recv_blocking().unwrap() {
+                TerminalTransportEvent::Started => break,
+                TerminalTransportEvent::Failed(error) => panic!("SSH failed: {error}"),
+                TerminalTransportEvent::Prompt(prompt) => panic!("asked: {:?}", prompt.kind()),
+                _ => {}
+            }
+        }
+
+        let local = directory.path().join("local");
+        std::fs::create_dir_all(local.join("site/css")).unwrap();
+        std::fs::write(local.join("site/index.html"), "<p>hello</p>").unwrap();
+        // More than one window of the channel, and not a round number.
+        let large: Vec<u8> = (0..3_000_001u32).map(|n| (n % 251) as u8).collect();
+        std::fs::write(local.join("site/css/large.bin"), &large).unwrap();
+        let back = directory.path().join("back");
+
+        let mut runner = TransportRunner(command_tx.clone());
+        let (_stop, cancel) = tokio::sync::watch::channel(false);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let summary = transfer::upload(
+                &mut runner,
+                &[local.join("site")],
+                "~/www",
+                &mut |_| {},
+                &cancel,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                summary,
+                TransferSummary {
+                    files: 2,
+                    bytes: 3_000_013
+                }
+            );
+            assert_eq!(
+                std::fs::read(home.join("www/site/css/large.bin")).unwrap(),
+                large
+            );
+
+            transfer::download(&mut runner, "www/site", &back, &mut |_| {}, &cancel)
+                .await
+                .unwrap();
+            assert_eq!(
+                std::fs::read(back.join("site/css/large.bin")).unwrap(),
+                large
+            );
+            assert_eq!(
+                std::fs::read_to_string(back.join("site/index.html")).unwrap(),
+                "<p>hello</p>"
+            );
+
+            let error = transfer::download(&mut runner, "nowhere", &back, &mut |_| {}, &cancel)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                crate::ssh::find_cause::<TransferFailure>(&error),
+                Some(&TransferFailure::NotFound("nowhere".into()))
+            );
+        });
+
+        command_tx.send(TerminalTransportCommand::Shutdown).unwrap();
+        worker.join().unwrap().unwrap();
     }
 
     /// Trust the test server's key the way a first connection in the app
@@ -1077,57 +1229,6 @@ mod tests {
             true,
         );
         assert_eq!(result, Ok(()));
-    }
-
-    #[test]
-    fn exec_passes_on_both_outputs_and_the_exit_code_after_eof() {
-        let Some(server) = start_server(TestAuth::Password) else {
-            eprintln!("loopback sockets are unavailable in this sandbox; skipping");
-            return;
-        };
-        let directory = tempfile::tempdir().unwrap();
-        let known_hosts = directory.path().join("known_hosts");
-        trust_server(server.port, &known_hosts);
-        let host = password_host(server.port);
-        let keychain = Arc::new(InMemorySecretStore::default());
-        keychain
-            .set(&host.password_secret(), TEST_PASSWORD)
-            .unwrap();
-
-        let (result, stdout, stderr) = run_exec_command(&host, &known_hosts, keychain);
-        assert_eq!(result.unwrap(), crate::ssh::ExecExit::Code(3));
-        assert_eq!(stdout, b"out");
-        assert_eq!(stderr, b"err");
-        assert!(
-            server
-                .state
-                .lock()
-                .unwrap()
-                .execs
-                .contains(&EXEC_COMMAND.to_string())
-        );
-    }
-
-    #[test]
-    fn exec_fails_at_once_on_a_host_not_trusted_yet() {
-        let Some(server) = start_server(TestAuth::Password) else {
-            eprintln!("loopback sockets are unavailable in this sandbox; skipping");
-            return;
-        };
-        let directory = tempfile::tempdir().unwrap();
-        let known_hosts = directory.path().join("known_hosts");
-        let host = password_host(server.port);
-        let keychain = Arc::new(InMemorySecretStore::default());
-        keychain
-            .set(&host.password_secret(), TEST_PASSWORD)
-            .unwrap();
-
-        let (result, stdout, _) = run_exec_command(&host, &known_hosts, keychain);
-        let error = result.unwrap_err();
-        assert_eq!(error.kind, crate::ssh::ExecErrorKind::HostKeyUnknown);
-        assert!(stdout.is_empty());
-        // Nothing was trusted on the user's behalf.
-        assert!(!known_hosts.exists());
     }
 
     /// A connection test through `connector`, trusting the host it meets.
@@ -1379,26 +1480,6 @@ mod tests {
             test_through(connector, crate::connection::LoginTest::typed(login)),
             Err("服务器要求密码，「无密码」不会询问；请改用「密码」或「使用凭据」".to_string())
         );
-    }
-
-    #[test]
-    fn exec_without_a_saved_password_says_what_is_missing() {
-        let Some(server) = start_server(TestAuth::Password) else {
-            eprintln!("loopback sockets are unavailable in this sandbox; skipping");
-            return;
-        };
-        let directory = tempfile::tempdir().unwrap();
-        let known_hosts = directory.path().join("known_hosts");
-        trust_server(server.port, &known_hosts);
-        let host = password_host(server.port);
-
-        let (result, _, _) = run_exec_command(
-            &host,
-            &known_hosts,
-            Arc::new(InMemorySecretStore::default()),
-        );
-        let error = result.unwrap_err();
-        assert_eq!(error.kind, crate::ssh::ExecErrorKind::MissingCredential);
     }
 
     #[test]
@@ -1927,35 +2008,6 @@ mod tests {
             test(login_request(server.port)),
             Err("未填写密码".to_string())
         );
-    }
-
-    #[test]
-    fn exec_answers_a_keyboard_interactive_password_question_with_the_saved_password() {
-        let Some(server) = start_server(TestAuth::KeyboardPassword) else {
-            eprintln!("loopback sockets are unavailable in this sandbox; skipping");
-            return;
-        };
-        let directory = tempfile::tempdir().unwrap();
-        let known_hosts = directory.path().join("known_hosts");
-        trust_server(server.port, &known_hosts);
-        let host = password_host(server.port);
-        let saved = |password: Option<&str>| {
-            let keychain = Arc::new(InMemorySecretStore::default());
-            if let Some(password) = password {
-                keychain.set(&host.password_secret(), password).unwrap();
-            }
-            keychain
-        };
-
-        let (result, stdout, _) = run_exec_command(&host, &known_hosts, saved(Some(TEST_PASSWORD)));
-        assert_eq!(result.unwrap(), crate::ssh::ExecExit::Code(3));
-        assert_eq!(stdout, b"out");
-
-        for password in [None, Some("wrong")] {
-            let (result, _, _) = run_exec_command(&host, &known_hosts, saved(password));
-            let error = result.unwrap_err();
-            assert_eq!(error.kind, crate::ssh::ExecErrorKind::MissingCredential);
-        }
     }
 
     #[test]

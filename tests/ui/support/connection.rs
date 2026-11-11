@@ -37,8 +37,6 @@ pub fn open_workspace_with_settings_and_tester(
                 fake_telnet_terminals(),
                 fake_serial_terminals(),
                 fake_local_terminals(),
-                Arc::new(FakeSftpProvider::default()),
-                Arc::new(FakeLocalDirectory::default()),
                 tester.clone(),
                 Arc::new(FakeForwardProvider::default()),
                 window,

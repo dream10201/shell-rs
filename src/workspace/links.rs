@@ -1,14 +1,14 @@
 //! The workspace's share of the links ShellRS is opened with (外部连接):
 //! a bastion host runs `ShellRS ssh://user@host:port`, the way it runs
-//! Xshell, or `ShellRS sftp://…`, the way it runs WinSCP, and ShellRS
-//! connects without saving the host. The host goes with its last tab.
+//! Xshell, and ShellRS connects without saving the host. The host goes
+//! with its last tab.
 
 use gpui_kit::component::{WindowExt as _, dock::DockPlacement, notification::Notification};
 use gpui_kit::*;
 use std::time::Duration;
 
 use crate::app::ShowOrHideApp;
-use crate::host::{HostId, LinkKind, SshLink};
+use crate::host::{HostId, SshLink};
 use crate::i18n::t;
 use crate::instance::{InstanceServer, OpenLink};
 
@@ -56,8 +56,7 @@ impl Workspace {
     }
 
     /// Connect to what `link` names in a tab of its own across the window,
-    /// a terminal or an SFTP tab by the link's scheme, or say what is wrong
-    /// with it.
+    /// or say what is wrong with it.
     pub fn open_link(&mut self, link: OpenLink, window: &mut Window, cx: &mut Context<Self>) {
         if crate::app_lock::is_locked(cx) {
             self.locked_links.push(link);
@@ -65,14 +64,10 @@ impl Workspace {
         }
         match SshLink::parse(&link.url, link.tab.as_deref()) {
             Ok(link) => {
-                let kind = link.kind;
                 let host = self
                     .store
                     .update(cx, |store, cx| store.insert_external(link, cx));
-                match kind {
-                    LinkKind::Ssh => self.connect_host(host, window, cx),
-                    LinkKind::Sftp => self.open_explorer(host, window, cx),
-                }
+                self.connect_host(host, window, cx);
                 // The tab is what the bastion host opened ShellRS for: the
                 // hosts make way, as with ⌘B, which brings them back.
                 if self.dock_area.read(cx).is_dock_open(DockPlacement::Left) {

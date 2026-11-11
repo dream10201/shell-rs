@@ -5,7 +5,7 @@
 <h1 align="center">ShellRS</h1>
 
 <p align="center">
-  用 Rust 编写、由 GPU 渲染界面的高性能原生跨平台 SSH 客户端：Xshell 式的主机管理、WinSCP 式 SFTP 和端口转发，都在一个窗口里。
+  用 Rust 编写、由 GPU 渲染界面的高性能原生跨平台 SSH 客户端：Xshell 式的主机管理、多标签终端、文件上传下载和端口转发，都在一个窗口里。
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 
 ## 简介
 
-ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SFTP 文件管理、SSH 端口转发放进同一个跨平台应用，JumpServer 等堡垒机也可以像调用 Xshell、WinSCP 一样调用它。它用 Rust 编写，界面基于 Zed 编辑器的 GPU 加速 UI 框架 GPUI（通过 [gpui-kit](https://gpui-kit.com)），不依赖 Electron 或 JVM。
+ShellRS 把 Xshell 式的主机管理和多标签终端、经终端连接的文件上传下载、SSH 端口转发放进同一个跨平台应用，JumpServer 等堡垒机也可以像调用 Xshell 一样调用它。它用 Rust 编写，界面基于 Zed 编辑器的 GPU 加速 UI 框架 GPUI（通过 [gpui-kit](https://gpui-kit.com)），不依赖 Electron 或 JVM。
 
 主机、分组、凭据和转发规则保存在本地的 SQLite 数据库里。密码和私钥口令只存进系统钥匙串（macOS 钥匙串、Windows 凭据管理器、Linux Secret Service），数据库里没有任何秘密。
 
@@ -36,7 +36,7 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 - 分组可以任意层级嵌套，支持拖动整理和搜索。
 - 连上主机后自动识别远程系统，在主机树和标签上显示对应的系统徽章（各 Linux 发行版、BSD、macOS、Windows）。
 - 认证方式三选一：密码、无密码（依次尝试服务器免认证、SSH Agent 和 `~/.ssh` 下的默认私钥）、使用凭据。
-- 连接方式三选一：直接连接、多级 SSH 跳板、HTTP / SOCKS5 代理。终端、SFTP 和端口转发都按它连接。
+- 连接方式三选一：直接连接、多级 SSH 跳板、HTTP / SOCKS5 代理。终端、文件传输和端口转发都按它连接。
 - 「测试连接」会真实登录一次，失败时写明原因。
 - 除了 SSH，还有 Telnet 主机（交换机、串口服务器、实验环境的设备），按设备的提示自动登录，同样可以走跳板和代理；以及本机的串口，接 Console 线和调试口。
 
@@ -46,7 +46,7 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 - 标签栏实时显示这条 SSH 连接的往返延迟。
 - 支持查找（智能大小写）和本地清屏，字体、字号、行高都可以设置。
 - ZMODEM：在终端里用 `rz`、`sz` 上传下载文件，SSH、Telnet、串口都能用；把文件拖到终端上就能上传。
-- 标签可以拖成左右或上下分栏，终端和 SFTP 并排看。
+- 标签可以拖成左右或上下分栏，几个终端并排看。
 
 **右侧栏工具**
 
@@ -57,22 +57,18 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 - Kubernetes：选择主机 kubeconfig 中的集群，读取所有命名空间并过滤 Pod、Deployment、StatefulSet、Service 等资源；查看详情与关联 Pod、检索容器日志、生成日志和进入容器等命令。默认不显示，在设置里打开。详见[使用说明](docs/kubernetes.md)。
 - 历史命令读主机上的 `~/.bash_history`，命令片段所有主机共用、可以分类；点一下输入到终端，或直接执行。
 - tmux：主机上的 tmux 会话，标出终端所在的那个；新建、连接、退出当前、重命名和结束会话。
-- 文件：终端旁的单栏远程文件列表，在终端自己的连接上开 SFTP 通道，跟随终端的当前目录。浏览、编辑和预览，拖入文件上传，下载到「下载」文件夹。
 - GPU/NPU：AI 主机的 NVIDIA GPU 和华为昇腾 NPU，按 8 卡设计：汇总、每卡的利用率、显存、温度、功耗和健康状态，以及计算进程（可以结束）。默认不显示，在设置里打开，其余工具也可以在那里隐藏。
 
-**SFTP**
+**文件传输**
 
-- 对标 WinSCP Commander 的双栏文件浏览器：本地和远程两侧对称，WinSCP 的列、路径标签、书签和快捷键（F5、F2、F7、F8……）。
-- 拖动或快捷键上传、下载，支持递归。传输进行中还能继续发起，新批次进传输队列依次执行。
-- 断点续传：先写 `.filepart`，断线后按 1、3、10 秒自动重连；重启后再传同样的文件，会询问是否续传。
-- 删除（本地移到废纸篓）、重命名、新建、修改权限（3×3 复选框加八进制，可递归）。
-- 内置编辑器：双击文本文件直接编辑，⌘S 原地写回服务器，保存前检查文件是否被别人改过；常见格式语法高亮。图片和 Markdown 可以预览。
-- 每个 SFTP 标签单独建立连接，只请求 SFTP 子系统，不要求服务器提供 shell。
+- SSH 终端连上后，标签栏右侧的「上传文件…」「下载文件…」经这个终端自己的连接传文件和文件夹：不再登录，跳板和代理照样走。
+- 不用 SFTP，也不用 `scp`：只靠主机 shell 里的 `cat`、`wc`、`mkdir`、`mv`、`find`，服务器上没有 SFTP 子系统也能用。
+- 上传先写临时文件，收全后才替换，中途断开不会留下半个文件；进度显示在状态栏，可以取消。
 
 **从堡垒机打开**
 
-- 兼容 Xshell 和 WinSCP 的命令行调用方式：在 JumpServer 等堡垒机的客户端里把 ShellRS 设成 SSH / SFTP 客户端，`ssh://` 链接打开终端，`sftp://` 链接打开 SFTP。
-- 认得 Xshell 的 `-url`、`-newtab` 和 WinSCP 的 `/sessionname=`；ShellRS 已在运行时，链接交给正在运行的那个打开。
+- 兼容 Xshell 的命令行调用方式：在 JumpServer 等堡垒机的客户端里把 ShellRS 设成 SSH 客户端，`ssh://` 链接打开终端。
+- 认得 Xshell 的 `-url`、`-newtab`；ShellRS 已在运行时，链接交给正在运行的那个打开。
 - 打开的是不保存的外部连接：不进主机列表，链接里的密码只留在内存里，标签关掉就没了。每条连接只用一个通道，不允许多开通道的堡垒机也能用。详见[使用手册](docs/manual.zh.md#从堡垒机打开外部连接)。
 
 **端口转发**
@@ -95,18 +91,8 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 ## 截图
 
 <p align="center">
-  <img src="docs/screenshots/split.png" alt="Dock 分栏：上面是远程终端，下面是同一台主机的 SFTP"><br>
-  <em>Dock 分栏：远程终端和 SFTP 上下并排</em>
-</p>
-
-<p align="center">
   <img src="docs/screenshots/tools.png" alt="右侧栏的五个工具并排：系统监控、进程管理、系统服务、Docker 和网络连接"><br>
   <em>右侧栏工具：系统监控、进程管理、系统服务、Docker 和网络连接</em>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/sftp.png" alt="双栏 SFTP：左侧本地目录多选了三项，右侧是远程 /etc，下方传输队列里一批正在上传、一批等待中"><br>
-  <em>WinSCP 式双栏 SFTP：高亮多选，传输队列显示进度、速度和剩余时间</em>
 </p>
 
 <p align="center">
@@ -134,7 +120,7 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 
 1. 点标题栏的「新建主机…」（⌘N，Windows / Linux 上 Ctrl+N），填写地址、端口和认证方式，密码会存进系统钥匙串。
 2. 双击主机打开终端。第一次连接时会请你确认主机密钥。
-3. 右键主机选「打开 SFTP」，或点终端标签栏右侧的「SFTP」，在两栏之间拖动文件即可上传、下载。
+3. 终端连上后，点标签栏右侧的「上传文件…」或「下载文件…」传文件。
 4. 标题栏「ShellRS」后面的三个图标切换侧栏：主机、端口转发、凭据。
 5. ⌘T（Ctrl+T）打开本地终端。把标签拖到中间区域的上、下、左、右边缘，就能分栏。
 
@@ -161,7 +147,6 @@ cargo run
 
 以下功能尚未实现：
 
-- SFTP 的目录同步、过滤、查找文件和目录树
 - Dock 布局在重启后保留
 - 跳板和代理叠加使用、HTTPS 代理
 - Windows 安装程序的代码签名
@@ -180,12 +165,11 @@ cargo test
 
 - [ShellRS](https://github.com/since2006/shell-rs)（since2006）：本项目 fork 自它
 - [GPUI](https://github.com/zed-industries/zed)（Zed）和 [gpui-kit](https://gpui-kit.com)：界面框架
-- [russh](https://github.com/Eugeny/russh) 和 [russh-sftp](https://github.com/AspectUnk/russh-sftp)：SSH 与 SFTP 协议
+- [russh](https://github.com/Eugeny/russh)：SSH 协议
 - [alacritty_terminal](https://crates.io/crates/alacritty_terminal) 和 [portable-pty](https://crates.io/crates/portable-pty)：终端模拟与本地 PTY
 - [keyring](https://crates.io/crates/keyring)：系统钥匙串
 - [Simple Icons](https://simpleicons.org)：系统徽章和右侧栏 Docker 工具使用的 logo（CC0）
-- [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme)：SFTP 文件列表的彩色图标（MIT）
-- [Termark](https://www.termark.app/)、[WinSCP](https://winscp.net) 和 Xshell：交互设计的参照
+- [Termark](https://www.termark.app/) 和 Xshell：交互设计的参照
 
 ## 许可证
 

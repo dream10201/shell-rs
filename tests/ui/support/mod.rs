@@ -15,15 +15,14 @@ pub use shellrs::app::{
     ConnectGroup, ConnectHost, CopyCredentialPublicKey, CopyHostAddress, CopyHostId,
     DeleteCredential, DeleteForward, DeleteGroup, DeleteHost, DisconnectTerminal, EditCredential,
     EditForward, EditHost, ExpandAllGroups, FindInTerminal, FindNextInTerminal,
-    FindPreviousInTerminal, FocusSearch, NewHostInGroup, NewLocalTerminal, OpenExplorer,
-    OpenSettings, ReconnectTerminal, RenameGroup, RenameTerminal, StartForward, StopForward,
-    ToggleHostPanel, ToggleToolSidebar,
+    FindPreviousInTerminal, FocusSearch, NewHostInGroup, NewLocalTerminal, OpenSettings,
+    ReconnectTerminal, RenameGroup, RenameTerminal, StartForward, StopForward, ToggleHostPanel,
+    ToggleToolSidebar,
 };
 pub use shellrs::connection::{
     AuthenticationRequest, ConnectionPrompt, ConnectionPromptKind, ConnectionPromptReply,
     ConnectionTester, Latency, LoginTest, TelnetTest, TrustCallback,
 };
-pub use shellrs::explorer::ExplorerId;
 pub use shellrs::forward::{
     ForwardCommand, ForwardEvent, ForwardStatus, ForwardTransport, ForwardTransportProvider,
 };
@@ -38,15 +37,10 @@ pub use shellrs::secrets::{InMemorySecretStore, SecretRef, SecretStore as _};
 pub use shellrs::settings::{
     Appearance, DEFAULT_INTERFACE_FONT_SIZE, InterfaceLanguage, SettingsStore,
 };
-pub use shellrs::sftp::{
-    DirectoryEntry, DirectoryListing, EDIT_LIMIT, EntryKind, FileBytes, FileMetadata, FileStamp,
-    LocalDirectoryProvider, ReadFailure, RemotePath, SaveFailure, SftpCommand, SftpEvent,
-    SftpRoute, SftpTransport, SftpTransportProvider, TextFile, UploadRequest,
-};
 pub use shellrs::terminal::{
     FixedLocalTerminalTransportProvider, FixedRemoteTerminalTransportProvider,
     FixedSerialTerminalTransportProvider, FixedTelnetTerminalTransportProvider, LocalShell,
-    LocalTerminalId, RemoteTerminalId, RemoteTerminalTransportProvider, SftpChannel,
+    LocalTerminalId, RemoteTerminalId, RemoteTerminalTransportProvider,
     SharedTerminalTransportFactory, TerminalFont, TerminalLifecycle, TerminalSize,
     TerminalTransport, TerminalTransportCommand, TerminalTransportEvent, TerminalTransportFactory,
 };
@@ -62,21 +56,17 @@ pub use std::time::Duration;
 mod connection;
 mod credential;
 mod forward;
-mod sftp;
 mod terminal;
 
 pub use connection::*;
 pub use credential::*;
 pub use forward::*;
-pub use sftp::*;
 pub use terminal::*;
 
 /// Seeded host ids, in insertion order (see `HostStore::seed`).
 pub const WEB_01: u64 = 1;
 pub const WEB_02: u64 = 2;
 pub const DB_01: u64 = 3;
-/// The first SFTP tab a test opens; tab ids count up from 1.
-pub const SFTP_TAB: u64 = 1;
 pub const STAGING_API: u64 = 4;
 pub const DEV_BOX: u64 = 6;
 pub const INITIAL_WEB_TERMINAL: u64 = 1;
@@ -137,20 +127,6 @@ pub fn appearance_dropdown(window: &mut gpui_kit::Window, item: usize) -> Option
         .find("btn")
         .label()
         .map(str::to_string)
-}
-
-/// `TestWindowExt::click` sends no modifiers, and file lists need ⌘ and
-/// Shift clicks.
-pub fn modified_click(
-    window: &mut gpui_kit::Window,
-    pane: (&'static str, u64),
-    row: &str,
-    modifiers: gpui_kit::Modifiers,
-    cx: &mut App,
-) {
-    let row = ElementId::Name(row.to_string().into());
-    let position = window.within(pane).find(row).bounds().center();
-    click_at(window, position, modifiers, cx);
 }
 
 /// A left click at a point, for places without an element of their own.

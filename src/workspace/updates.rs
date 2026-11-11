@@ -10,7 +10,6 @@ use crate::app::{
     CheckForUpdates, DownloadUpdate, OpenChangelog, OpenDownloadPage, OpenWebsite, RestartToUpdate,
     ShowUpdate,
 };
-use crate::host::ConnectionState;
 use crate::i18n::t;
 use crate::terminal::TerminalLifecycle;
 use crate::update::build_info::{WEBSITE, changelog_page};
@@ -144,14 +143,6 @@ impl Workspace {
                 .values()
                 .filter(|panel| panel.read(cx).lifecycle(cx) == TerminalLifecycle::Running)
                 .count(),
-            sftp_tabs: self
-                .explorers
-                .values()
-                .filter(|panel| {
-                    let panel = panel.read(cx);
-                    panel.connection_state() == ConnectionState::Connected && !panel.is_sidebar()
-                })
-                .count(),
             local_terminals: self
                 .local_terminals
                 .values()
@@ -164,13 +155,8 @@ impl Workspace {
                         .accepts_input()
                 })
                 .count(),
-            transfers: self
-                .explorers
-                .values()
-                .filter(|panel| panel.read(cx).is_transferring())
-                .count(),
+            transfers: self.transfers.read(cx).running(),
             forwards: self.forwards.read(cx).active_count(),
-            unsaved_files: self.all_unsaved_files(cx).len(),
         }
     }
 }

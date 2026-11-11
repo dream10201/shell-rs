@@ -1,4 +1,4 @@
-//! The 重命名标签 dialog of remote terminal and SFTP tabs: one title field,
+//! The 重命名标签 dialog of remote terminal tabs: one title field,
 //! pre-filled with the tab's current label. Titles live as long as the tab,
 //! like the rest of the dock layout.
 

@@ -61,8 +61,6 @@ async fn open(cx: &mut TestAppContext) -> Fixture {
                 fake_telnet_terminals(),
                 fake_serial_terminals(),
                 Arc::new(FixedLocalTerminalTransportProvider::new(local.clone())),
-                Arc::new(FakeSftpProvider::default()),
-                Arc::new(FakeLocalDirectory::default()),
                 Arc::new(FakeConnectionTester::default()),
                 Arc::new(FakeForwardProvider::default()),
                 window,

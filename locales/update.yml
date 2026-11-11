@@ -221,21 +221,16 @@ update.restart.remote_terminals.one:
 update.restart.remote_terminals.other:
   zh-CN: "%{count} 个远程终端"
   en: "%{count} remote terminals"
-update.restart.sftp_tabs.one:
-  en: 1 SFTP tab
-update.restart.sftp_tabs.other:
-  zh-CN: "%{count} 个 SFTP 标签"
-  en: "%{count} SFTP tabs"
 update.restart.local_terminals.one:
   en: 1 local terminal
 update.restart.local_terminals.other:
   zh-CN: "%{count} 个本地终端"
   en: "%{count} local terminals"
 update.restart.transfers.one:
-  en: 1 transfer (its progress is kept)
+  en: 1 file transfer
 update.restart.transfers.other:
-  zh-CN: "%{count} 个传输（保留续传进度）"
-  en: "%{count} transfers (their progress is kept)"
+  zh-CN: "%{count} 个文件传输"
+  en: "%{count} file transfers"
 update.restart.forwards.one:
   en: 1 port forward
 update.restart.forwards.other:
@@ -250,14 +245,6 @@ update.restart.stops:
 update.restart.closes_and_stops:
   zh-CN: 重启会关闭 %{closes}，停止 %{stops}。
   en: Restarting closes %{closes} and stops %{stops}.
-update.restart.unsaved_files.one:
-  en: Unsaved changes in 1 file will be lost.
-update.restart.unsaved_files.other:
-  zh-CN: "%{count} 个文件有未保存的修改，重启后会丢失。"
-  en: Unsaved changes in %{count} files will be lost.
-update.restart.and_unsaved_files:
-  zh-CN: "%{note}%{unsaved}"
-  en: "%{note} %{unsaved}"
 
 # The system in the version's tooltip on 设置 › 关于, for a portable copy.
 update.platform.windows_portable:

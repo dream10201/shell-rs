@@ -52,15 +52,6 @@ pub const RECENT_HOSTS_CONTEXT: &str = "RecentHosts";
 pub const FORWARD_PANEL_CONTEXT: &str = "ForwardPanel";
 /// Key context of the credential list.
 pub const CREDENTIAL_PANEL_CONTEXT: &str = "CredentialPanel";
-/// Key contexts of the two SFTP file lists.
-/// Key context of an editor tab.
-pub const EDITOR_CONTEXT: &str = "FileEditor";
-/// Key context of the image in a preview.
-pub const IMAGE_PREVIEW_CONTEXT: &str = "ImagePreview";
-pub const LOCAL_FILE_LIST_CONTEXT: &str = "LocalFileList";
-pub const REMOTE_FILE_LIST_CONTEXT: &str = "RemoteFileList";
-/// The 查找文件 window of an SFTP tab.
-pub const FIND_FILES_CONTEXT: &str = "FindFiles";
 
 /// What Linux desktops match ShellRS's windows to its launcher by, for its
 /// icon in the dock: Wayland's app_id and X11's `WM_CLASS`, as

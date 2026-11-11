@@ -1,7 +1,6 @@
 //! `ssh://user[:password]@host[:port]`: how a bastion host opens Xshell, and
-//! so ShellRS, on a host the user has not saved; `sftp://…` the same way is
-//! how it opens WinSCP. ShellRS connects to it as an 外部连接: not saved,
-//! gone with its tabs, a terminal or an SFTP tab alone.
+//! so ShellRS, on a host the user has not saved. ShellRS connects to it as
+//! an 外部连接: not saved, gone with its tab, a terminal alone.
 
 use std::borrow::Cow;
 use std::fmt;
@@ -16,18 +15,8 @@ use crate::i18n::t;
 /// The port when the link names none.
 const SSH_PORT: u16 = 22;
 
-/// What a link opens, by its scheme.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LinkKind {
-    /// `ssh://`, as for Xshell: a terminal.
-    Ssh,
-    /// `sftp://`, as for WinSCP: an SFTP tab.
-    Sftp,
-}
-
 /// What a link says to connect to.
 pub struct SshLink {
-    pub kind: LinkKind,
     /// The tab's name: what the bastion host called it (Xshell's
     /// `-newtab`), or else the address.
     pub name: String,
@@ -58,13 +47,10 @@ impl SshLink {
             ParseError::EmptyHost => t!("host.link.no_address").to_string(),
             _ => malformed(),
         })?;
-        let kind = match url.scheme() {
-            "ssh" => LinkKind::Ssh,
-            "sftp" => LinkKind::Sftp,
-            scheme => {
-                return Err(t!("host.link.unsupported_scheme", scheme = scheme).to_string());
-            }
-        };
+        if url.scheme() != "ssh" {
+            let scheme = url.scheme();
+            return Err(t!("host.link.unsupported_scheme", scheme = scheme).to_string());
+        }
         // `ssh` is not one of the schemes the URL standard knows, so an IPv4
         // address and a domain both come back as an opaque domain, which is
         // percent-encoded when it is not ASCII.
@@ -84,7 +70,7 @@ impl SshLink {
         };
         let user = decode(url.username())?;
         if user.is_empty() {
-            return Err(t!("host.link.no_user", scheme = url.scheme()).to_string());
+            return Err(t!("host.link.no_user").to_string());
         }
         let password = match url.password() {
             Some(password) => Some(Zeroizing::new(decode(password)?)),
@@ -96,7 +82,6 @@ impl SshLink {
             .filter(|tab| !tab.is_empty())
             .map_or_else(|| address.clone(), str::to_string);
         Ok(Self {
-            kind,
             name,
             address,
             port,
@@ -122,7 +107,6 @@ impl SshLink {
 impl fmt::Debug for SshLink {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SshLink")
-            .field("kind", &self.kind)
             .field("name", &self.name)
             .field("address", &self.address)
             .field("port", &self.port)
@@ -141,9 +125,7 @@ const USER_INFO_ENDS: &AsciiSet = &AsciiSet::EMPTY.add(b'/').add(b'?').add(b'#')
 /// into the user name
 /// (`ssh://ops@corp.example/10.20.0.9/root/client:secret@bastion:8013`,
 /// issue #32). A `?` or `#` there, as passwords hold, stays in them alike.
-/// The standard ends them at the first of those, and WinSCP at the first
-/// `/`, so an `sftp://` link is left as it is: an `@` in its path stays in
-/// the path.
+/// The standard ends them at the first of those.
 pub fn standard_url(link: &str) -> Cow<'_, str> {
     let Some((scheme, rest)) = link.split_once("://") else {
         return Cow::Borrowed(link);
@@ -183,7 +165,6 @@ mod tests {
         assert_eq!(link.port, 12024);
         assert!(link.password.is_none());
         assert_eq!(link.name, "172.16.0.28");
-        assert_eq!(link.kind, LinkKind::Ssh);
 
         let draft = link.draft();
         assert_eq!(draft.address.as_ref(), "172.16.0.28");
@@ -215,22 +196,6 @@ mod tests {
             SshLink::parse("ssh://deploy@db", Some("  ")).unwrap().name,
             "db"
         );
-    }
-
-    #[test]
-    fn an_sftp_link_is_read_alike_and_opens_sftp() {
-        // How JumpServer opens WinSCP.
-        let link = parse("sftp://b478e26f:p%40ss@172.16.0.28:12024");
-        assert_eq!(link.kind, LinkKind::Sftp);
-        assert_eq!(link.user, "b478e26f");
-        assert_eq!(link.address, "172.16.0.28");
-        assert_eq!(link.port, 12024);
-        assert_eq!(link.password.as_deref().map(String::as_str), Some("p@ss"));
-        assert_eq!(link.draft().auth, AuthKind::Password);
-        // The port is SSH's when not given, and a path is passed over.
-        let link = parse("SFTP://root@files.example/srv/data/");
-        assert_eq!(link.kind, LinkKind::Sftp);
-        assert_eq!((link.address.as_str(), link.port), ("files.example", 22));
     }
 
     #[test]
@@ -268,13 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn an_sftp_link_ends_the_user_name_at_the_first_slash_as_in_winscp() {
-        let link = parse("sftp://root@files.example:2222/home/ops@corp/");
-        assert_eq!(link.user, "root");
-        assert_eq!((link.address.as_str(), link.port), ("files.example", 2222));
-    }
-
-    #[test]
     fn an_ipv6_address_loses_its_brackets() {
         let link = parse("ssh://root@[::1]:2200/");
         assert_eq!(link.address, "::1");
@@ -292,10 +250,9 @@ mod tests {
         for (link, expected) in [
             ("", "没有要连接的地址"),
             ("   ", "没有要连接的地址"),
-            ("scp://root:secret@h", "只支持 ssh:// 和 sftp://"),
-            ("ftp://root:secret@h", "只支持 ssh:// 和 sftp://"),
+            ("scp://root:secret@h", "只支持 ssh:// 链接"),
+            ("sftp://root:secret@h", "只支持 ssh:// 链接"),
             ("ssh://h:22", "没有用户名"),
-            ("sftp://h:22", "应为 sftp://用户@地址"),
             ("ssh://:secret@h", "没有用户名"),
             ("ssh://root:secret@", "没有地址"),
             ("ssh://root:secret@h:0", "端口无效"),

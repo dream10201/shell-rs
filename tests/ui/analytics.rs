@@ -58,7 +58,6 @@ fn the_window_coming_forward_is_reported_with_the_setup(cx: &mut TestAppContext)
     assert_eq!(snapshot.hosts, 6);
     assert_eq!(snapshot.appearance, "system");
     assert!(!snapshot.highlight);
-    assert_eq!(snapshot.file_icons, "color");
     // The tests' updater has no installer to tell.
     assert_eq!(snapshot.install, "other");
 }
@@ -98,18 +97,6 @@ async fn the_features_used_are_counted(cx: &mut TestAppContext) {
         counted(&signals.try_iter().collect::<Vec<_>>()),
         [Counter::ToolHistory, Counter::Find]
     );
-
-    // An SFTP tab, once connected.
-    in_frame(cx, handle, |window, cx| {
-        window.dispatch_action(Box::new(OpenExplorer(host)), cx)
-    });
-    let mut received = Vec::new();
-    cx.wait_for(handle.into(), Duration::from_secs(2), |_, _| {
-        received.extend(signals.try_iter());
-        counted(&received).contains(&Counter::Sftp)
-    })
-    .await;
-    assert_eq!(counted(&received), [Counter::Sftp]);
 }
 
 #[gpui_kit::test]
@@ -187,7 +174,7 @@ fn turned_off_in_the_settings_nothing_is_reported(cx: &mut TestAppContext) {
     // 设置 › 关于 › 隐私 › 发送匿名使用统计.
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-7", cx)
+        window.within("settings").click("0-6", cx)
     });
     in_frame(cx, handle, |window, cx| {
         let switch = window

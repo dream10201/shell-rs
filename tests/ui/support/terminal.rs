@@ -37,9 +37,9 @@ pub struct FakeTerminalFactory {
     pub exec_outputs: Arc<Mutex<std::collections::VecDeque<String>>>,
     /// The commands run beside the shell, in order.
     pub exec_commands: Arc<Mutex<Vec<String>>>,
-    /// The SFTP channels opened beside the shell, by the run (1 for the
-    /// first connection, 2 after one reconnect…) that opened each.
-    pub sftp_opens: Arc<Mutex<Vec<usize>>>,
+    /// The commands of file transfers started beside the shell, in order.
+    /// Each takes whatever it is given and ends well, printing nothing.
+    pub transfer_commands: Arc<Mutex<Vec<String>>>,
     /// How many times the line was broken (发送 Break).
     pub breaks: Arc<AtomicUsize>,
     /// What a file transfer sent ([`TerminalTransportCommand::WriteData`]).
@@ -86,8 +86,8 @@ impl FakeTerminalFactory {
         self.exec_commands().len()
     }
 
-    pub fn sftp_opens(&self) -> Vec<usize> {
-        self.sftp_opens
+    pub fn transfer_commands(&self) -> Vec<String> {
+        self.transfer_commands
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clone()
@@ -156,7 +156,7 @@ impl TerminalTransportFactory for FakeTerminalFactory {
             resizes: self.resizes.clone(),
             exec_outputs: self.exec_outputs.clone(),
             exec_commands: self.exec_commands.clone(),
-            sftp_opens: self.sftp_opens.clone(),
+            transfer_commands: self.transfer_commands.clone(),
             breaks: self.breaks.clone(),
             data: self.data.clone(),
         })
@@ -171,7 +171,7 @@ pub struct FakeTerminalTransport {
     pub resizes: Arc<Mutex<Vec<TerminalSize>>>,
     pub exec_outputs: Arc<Mutex<std::collections::VecDeque<String>>>,
     pub exec_commands: Arc<Mutex<Vec<String>>>,
-    pub sftp_opens: Arc<Mutex<Vec<usize>>>,
+    pub transfer_commands: Arc<Mutex<Vec<String>>>,
     pub breaks: Arc<AtomicUsize>,
     pub data: Arc<Mutex<Vec<Vec<u8>>>>,
 }
@@ -272,17 +272,12 @@ impl TerminalTransport for FakeTerminalTransport {
                         let _ = request.reply.send(Ok(output));
                     }
                 }
-                TerminalTransportCommand::OpenSftp(request) => {
-                    self.sftp_opens
+                TerminalTransportCommand::StartCommand(request) => {
+                    self.transfer_commands
                         .lock()
                         .unwrap_or_else(|error| error.into_inner())
-                        .push(self.run);
-                    // The fake SFTP worker never reads it.
-                    let stream = tokio::io::join(tokio::io::empty(), tokio::io::sink());
-                    let _ = request.reply.send(Ok(SftpChannel {
-                        stream: Box::new(stream),
-                        fingerprint: format!("SHA256:fake-{}", self.run),
-                    }));
+                        .push(request.command);
+                    let _ = request.reply.send(Ok(Box::new(FakeCommand)));
                 }
                 TerminalTransportCommand::SendBreak => {
                     self.breaks.fetch_add(1, Ordering::SeqCst);
@@ -292,6 +287,30 @@ impl TerminalTransport for FakeTerminalTransport {
             }
         }
         Ok(())
+    }
+}
+
+/// A file transfer's command that takes its input and ends well.
+struct FakeCommand;
+
+impl shellrs::ssh::transfer::RunningCommand for FakeCommand {
+    fn write<'a>(&'a mut self, _: &'a [u8]) -> futures::future::BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn close_input(&mut self) -> futures::future::BoxFuture<'_, anyhow::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn read(&mut self) -> futures::future::BoxFuture<'_, anyhow::Result<Option<Vec<u8>>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn finish(self: Box<Self>) -> shellrs::ssh::transfer::Finished {
+        shellrs::ssh::transfer::Finished {
+            code: Some(0),
+            stderr: String::new(),
+        }
     }
 }
 
@@ -359,8 +378,6 @@ pub fn open_workspace_with_protocols(
                 telnet.clone(),
                 serial.clone(),
                 fake_local_terminals(),
-                Arc::new(FakeSftpProvider::default()),
-                Arc::new(FakeLocalDirectory::default()),
                 Arc::new(FakeConnectionTester::default()),
                 Arc::new(FakeForwardProvider::default()),
                 window,

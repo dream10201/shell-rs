@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use gpui_kit::component::{Icon, IconName};
+use gpui_kit::component::Icon;
 use gpui_kit::*;
 use shellrs_sync::DeviceId;
 
@@ -11,8 +11,6 @@ use super::{CatalogIcon, DOCKER_ICON};
 use crate::i18n::t;
 use crate::{
     docker::{ContainerCommand, ContainerSubject, DockerObject},
-    editor::EditorId,
-    explorer::{ExplorerId, FileSizeFormat, PaneSide},
     host::{
         CredentialId, ForwardId, GroupId, HostId, HostNode, NodeDrop, SavedTerminalId,
         SnippetCategoryId, SnippetDrop, SnippetId, SnippetNode, TerminalDrop, TerminalGroupId,
@@ -69,10 +67,6 @@ gpui_kit::actions!(
         FindPreviousInTerminal,
         /// Close the active terminal's find bar and its highlights.
         DismissTerminalFind,
-        /// Close the 查找文件 window it is pressed in.
-        CloseFindFiles,
-        /// 复制结果 in the 查找文件 window: every result's path.
-        CopyFindResults,
         /// Clear the active terminal's screen and scrollback, keeping the
         /// prompt line.
         ClearTerminal,
@@ -207,14 +201,8 @@ gpui_kit::actions!(
         ZoomTerminalReset,
         /// Quit the application.
         Quit,
-        /// Show the previewed image larger, by one step.
-        ZoomPreviewIn,
-        /// Show the previewed image smaller, by one step.
-        ZoomPreviewOut,
-        /// Fit the previewed image into its frame.
-        FitPreview,
-        /// Show the previewed image at its own size (100%).
-        ActualSizePreview,
+        /// Stop the file transfers that are running.
+        CancelFileTransfers,
         /// Look for a newer ShellRS now.
         CheckForUpdates,
         /// Download the newer ShellRS that was found.
@@ -268,10 +256,12 @@ macro_rules! id_actions {
 id_actions! {
     /// Open a new terminal connection for a host.
     ConnectHost(HostId);
-    /// Open a new SFTP tab for a host, like a new terminal connection.
-    OpenExplorer(HostId);
     /// Open the edit-host dialog for a host.
     EditHost(HostId);
+    /// Choose files of this computer to copy to a remote terminal's host.
+    UploadFiles(RemoteTerminalId);
+    /// Ask what to copy here from a remote terminal's host.
+    DownloadFiles(RemoteTerminalId);
     /// Duplicate a host in the same group.
     DuplicateHost(HostId);
     /// Ask for confirmation, then delete a host.
@@ -312,14 +302,6 @@ id_actions! {
     /// Restart a local terminal with a fresh emulator and PTY.
     RestartLocalTerminal(LocalTerminalId);
 
-    /// Close one SFTP tab.
-    CloseExplorer(ExplorerId);
-
-    /// Close one editor tab, asking first when it has unsaved changes.
-    CloseEditor(EditorId);
-    /// Open the dialog that gives one SFTP tab its own title.
-    RenameExplorer(ExplorerId);
-
     /// Make sync in this folder, or join the sync there: what the folder
     /// picker of 开启同步… chose.
     SetUpSyncIn(PathBuf);
@@ -327,11 +309,6 @@ id_actions! {
     /// goes.
     RemoveSyncDevice(DeviceId);
 
-    /// Show the SFTP 大小 column in another format, from its title's menu.
-    SetFileSizeFormat(FileSizeFormat);
-    /// Show the dot files of one side of the SFTP tabs, or stop showing
-    /// them: that side of every tab, kept in the settings.
-    ToggleHiddenFiles(PaneSide);
     /// Show the tab at a position, from 1, in the current tab's group; 9 is
     /// the last, as in browsers.
     SwitchToTab(usize);
@@ -341,11 +318,6 @@ id_actions! {
     ToggleTool(ToolKind);
     /// Browse Kubernetes resources and logs on the SSH host.
     KubernetesAction(KubernetesCommand);
-    /// 目录跟随 in a terminal's 文件: follow the terminal's folder, or stop.
-    ToggleDirectoryFollow(ExplorerId);
-    /// 自动配置 in 「启用目录跟随？」: set the terminal's shell up to report
-    /// its folder.
-    InstallDirectoryFollow(RemoteTerminalId);
     /// Unfold a part of the system monitor, or fold it away again.
     ToggleMonitorDetail(MonitorDetail);
     /// Unfold a device of GPU/NPU to its details, or fold them away again,
@@ -522,15 +494,33 @@ pub struct EnterCommand {
     pub run: bool,
 }
 
+/// Copy files and folders of this computer into a folder of a remote
+/// terminal's host, over the terminal's connection.
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = shellrs, no_json)]
+pub struct StartUpload {
+    pub terminal: RemoteTerminalId,
+    pub sources: Vec<PathBuf>,
+    pub destination: String,
+}
+
+/// Copy a file or folder of a remote terminal's host into a folder of this
+/// computer, over the terminal's connection.
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = shellrs, no_json)]
+pub struct StartDownload {
+    pub terminal: RemoteTerminalId,
+    pub source: String,
+    pub into: PathBuf,
+}
+
 /// One tab of the center area, by the identity of what it shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CenterTab {
     Terminal(RemoteTerminalId),
-    Explorer(ExplorerId),
     LocalTerminal(LocalTerminalId),
     /// There is at most one settings tab.
     Settings,
-    Editor(EditorId),
 }
 
 /// Select one connected terminal for interactive input broadcast.
@@ -561,7 +551,6 @@ pub enum ToolKind {
     #[default]
     Snippets,
     History,
-    Files,
     Tmux,
     Docker,
     Kubernetes,
@@ -575,10 +564,9 @@ pub enum ToolKind {
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 12] = [
+    pub const ALL: [ToolKind; 11] = [
         ToolKind::Snippets,
         ToolKind::History,
-        ToolKind::Files,
         ToolKind::Tmux,
         ToolKind::Docker,
         ToolKind::Kubernetes,
@@ -597,7 +585,6 @@ impl ToolKind {
         match self {
             ToolKind::Snippets => "snippets",
             ToolKind::History => "history",
-            ToolKind::Files => "files",
             ToolKind::Tmux => "tmux",
             ToolKind::Docker => "docker",
             ToolKind::Kubernetes => "kubernetes",
@@ -626,7 +613,6 @@ impl ToolKind {
         match self {
             ToolKind::Snippets => t!("tools.kind.snippets"),
             ToolKind::History => t!("tools.kind.history"),
-            ToolKind::Files => t!("tools.kind.files"),
             ToolKind::Tmux => "tmux".into(),
             ToolKind::Docker => "Docker".into(),
             ToolKind::Kubernetes => "Kubernetes".into(),
@@ -645,8 +631,6 @@ impl ToolKind {
         Icon::new(match self {
             ToolKind::Snippets => CatalogIcon::CodeXml,
             ToolKind::History => CatalogIcon::RotateCcwClock,
-            // Not the SFTP button's folder tree, which opens a tab.
-            ToolKind::Files => return Icon::new(IconName::Folder),
             ToolKind::Tmux => CatalogIcon::Layers,
             ToolKind::Docker => return Icon::default().path(DOCKER_ICON),
             ToolKind::Kubernetes => CatalogIcon::ShipWheel,
@@ -690,267 +674,6 @@ impl CloseScope {
 pub struct CloseTabs {
     pub tab: CenterTab,
     pub scope: CloseScope,
-}
-
-/// Commands shared by explorer controls, drops, dialogs and keyboard bindings.
-/// `remote` names the pane a command acts on.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ExplorerCommand {
-    Navigate {
-        remote: bool,
-        path: String,
-    },
-    Up {
-        remote: bool,
-    },
-    Refresh {
-        remote: bool,
-    },
-    Root {
-        remote: bool,
-    },
-    Home {
-        remote: bool,
-    },
-    Back {
-        remote: bool,
-    },
-    Forward {
-        remote: bool,
-    },
-    /// Enter or double-click: open the directory under the cursor, or edit
-    /// the file there.
-    Open {
-        remote: bool,
-    },
-    /// F4 and 编辑: open a file in the editor, `path` or else the one under
-    /// the cursor (WinSCP's Edit).
-    Edit {
-        remote: bool,
-        path: Option<String>,
-    },
-    /// 预览: show an image or a Markdown file, `path` or else the one under
-    /// the cursor.
-    Preview {
-        remote: bool,
-        path: Option<String>,
-    },
-    /// WinSCP's 打开目录/书签 dialog: type a directory or pick a bookmark.
-    OpenDirectory {
-        remote: bool,
-    },
-    /// 查找文件, WinSCP's Find Files: on the remote side only, as there.
-    FindFiles,
-    /// 定位 in 查找文件: show a remote path's folder and select it there.
-    Reveal {
-        path: String,
-    },
-    /// 复制路径 on the path label: the directory shown.
-    CopyPath {
-        remote: bool,
-    },
-    /// 复制路径 on a row: the selected rows' full paths, one per line.
-    CopySelectedPaths {
-        remote: bool,
-    },
-    /// Move keyboard focus to a pane's file list.
-    FocusPane {
-        remote: bool,
-    },
-    MoveCursor {
-        remote: bool,
-        motion: crate::explorer::CursorMotion,
-        extend: bool,
-    },
-    ToggleSelection {
-        remote: bool,
-    },
-    SelectAll {
-        remote: bool,
-    },
-    /// Bookmark `path`, or the pane's directory when `None`.
-    AddBookmark {
-        remote: bool,
-        path: Option<String>,
-    },
-    RemoveBookmark {
-        remote: bool,
-        path: String,
-    },
-    MoveBookmark {
-        remote: bool,
-        path: String,
-        to: usize,
-    },
-    /// F5: upload the local selection or download the remote one.
-    Transfer {
-        remote: bool,
-    },
-    /// Ask where to download these remote paths, starting from `target`.
-    DownloadPaths {
-        paths: Vec<String>,
-        target: String,
-    },
-    /// Put a confirmed upload or download on the transfer queue.
-    Enqueue(crate::explorer::TransferJob),
-    /// Ask to delete the pane's selection.
-    Delete {
-        remote: bool,
-    },
-    /// 删除 in 查找文件, confirmed there: remote paths in any folders.
-    DeletePaths {
-        paths: Vec<String>,
-    },
-    /// Carry out a confirmed delete, rename, new item or permission change
-    /// in the pane's directory.
-    Operate {
-        remote: bool,
-        operation: crate::explorer::PaneOperation,
-    },
-    Rename {
-        remote: bool,
-    },
-    New {
-        remote: bool,
-        kind: crate::explorer::NewEntryKind,
-    },
-    Properties {
-        remote: bool,
-    },
-    ChooseFiles,
-    UploadPaths {
-        paths: Vec<std::path::PathBuf>,
-        target: String,
-    },
-    Answer {
-        request_id: u64,
-        answer: crate::sftp::TransferAnswer,
-    },
-    /// Stop the running batch, keeping its progress for 继续.
-    CancelTransfer,
-    /// Go on with the stopped batch at the head of the queue, or reconnect.
-    ResumeTransfer,
-    /// 重新连接, as on a terminal tab: a fresh SFTP connection, dropping the
-    /// current one first. Not while a batch runs or waits stopped.
-    Reconnect,
-    /// Throw away the stopped head's progress; the queue moves on.
-    DiscardTransfer,
-    /// Select a row of the transfer queue, by its id.
-    SelectQueueEntry {
-        id: u64,
-    },
-    /// Show or hide a queued batch's item results.
-    ToggleQueueEntry {
-        id: u64,
-    },
-    /// Take the selected batch, or a stopped head, off the queue.
-    RemoveQueueEntry,
-    /// 清除已完成.
-    ClearFinishedTransfers,
-    CloseConfirmed,
-}
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = shellrs, no_json)]
-pub struct ExplorerAction {
-    explorer: ExplorerId,
-    command: ExplorerCommand,
-    generation: Option<u64>,
-}
-impl ExplorerAction {
-    pub fn new(explorer: ExplorerId, command: ExplorerCommand) -> Self {
-        Self {
-            explorer,
-            command,
-            generation: None,
-        }
-    }
-    pub fn with_generation(mut self, generation: u64) -> Self {
-        self.generation = Some(generation);
-        self
-    }
-    pub fn generation(&self) -> Option<u64> {
-        self.generation
-    }
-    pub fn explorer(&self) -> ExplorerId {
-        self.explorer
-    }
-    pub fn command(&self) -> &ExplorerCommand {
-        &self.command
-    }
-}
-/// Commands of an editor tab, shared by its toolbar, tab menu, dialogs and
-/// key bindings.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EditorCommand {
-    /// ⌘S: write the file back, unless it changed since it was read.
-    Save,
-    /// 覆盖: write it back although it changed; `close` once that worked.
-    Overwrite {
-        close: bool,
-    },
-    /// Read the file again, asking first when there are changes.
-    Reload,
-    /// Read it again, throwing the changes away.
-    ReloadConfirmed,
-    /// 保存 in the close question: save, then close if that worked.
-    SaveAndClose,
-    /// 放弃修改 in the close question: close without saving.
-    CloseConfirmed,
-    CopyPath,
-}
-
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = shellrs, no_json)]
-pub struct EditorAction {
-    editor: EditorId,
-    command: EditorCommand,
-}
-impl EditorAction {
-    pub fn new(editor: EditorId, command: EditorCommand) -> Self {
-        Self { editor, command }
-    }
-    pub fn editor(&self) -> EditorId {
-        self.editor
-    }
-    pub fn command(&self) -> EditorCommand {
-        self.command
-    }
-}
-/// An editor key binding; the workspace sends it to the editor that holds
-/// focus.
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = shellrs, no_json)]
-pub struct EditorShortcut(pub EditorCommand);
-
-/// A file-list key binding. The binding carries the pane side, and the
-/// workspace sends it to the explorer that holds focus.
-#[derive(Action, Clone, PartialEq, Eq)]
-#[action(namespace = shellrs, no_json)]
-pub struct ExplorerShortcut(pub ExplorerCommand);
-
-/// UI entities dispatch after their update has finished so Workspace can read
-/// their latest snapshot without re-entering a leased entity.
-pub(crate) trait ExplorerDispatch {
-    fn dispatch_explorer_action(
-        &self,
-        action: &ExplorerAction,
-        window: &mut gpui_kit::Window,
-        cx: &mut gpui_kit::App,
-    );
-}
-impl ExplorerDispatch for gpui_kit::FocusHandle {
-    fn dispatch_explorer_action(
-        &self,
-        action: &ExplorerAction,
-        window: &mut gpui_kit::Window,
-        cx: &mut gpui_kit::App,
-    ) {
-        let focus = self.clone();
-        let action = action.clone();
-        window.defer(cx, move |window, cx| {
-            focus.dispatch_action(&action, window, cx)
-        });
-    }
 }
 
 #[cfg(test)]

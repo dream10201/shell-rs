@@ -59,8 +59,6 @@ fn open_locked_workspace_with_settings(
                             fake_telnet_terminals(),
                             fake_serial_terminals(),
                             fake_local_terminals(),
-                            Arc::new(FakeSftpProvider::default()),
-                            Arc::new(FakeLocalDirectory::default()),
                             Arc::new(FakeConnectionTester::default()),
                             Arc::new(FakeForwardProvider::default()),
                             window,
@@ -84,7 +82,7 @@ fn app_settings(cx: &mut TestAppContext, handle: WindowHandle<Root>) {
         window.dispatch_action(Box::new(OpenSettings), cx)
     });
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-6", cx)
+        window.within("settings").click("0-5", cx)
     });
 }
 

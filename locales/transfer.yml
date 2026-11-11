@@ -1,0 +1,120 @@
+_version: 2
+
+# 文件传输: uploads and downloads over a remote terminal's connection.
+
+transfer.upload.title:
+  zh-CN: 上传到 %{host}
+  en: Upload to %{host}
+transfer.upload.what:
+  zh-CN: 上传
+  en: Upload
+transfer.upload.items.one:
+  en: 1 item
+transfer.upload.items.other:
+  zh-CN: "%{count} 项"
+  en: "%{count} items"
+transfer.upload.destination:
+  zh-CN: 远程文件夹
+  en: Remote folder
+transfer.upload.destination_description:
+  zh-CN: 留空就是登录目录；文件夹不存在时会新建，同名文件会被覆盖。
+  en: Leave empty for the login folder. The folder is created if it isn’t there, and files of the same name are replaced.
+transfer.upload.commit:
+  zh-CN: 上传
+  en: Upload
+transfer.upload.choose:
+  zh-CN: 上传
+  en: Upload
+transfer.download.title:
+  zh-CN: 从 %{host} 下载
+  en: Download from %{host}
+transfer.download.source:
+  zh-CN: 远程路径
+  en: Remote path
+transfer.download.source_description:
+  zh-CN: 文件或文件夹；文件夹连同里面的内容一起下载。
+  en: A file or a folder. A folder is downloaded with everything in it.
+transfer.download.into:
+  zh-CN: 保存到
+  en: Save to
+transfer.download.choose:
+  zh-CN: 选择…
+  en: Choose…
+transfer.download.commit:
+  zh-CN: 下载
+  en: Download
+transfer.download.enter_path:
+  zh-CN: 请填写远程路径
+  en: Enter the remote path
+transfer.download.choose_folder:
+  zh-CN: 请选择保存到哪个文件夹
+  en: Choose a folder to save to
+transfer.done.uploaded.one:
+  en: Uploaded 1 file to %{host}
+transfer.done.uploaded.other:
+  zh-CN: 已上传 %{count} 个文件到 %{host}
+  en: Uploaded %{count} files to %{host}
+transfer.done.downloaded.one:
+  en: Downloaded 1 file to %{folder}
+transfer.done.downloaded.other:
+  zh-CN: 已下载 %{count} 个文件到 %{folder}
+  en: Downloaded %{count} files to %{folder}
+transfer.failed.upload:
+  zh-CN: 上传到 %{host} 失败
+  en: Couldn’t upload to %{host}
+transfer.failed.download:
+  zh-CN: 从 %{host} 下载失败
+  en: Couldn’t download from %{host}
+transfer.cancelled:
+  zh-CN: 文件传输已取消
+  en: File transfer cancelled
+transfer.status.uploading:
+  zh-CN: 正在上传 %{name} %{percent}%
+  en: Uploading %{name} %{percent}%
+transfer.status.downloading:
+  zh-CN: 正在下载 %{name} %{percent}%
+  en: Downloading %{name} %{percent}%
+transfer.status.starting_upload:
+  zh-CN: 正在上传…
+  en: Uploading…
+transfer.status.starting_download:
+  zh-CN: 正在下载…
+  en: Downloading…
+transfer.status.more.one:
+  en: and 1 more
+transfer.status.more.other:
+  zh-CN: 另有 %{count} 个
+  en: and %{count} more
+transfer.status.cancel:
+  zh-CN: 取消文件传输
+  en: Cancel file transfers
+transfer.error.not_connected:
+  zh-CN: 终端没有连接
+  en: The terminal isn’t connected
+transfer.error.remote:
+  zh-CN: 主机上的命令执行失败
+  en: A command on the host failed
+transfer.error.remote_said:
+  zh-CN: "主机返回：%{message}"
+  en: "The host said: %{message}"
+transfer.error.not_found:
+  zh-CN: 主机上没有 %{path}
+  en: "%{path} isn’t on the host"
+transfer.error.unexpected:
+  zh-CN: 看不懂主机的回答。文件传输需要主机上有 POSIX sh 和 cat、wc、find 等命令。
+  en: The host’s answer wasn’t understood. File transfer needs a POSIX sh with cat, wc and find on the host.
+transfer.error.unsafe_name:
+  zh-CN: 主机上的名称 %{name} 不安全，已停止
+  en: The name %{name} on the host isn’t safe, so the transfer stopped
+transfer.error.unsendable_name:
+  zh-CN: "%{path} 的名称无法在主机上使用"
+  en: "The name of %{path} can’t be used on the host"
+transfer.error.local:
+  zh-CN: "无法读写 %{path}：%{error}"
+  en: "Couldn’t read or write %{path}: %{error}"
+transfer.error.connection:
+  zh-CN: "连接出错：%{error}"
+  en: "The connection failed: %{error}"
+transfer.error.cancelled:
+  zh-CN: 已取消
+  en: Cancelled

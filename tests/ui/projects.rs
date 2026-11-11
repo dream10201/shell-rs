@@ -55,8 +55,6 @@ fn open_with_local(
                 fake_telnet_terminals(),
                 fake_serial_terminals(),
                 local.clone(),
-                Arc::new(FakeSftpProvider::default()),
-                Arc::new(FakeLocalDirectory::default()),
                 Arc::new(FakeConnectionTester::default()),
                 Arc::new(FakeForwardProvider::default()),
                 window,

@@ -62,10 +62,10 @@ impl Workspace {
         }
     }
 
-    /// An SSH terminal of `host` connected, or an SFTP tab: counted, then
+    /// A terminal of `host` connected: counted, then
     /// counted again by how. A Telnet or serial host's terminal is counted
     /// alone.
-    pub(super) fn count_connection(&self, host: HostId, sftp: bool, cx: &App) {
+    pub(super) fn count_connection(&self, host: HostId, cx: &App) {
         if self.analytics.is_none() {
             return;
         }
@@ -78,13 +78,6 @@ impl Workspace {
             counters.push(Counter::Serial);
         } else if saved.protocol.is_telnet() {
             counters.push(Counter::Telnet);
-        } else if sftp {
-            counters.push(Counter::Sftp);
-            if store.is_external(host) {
-                counters.push(Counter::SftpExternal);
-            } else if store.is_temporary(host) {
-                counters.push(Counter::SftpTemporary);
-            }
         } else {
             counters.push(Counter::Ssh);
             match saved.route {
@@ -120,7 +113,6 @@ impl Workspace {
         self.count(match tool {
             ToolKind::Snippets => Counter::ToolSnippets,
             ToolKind::History => Counter::ToolHistory,
-            ToolKind::Files => Counter::ToolFiles,
             ToolKind::Docker => Counter::ToolDocker,
             ToolKind::Kubernetes => Counter::ToolKubernetes,
             ToolKind::Services => Counter::ToolServices,
@@ -188,7 +180,6 @@ impl Workspace {
             auto_update: settings.update.automatic,
             update_channel: settings.update.channel.key(),
             custom_shortcuts: settings.shortcuts != ShortcutOverrides::default(),
-            file_icons: settings.file_icon_style.key(),
             install: self.updater().read(cx).install_type(),
             hosts: store.hosts().len(),
             credentials: store.credentials().len(),

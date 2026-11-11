@@ -48,8 +48,6 @@ impl Workspace {
         }
         let open = match tab {
             CenterTab::Terminal(id) => self.terminals.contains_key(&id),
-            CenterTab::Explorer(id) => self.explorers.contains_key(&id),
-            CenterTab::Editor(id) => self.editors.contains_key(&id),
             CenterTab::LocalTerminal(_) | CenterTab::Settings => true,
         };
         if !open {

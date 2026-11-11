@@ -310,28 +310,6 @@ async fn canceling_unknown_host_prompt_keeps_host_disconnected(cx: &mut TestAppC
 }
 
 #[gpui_kit::test]
-async fn opening_sftp_updates_connection_state_without_terminal(cx: &mut TestAppContext) {
-    let (store, id) = one_host_store(AuthKind::Password);
-    let (handle, workspace) = open_workspace_with_store(cx, store);
-
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        window.dispatch_action(Box::new(OpenExplorer(id)), cx);
-    })
-    .unwrap();
-    cx.wait_for(handle.into(), Duration::from_secs(2), |_, cx| {
-        workspace.read(cx).has_connection(id, cx)
-    })
-    .await;
-
-    cx.update(|cx| {
-        let workspace = workspace.read(cx);
-        assert_eq!(workspace.explorers_of(id, cx).len(), 1);
-        assert!(workspace.has_connection(id, cx));
-    });
-}
-
-#[gpui_kit::test]
 async fn double_click_on_host_opens_terminal_and_updates_status(cx: &mut TestAppContext) {
     let (handle, workspace) = open_workspace(cx);
 
@@ -674,8 +652,7 @@ fn open_link(
 
 #[gpui_kit::test]
 async fn a_link_opens_a_terminal_to_a_host_that_goes_with_its_last_tab(cx: &mut TestAppContext) {
-    use shellrs::app::{CloseExplorer, CloseTerminal};
-    use shellrs::host::BookmarkSide;
+    use shellrs::app::CloseTerminal;
 
     let data = tempfile::tempdir().unwrap();
     let path = data.path().join("shellrs.db");
@@ -725,7 +702,7 @@ async fn a_link_opens_a_terminal_to_a_host_that_goes_with_its_last_tab(cx: &mut 
         // The bastion host gets the terminal alone: of the tools, only the
         // snippets, which type into it.
         assert!(window.try_find("tool-snippets").is_some());
-        for tool in ["tool-history", "tool-files", "tool-docker", "tool-monitor"] {
+        for tool in ["tool-history", "tool-docker", "tool-monitor"] {
             assert!(window.try_find(tool).is_none(), "{tool}");
         }
     })
@@ -761,31 +738,10 @@ async fn a_link_opens_a_terminal_to_a_host_that_goes_with_its_last_tab(cx: &mut 
     })
     .unwrap();
 
-    // Its SFTP tab works, bookmarks and all, without writing to disk.
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.dispatch_action(Box::new(OpenExplorer(LINK_HOST)), cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-    store.update(cx, |store, cx| {
-        assert!(store.add_bookmark(LINK_HOST, BookmarkSide::Remote, "/var/log", cx));
-    });
-    cx.run_until_parked();
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        assert!(window.notifications(cx).is_empty());
-    })
-    .unwrap();
-
-    // The host stays while a tab of it does.
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.dispatch_action(Box::new(CloseTerminal(RemoteTerminalId(LINK_TERMINAL))), cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
+    // The host goes with its tab.
     assert!(store.read_with(cx, |store, _| store.host(LINK_HOST).is_some()));
     cx.update_window(handle.into(), |_, window, cx| {
-        window.dispatch_action(Box::new(CloseExplorer(ExplorerId(SFTP_TAB))), cx);
+        window.dispatch_action(Box::new(CloseTerminal(RemoteTerminalId(LINK_TERMINAL))), cx);
     })
     .unwrap();
     cx.run_until_parked();
@@ -803,64 +759,6 @@ async fn a_link_opens_a_terminal_to_a_host_that_goes_with_its_last_tab(cx: &mut 
     let saved = HostStore::load(HostDatabase::open(&path).unwrap()).unwrap();
     assert!(saved.hosts().is_empty());
     assert!(saved.recent_hosts().next().is_none());
-    assert!(saved.bookmarks(LINK_HOST, BookmarkSide::Remote).is_empty());
-}
-
-#[gpui_kit::test]
-async fn an_sftp_link_opens_an_sftp_tab_across_the_window(cx: &mut TestAppContext) {
-    use shellrs::app::CloseExplorer;
-
-    let remote = Arc::new(RecordingRemoteProvider::default());
-    let (handle, workspace) = open_workspace_with_credentials(
-        cx,
-        HostStore::empty(),
-        remote.clone(),
-        Arc::new(FakeConnectionTester::default()),
-    );
-    // How JumpServer opens WinSCP: the link alone.
-    open_link(
-        cx,
-        handle,
-        &workspace,
-        "sftp://token:p%40ss@10.0.0.9:2222",
-        None,
-    );
-    cx.wait_for(handle.into(), Duration::from_secs(2), |window, cx| {
-        window.render_frame(cx);
-        window.find("status-connection").label() == Some("已连接 10.0.0.9")
-    })
-    .await;
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        assert_eq!(
-            window.find(("explorer-tab", SFTP_TAB)).label(),
-            Some("10.0.0.9 · SFTP")
-        );
-        // An SFTP tab alone, across the window.
-        assert!(window.try_find(("terminal", LINK_TERMINAL)).is_none());
-        assert_eq!(window.find("show-hosts").checked(), Some(false));
-        assert!(window.try_find(("host-row", LINK_HOST.0)).is_none());
-    })
-    .unwrap();
-    assert!(remote.logins().is_empty());
-    let store = workspace.read_with(cx, |workspace, _| workspace.store().clone());
-    store.read_with(cx, |store, _| {
-        assert!(store.is_external(LINK_HOST));
-        let login = store.login(LINK_HOST).unwrap();
-        assert_eq!(
-            (login.host.as_str(), login.port, login.user.as_str()),
-            ("10.0.0.9", 2222, "token")
-        );
-        assert_eq!(login.password, SecretRef::temporary(LINK_HOST.0));
-    });
-
-    // It goes with its tab.
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.dispatch_action(Box::new(CloseExplorer(ExplorerId(SFTP_TAB))), cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-    store.read_with(cx, |store, _| assert!(store.host(LINK_HOST).is_none()));
 }
 
 /// The title bar's 临时连接: a host's login without its group, route or
@@ -941,7 +839,6 @@ async fn a_temporary_connection_has_every_feature_and_saves_nothing(cx: &mut Tes
         for tool in [
             "tool-snippets",
             "tool-history",
-            "tool-files",
             "tool-docker",
             "tool-monitor",
         ] {

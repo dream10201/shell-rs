@@ -11,8 +11,7 @@
 
 use gpui_kit::{AnyWindowHandle, App, Global, Window};
 
-/// The workspace's window: the one the Dock icon brings back. Others, such
-/// as an SFTP tab's 查找文件, come and go beside it.
+/// The workspace's window: the one the Dock icon brings back.
 #[derive(Clone, Copy)]
 pub struct MainWindow(pub AnyWindowHandle);
 

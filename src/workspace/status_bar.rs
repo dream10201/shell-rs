@@ -1,36 +1,91 @@
 use gpui_kit::component::{
-    ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, separator::Separator,
-    status_bar::StatusBar, tooltip::Tooltip,
+    ActiveTheme as _, Icon, IconName, Sizable as _,
+    button::{Button, ButtonVariants as _},
+    h_flex,
+    separator::Separator,
+    status_bar::StatusBar,
+    tooltip::Tooltip,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::app::CatalogIcon;
-use crate::explorer::ExplorerStatus;
+use crate::app::{CancelFileTransfers, CatalogIcon};
 use crate::host::{ConnectionState, Host};
-use crate::i18n::t;
+use crate::i18n::{t, tn};
 use crate::terminal::{TerminalLifecycle, TerminalStatus};
+use crate::transfer::TransferStatus;
+
+/// The window's status bar: the tab in front, and the file transfers that
+/// are running, with the button that stops them.
+#[derive(IntoElement)]
+pub struct WorkspaceStatusBar {
+    pub status: WorkspaceStatus,
+    pub transfers: Option<TransferStatus>,
+    /// Where the button's action goes: the workspace.
+    pub dispatch: FocusHandle,
+}
+
+impl RenderOnce for WorkspaceStatusBar {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        let bar = self.status.bar(cx);
+        let Some(transfers) = self.transfers else {
+            return bar;
+        };
+        let mut text = match (&transfers.file, transfers.upload) {
+            (Some((name, percent)), true) => {
+                t!("transfer.status.uploading", name = name, percent = percent)
+            }
+            (Some((name, percent)), false) => {
+                t!(
+                    "transfer.status.downloading",
+                    name = name,
+                    percent = percent
+                )
+            }
+            (None, true) => t!("transfer.status.starting_upload"),
+            (None, false) => t!("transfer.status.starting_download"),
+        }
+        .to_string();
+        if transfers.running > 1 {
+            text = format!(
+                "{text} · {}",
+                tn!("transfer.status.more", transfers.running - 1)
+            );
+        }
+        let dispatch = self.dispatch;
+        bar.left(Separator::vertical()).left(
+            h_flex()
+                .gap_1()
+                .child(
+                    div()
+                        .id("status-transfers")
+                        .test_support()
+                        .aria_label(text.clone())
+                        .child(text),
+                )
+                .child(
+                    Button::new("cancel-transfers")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .tooltip(t!("transfer.status.cancel"))
+                        .on_click(move |_, window, cx| {
+                            dispatch.dispatch_action(&CancelFileTransfers, window, cx)
+                        }),
+                ),
+        )
+    }
+}
 
 /// The active connection/process state on the left and terminal facts on the
 /// right, ending in the size of the terminal in front, local or remote. With
 /// no terminal in front there is no size to show.
-#[derive(IntoElement)]
 pub enum WorkspaceStatus {
     /// The remote terminal in front: its host as it took it, its own
     /// connection, and its state and size. The start page and the
     /// settings have none.
-    Host(Option<(Host, ConnectionState)>, Option<TerminalStatus>),
+    Host(Option<Box<(Host, ConnectionState)>>, Option<TerminalStatus>),
     Local(TerminalStatus),
-    /// An SFTP tab: its own connection and what went wrong in it.
-    Explorer(Option<Host>, ExplorerStatus),
-    /// An editor: the connection of the SFTP tab a remote file goes through
-    /// (none for a local file), then where the cursor is and how the file
-    /// is encoded.
-    Editor {
-        remote: Option<(Option<Host>, ConnectionState)>,
-        cursor: String,
-        format: String,
-    },
 }
 
 /// The icon for a connection state; a dropped one, like a problem, in red.
@@ -57,50 +112,20 @@ fn connection_text(state: ConnectionState, name: &str) -> SharedString {
     }
 }
 
-impl RenderOnce for WorkspaceStatus {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+impl WorkspaceStatus {
+    fn bar(self, cx: &mut App) -> StatusBar {
         let muted = cx.theme().muted_foreground;
-        // Red when something is wrong: a dropped connection, or an SFTP
-        // tab's directory that could not be read.
+        // Red when something is wrong: a dropped connection.
         let mut alarming = false;
-        // The right side: an editor tells its cursor and encoding instead
-        // of the terminal's.
-        let mut editor = None;
         let (text, icon, address, terminal): (
             SharedString,
             Icon,
             Option<String>,
             Option<TerminalStatus>,
         ) = match self {
-            WorkspaceStatus::Editor {
-                remote,
-                cursor,
-                format,
-            } => {
-                editor = Some((cursor, format));
-                match remote {
-                    Some((host, state)) => {
-                        alarming = state == ConnectionState::Disconnected;
-                        let name = host
-                            .as_ref()
-                            .map_or_else(|| "SFTP".into(), |host| host.name.clone());
-                        (
-                            connection_text(state, &name),
-                            state_icon(state, cx),
-                            host.map(|host| host.endpoint()),
-                            None,
-                        )
-                    }
-                    None => (
-                        t!("workspace.status.local_file"),
-                        Icon::new(CatalogIcon::Laptop).text_color(muted),
-                        None,
-                        None,
-                    ),
-                }
-            }
             WorkspaceStatus::Host(active, terminal) => match active {
-                Some((host, state)) => {
+                Some(active) => {
+                    let (host, state) = *active;
                     alarming = state == ConnectionState::Disconnected;
                     (
                         connection_text(state, &host.name),
@@ -116,34 +141,6 @@ impl RenderOnce for WorkspaceStatus {
                     terminal,
                 ),
             },
-            WorkspaceStatus::Explorer(host, status) => {
-                let name = host
-                    .as_ref()
-                    .map_or_else(|| "SFTP".into(), |host| host.name.clone());
-                let state = connection_text(status.state, &name);
-                let (text, icon) = match (status.state, status.problem) {
-                    (ConnectionState::Disconnected, Some(problem)) => {
-                        alarming = true;
-                        (
-                            t!("workspace.status.problem", state = state, problem = problem),
-                            state_icon(status.state, cx),
-                        )
-                    }
-                    // Connected, but a directory could not be read.
-                    (ConnectionState::Connected, Some(problem)) => {
-                        alarming = true;
-                        (
-                            problem,
-                            Icon::new(IconName::CircleX).text_color(cx.theme().danger),
-                        )
-                    }
-                    (now, _) => {
-                        alarming = now == ConnectionState::Disconnected;
-                        (state, state_icon(now, cx))
-                    }
-                };
-                (text, icon, host.map(|host| host.endpoint()), None)
-            }
             WorkspaceStatus::Local(status) => {
                 let lifecycle = status.lifecycle();
                 let icon = match lifecycle {
@@ -192,28 +189,9 @@ impl RenderOnce for WorkspaceStatus {
             .when_some(address, |bar, address| {
                 bar.left(Separator::vertical()).left(address)
             })
-            .map(|bar| match editor {
-                Some((cursor, format)) => bar
-                    .right(
-                        div()
-                            .id("status-editor-cursor")
-                            .test_support()
-                            .aria_label(cursor.clone())
-                            .child(cursor),
-                    )
-                    .right(Separator::vertical())
-                    .right(
-                        div()
-                            .id("status-editor-format")
-                            .test_support()
-                            .aria_label(format.clone())
-                            .child(format),
-                    ),
-                None => bar
-                    .right(t!("workspace.status.encoding"))
-                    .right(Separator::vertical())
-                    .right(t!("workspace.status.terminal_type")),
-            })
+            .right(t!("workspace.status.encoding"))
+            .right(Separator::vertical())
+            .right(t!("workspace.status.terminal_type"))
             .when_some(terminal, |bar, terminal| {
                 let (columns, rows) = (terminal.columns(), terminal.rows());
                 let size = format!("{columns}×{rows}");

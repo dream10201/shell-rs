@@ -1,8 +1,5 @@
 _version: 2
 
-shared.tab.unsaved:
-  zh-CN: 未保存
-  en: Unsaved changes
 shared.host_mark.unknown_os:
   zh-CN: 未探测到系统
   en: System not detected

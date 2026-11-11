@@ -13,8 +13,7 @@ mod compose;
 mod connection;
 mod credential;
 mod docker;
-mod editor;
-mod file_sidebar;
+
 mod forward;
 mod gpu;
 mod history;
@@ -29,7 +28,7 @@ mod projects;
 mod serial;
 mod services;
 mod settings;
-mod sftp;
+
 mod shortcuts;
 mod snippets;
 mod sync;
@@ -38,6 +37,7 @@ mod terminal;
 mod terminal_groups;
 mod tmux;
 mod transfer;
+
 mod update;
 mod workspace;
 mod zmodem;

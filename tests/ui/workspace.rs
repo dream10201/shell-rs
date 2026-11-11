@@ -420,67 +420,6 @@ fn close_shortcut_closes_the_displayed_tab_down_to_none(cx: &mut TestAppContext)
     .unwrap();
 }
 
-/// A host's terminal and SFTP tabs sit side by side in the center, and
-/// only the active one renders. The tab going inactive used to keep the
-/// window focus, which took its focus handle out of the dispatch tree and
-/// left every 「×」 dead.
-#[gpui_kit::test]
-fn both_tabs_of_one_host_stay_closable(cx: &mut TestAppContext) {
-    let (handle, workspace) = open_workspace(cx);
-
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        window
-            .within("host-tree")
-            .double_click(("host-row", DB_01), cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-
-    // The terminal tab is active and focused; opening SFTP puts a second tab
-    // for the same host beside it and activates that one.
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        window.click(("sftp", FIRST_NEW_TERMINAL), cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        assert!(window.find(("explorer", SFTP_TAB)).visible());
-        window.click(("close-explorer", SFTP_TAB), cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-
-    // The SFTP tab is gone and the terminal tab, now active again, still closes.
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        assert!(window.try_find(("close-explorer", SFTP_TAB)).is_none());
-        assert!(window.find(("terminal", FIRST_NEW_TERMINAL)).visible());
-        window.click(("close-terminal", FIRST_NEW_TERMINAL), cx);
-    })
-    .unwrap();
-    cx.run_until_parked();
-
-    cx.update_window(handle.into(), |_, window, cx| {
-        window.render_frame(cx);
-        assert!(
-            window
-                .try_find(("close-terminal", FIRST_NEW_TERMINAL))
-                .is_none()
-        );
-    })
-    .unwrap();
-
-    cx.update(|cx| {
-        let workspace = workspace.read(cx);
-        assert!(workspace.explorer(ExplorerId(SFTP_TAB)).is_none());
-        assert!(workspace.terminal(HostId(DB_01), cx).is_none());
-    });
-}
-
 /// Double-clicking a tab's title shows or hides the host sidebar; a
 /// single click only selects the tab.
 #[gpui_kit::test]
@@ -842,23 +781,23 @@ fn batch_close_commands_take_the_tabs_around_the_clicked_one(cx: &mut TestAppCon
         })
     };
 
-    // [web-01, staging-api, web-01 · SFTP, local]
-    dispatch(cx, Box::new(OpenExplorer(HostId(WEB_01))));
+    // [web-01, staging-api, settings, local]
+    dispatch(cx, Box::new(OpenSettings));
     dispatch(cx, Box::new(NewLocalTerminal));
     cx.update(|cx| {
         let workspace = workspace.read(cx);
-        assert!(workspace.explorer(ExplorerId(SFTP_TAB)).is_some());
+        assert!(workspace.settings_tab().is_some());
         assert!(workspace.local_terminal(LocalTerminalId(1)).is_some());
     });
 
-    // Right of staging-api: the SFTP and local tabs, whatever their kind.
+    // Right of staging-api: the settings and local tabs, whatever their kind.
     dispatch(
         cx,
         close(terminal(INITIAL_STAGING_TERMINAL), CloseScope::Right),
     );
     cx.update(|cx| {
         let workspace = workspace.read(cx);
-        assert!(workspace.explorer(ExplorerId(SFTP_TAB)).is_none());
+        assert!(workspace.settings_tab().is_none());
         assert!(workspace.local_terminal(LocalTerminalId(1)).is_none());
     });
     assert_eq!(
@@ -1062,8 +1001,6 @@ fn a_problem_found_while_the_window_is_built_is_shown_once_it_is_open(cx: &mut T
                 fake_telnet_terminals(),
                 fake_serial_terminals(),
                 fake_local_terminals(),
-                Arc::new(FakeSftpProvider::default()),
-                Arc::new(FakeLocalDirectory::default()),
                 Arc::new(FakeConnectionTester::default()),
                 Arc::new(FakeForwardProvider::default()),
                 window,
@@ -1187,79 +1124,6 @@ fn a_tool_follows_the_terminal_in_front_and_leaves_it_the_keyboard(cx: &mut Test
                 .focused(),
             Some(true)
         );
-    });
-}
-
-#[gpui_kit::test]
-async fn the_tool_sidebar_goes_with_terminals_only(cx: &mut TestAppContext) {
-    let (handle, _) = open_workspace_with_sftp(cx, Arc::new(FakeSftpProvider::default()));
-    cx.run_until_parked();
-    in_frame(cx, handle, |window, cx| {
-        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx)
-    });
-    in_frame(cx, handle, |window, cx| window.click("tool-snippets", cx));
-    let shown = |cx: &mut TestAppContext| {
-        in_frame(cx, handle, |window, _| {
-            let switch = window.try_find("tool-switch").is_some();
-            let sidebar = [INITIAL_WEB_TERMINAL, INITIAL_STAGING_TERMINAL]
-                .into_iter()
-                .any(|id| window.try_find(("tool-sidebar", id)).is_some());
-            (switch, sidebar)
-        })
-    };
-    assert_eq!(shown(cx), (true, true));
-
-    // An SFTP tab in front: neither the sidebar nor its switch.
-    open_test_explorer(cx, handle).await;
-    assert_eq!(shown(cx), (false, false));
-
-    // Nor the settings.
-    in_frame(cx, handle, |window, cx| {
-        window.dispatch_action(Box::new(OpenSettings), cx)
-    });
-    assert_eq!(shown(cx), (false, false));
-    // A local terminal has the switch with 项目, then 命令片段, and no
-    // other tool; closed until opened.
-    in_frame(cx, handle, |window, cx| {
-        window.dispatch_action(Box::new(NewLocalTerminal), cx)
-    });
-    assert_eq!(shown(cx), (true, false));
-    in_frame(cx, handle, |window, _| {
-        let projects = window.find("tool-projects").bounds();
-        let snippets = window.find("tool-snippets").bounds();
-        assert!(projects.top() < snippets.top());
-        assert!(window.try_find("tool-history").is_none());
-        assert!(window.try_find(("tool-sidebar-local", 1_u64)).is_none());
-    });
-    // The shortcut opens the tool shown last, 命令片段 as beside web-01;
-    // the switch, 项目.
-    in_frame(cx, handle, |window, cx| {
-        window.dispatch_action(Box::new(ToggleToolSidebar), cx)
-    });
-    in_frame(cx, handle, |window, _| {
-        assert_eq!(
-            window.find(("tool-sidebar-local", 1_u64)).label(),
-            Some("命令片段")
-        );
-        assert_eq!(window.find("tool-snippets").checked(), Some(true));
-    });
-    in_frame(cx, handle, |window, cx| window.click("tool-projects", cx));
-    in_frame(cx, handle, |window, _| {
-        assert_eq!(
-            window.find(("tool-sidebar-local", 1_u64)).label(),
-            Some("项目")
-        );
-        assert_eq!(window.find("tool-projects").checked(), Some(true));
-    });
-
-    // Its host's terminal brings it back as it was.
-    in_frame(cx, handle, |window, cx| {
-        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx)
-    });
-    in_frame(cx, handle, |window, _| {
-        let sidebar = window.find(("tool-sidebar", INITIAL_WEB_TERMINAL));
-        assert_eq!(sidebar.label(), Some("命令片段"));
-        assert_eq!(window.find("tool-snippets").checked(), Some(true));
     });
 }
 
@@ -1465,95 +1329,6 @@ fn with_the_center_split_the_tool_sidebar_follows_the_focus(cx: &mut TestAppCont
         // 「连接中 web-01」 until the fake connects: the host is what counts.
         assert!(status.is_some_and(|status| status.ends_with(&format!(" {host}"))));
     }
-}
-
-/// A tab dragged over the terminal's group, shown in front of it, takes the
-/// sidebar away with the terminal: neither is on screen any more.
-#[gpui_kit::test]
-async fn a_tab_dropped_over_the_terminal_takes_the_sidebar_with_it(cx: &mut TestAppContext) {
-    let (handle, workspace) = open_workspace_with_sftp(cx, Arc::new(FakeSftpProvider::default()));
-    cx.run_until_parked();
-    // Open on both hosts' terminals: either may be the one beside the SFTP
-    // tab.
-    for terminal in [INITIAL_STAGING_TERMINAL, INITIAL_WEB_TERMINAL] {
-        in_frame(cx, handle, |window, cx| {
-            window.click(("terminal-tab", terminal), cx)
-        });
-        in_frame(cx, handle, |window, cx| window.click("tool-snippets", cx));
-    }
-    open_test_explorer(cx, handle).await;
-
-    let explorer = cx.update(|cx| {
-        PanelId::from(
-            workspace
-                .read(cx)
-                .explorer(ExplorerId(SFTP_TAB))
-                .expect("the SFTP tab")
-                .entity_id(),
-        )
-    });
-    let terminal = cx.update(|cx| {
-        PanelId::from(
-            workspace
-                .read(cx)
-                .remote_terminal(RemoteTerminalId(INITIAL_WEB_TERMINAL))
-                .expect("web-01's terminal")
-                .entity_id(),
-        )
-    });
-    let move_explorer = |into_group: bool, cx: &mut TestAppContext| {
-        cx.update_window(handle.into(), |_, window, cx| {
-            let area = workspace.read(cx).dock_area().clone();
-            area.update(cx, |area, cx| {
-                let tree = area.layout(DockPlacement::Center).expect("the center");
-                let node = tree.find_panel_node(explorer).expect("in the center");
-                if into_group {
-                    let target = tree.find_panel_node(terminal).expect("the terminals");
-                    area.move_panel(
-                        explorer,
-                        InsertTarget::Tabs {
-                            node: target,
-                            ix: None,
-                            activate: true,
-                        },
-                        window,
-                        cx,
-                    );
-                } else {
-                    area.move_panel(
-                        explorer,
-                        InsertTarget::Split {
-                            node,
-                            placement: Placement::Bottom,
-                            size: None,
-                        },
-                        window,
-                        cx,
-                    );
-                }
-            });
-        })
-        .unwrap();
-        cx.run_until_parked();
-    };
-    let shown = |cx: &mut TestAppContext| {
-        in_frame(cx, handle, |window, _| {
-            (
-                window.try_find("tool-switch").is_some(),
-                window.try_find("tool-sidebar-host").is_some(),
-            )
-        })
-    };
-
-    // Below the terminals: a terminal shows, and so do the tools.
-    move_explorer(false, cx);
-    assert_eq!(shown(cx), (true, true));
-    // Back into their group, in front, as a drop leaves it: no terminal
-    // shows.
-    move_explorer(true, cx);
-    assert_eq!(shown(cx), (false, false));
-    let front = cx.update(|cx| workspace.read(cx).active_tab());
-    assert_eq!(front, Some(CenterTab::Explorer(ExplorerId(SFTP_TAB))));
 }
 
 #[gpui_kit::test]
@@ -1775,7 +1550,7 @@ fn the_sidebars_keep_their_widths_until_reset(cx: &mut TestAppContext) {
     assert_eq!(widths(cx, &workspace), (px(280.), px(320.)));
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-6", cx)
+        window.within("settings").click("0-5", cx)
     });
     // Nothing to restore yet.
     in_frame(cx, handle, |window, _| {

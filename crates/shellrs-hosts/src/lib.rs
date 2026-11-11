@@ -8,7 +8,7 @@
 //! notifies no one: failures and changes queue up as typed [`HostEvent`]s,
 //! and keychain writes as [`SecretJob`]s, for the app to take, word in its
 //! own language and run off the UI thread. The desktop app wraps it in a
-//! GPUI entity; the mobile apps will reach it through their bindings.
+//! GPUI entity.
 
 mod credential;
 mod data;

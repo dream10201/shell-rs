@@ -121,12 +121,6 @@ workspace.status.disconnected_from:
   zh-CN: 未连接 %{name}
   en: Not connected to %{name}
 # How the connection stands, then what went wrong.
-workspace.status.problem:
-  zh-CN: "%{state}：%{problem}"
-  en: "%{state}: %{problem}"
-workspace.status.local_file:
-  zh-CN: 本机文件
-  en: Local file
 workspace.status.local_starting:
   zh-CN: 正在启动 本地终端
   en: Local terminal starting
@@ -206,50 +200,6 @@ workspace.auth.continue:
   zh-CN: 继续
   en: Continue
 
-workspace.files.single:
-  zh-CN: “%{name}”
-  en: “%{name}”
-workspace.files.pair:
-  zh-CN: “%{first}”和“%{second}”
-  en: “%{first}” and “%{second}”
-workspace.files.several:
-  zh-CN: “%{first}”等 %{count} 个文件
-  en: "%{count} files including “%{first}”"
-workspace.unsaved.quit_title:
-  zh-CN: 退出 ShellRS？
-  en: Quit ShellRS?
-workspace.unsaved.quit:
-  zh-CN: "%{files}有未保存的修改，退出后会丢失。"
-  en: Unsaved changes to %{files} will be lost.
-workspace.unsaved.discard_and_quit:
-  zh-CN: 放弃修改并退出
-  en: Discard changes and quit
-workspace.unsaved.close_tabs_title.one:
-  en: Close 1 tab?
-workspace.unsaved.close_tabs_title.other:
-  zh-CN: 关闭 %{count} 个标签？
-  en: Close %{count} tabs?
-workspace.unsaved.close_tabs:
-  zh-CN: "%{files}有未保存的修改，关闭后会丢失。"
-  en: Unsaved changes to %{files} will be lost.
-workspace.unsaved.close_sftp_title:
-  zh-CN: 关闭 SFTP 标签？
-  en: Close the SFTP tab?
-workspace.unsaved.close_sftp:
-  zh-CN: "%{files}有未保存的修改，关闭 SFTP 标签会一起关掉它们，修改会丢失。"
-  en: Closing the SFTP tab also closes %{files}. Unsaved changes will be lost.
-workspace.unsaved.close_terminal_title:
-  zh-CN: 关闭终端？
-  en: Close the terminal?
-workspace.unsaved.close_terminal:
-  zh-CN: "%{files}有未保存的修改，关闭终端会一起关掉它们，修改会丢失。"
-  en: Closing the terminal also closes %{files}. Unsaved changes will be lost.
-workspace.unsaved.discard_and_close:
-  zh-CN: 放弃修改并关闭
-  en: Discard changes and close
-
-# Terminal notices: the tab first, so a notice says which terminal it is
-# from.
 workspace.notice.titled:
   zh-CN: "%{tab}：%{title}"
   en: "%{tab}: %{title}"
@@ -320,8 +270,8 @@ workspace.zmodem.choose_folder:
   zh-CN: 保存到此处
   en: Save here
 workspace.zmodem.files_only:
-  zh-CN: ZMODEM 只能上传文件，文件夹请用 SFTP 上传
-  en: ZMODEM uploads only files. Upload folders with SFTP.
+  zh-CN: ZMODEM 只能上传文件，文件夹请用标签栏右侧的「上传文件…」
+  en: ZMODEM uploads only files. Upload folders with “Upload files…” at the right of the tab bar.
 
 # 项目: the line under a terminal's kept output, drawn again as it opens.
 workspace.projects.kept_output:

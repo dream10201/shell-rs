@@ -20,41 +20,32 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::editors::describe_files;
 use super::front::follow_focus;
 use crate::analytics::{Analytics, AnalyticsServices, Counter};
-use crate::app::ExplorerDispatch as _;
 use crate::app::{
-    CenterTab, ClearTerminal, CloseActiveTab, CloseEditor, CloseExplorer, CloseLocalTerminal,
-    CloseSettings, CloseTabs, CloseTerminal, CollapseAllGroups, ConnectGroup, ConnectHost,
-    CopyHostAddress, CopyHostId, CopyTerminal, DeleteGroup, DeleteHost, DisconnectTerminal,
-    DismissTerminalFind, DuplicateHost, DuplicateTerminal, EditHost, ExpandAllGroups,
-    ExplorerAction, ExplorerCommand, ExplorerShortcut, FindInTerminal, FindNextInTerminal,
+    CenterTab, ClearTerminal, CloseActiveTab, CloseLocalTerminal, CloseSettings, CloseTabs,
+    CloseTerminal, CollapseAllGroups, ConnectGroup, ConnectHost, CopyHostAddress, CopyHostId,
+    CopyTerminal, DeleteGroup, DeleteHost, DisconnectTerminal, DismissTerminalFind, DuplicateHost,
+    DuplicateTerminal, EditHost, ExpandAllGroups, FindInTerminal, FindNextInTerminal,
     FindPreviousInTerminal, FocusSearch, MaximizeWindow, MoveHostNode, NewChildGroup, NewGroup,
-    NewHost, NewHostInGroup, NewLocalTerminal, NewTemporaryConnection, OpenExplorer, OpenSettings,
-    PasteTerminal, QuickConnect, ReconnectTerminal, RenameExplorer, RenameGroup, RenameTerminal,
-    RestartLocalTerminal, RestoreWindow, SelectAllTerminal, SendBreak, SetFileSizeFormat,
-    ShowOrHideApp, ToggleHiddenFiles, ToggleHostPanel, ToggleTheme, ToolKind, ZoomIn, ZoomOut,
-    ZoomReset, ZoomTerminalIn, ZoomTerminalOut, ZoomTerminalReset,
+    NewHost, NewHostInGroup, NewLocalTerminal, NewTemporaryConnection, OpenSettings, PasteTerminal,
+    QuickConnect, ReconnectTerminal, RenameGroup, RenameTerminal, RestartLocalTerminal,
+    RestoreWindow, SelectAllTerminal, SendBreak, ShowOrHideApp, ToggleHostPanel, ToggleTheme,
+    ToolKind, ZoomIn, ZoomOut, ZoomReset, ZoomTerminalIn, ZoomTerminalOut, ZoomTerminalReset,
 };
 use crate::connection::{
     ConnectionPrompt, ConnectionPromptField, ConnectionPromptKind, ConnectionPromptReply,
     ConnectionSecret, SharedConnectionTester,
 };
 use crate::credential::CredentialPanel;
-use crate::editor::{EditorId, EditorPanel};
-use crate::explorer::{
-    ExplorerId, ExplorerPanel, ExplorerPanelEvent, PreviewKind, confirm_close_transfer,
-};
 use crate::forward::{
     ForwardManager, ForwardManagerEvent, ForwardPanel, SharedForwardTransportProvider,
     SshForwardTransportProvider,
 };
 use crate::host::{
-    ConnectionState, Dependents, ForwardId, GroupId, Host, HostConnection, HostId, HostLogin,
-    HostNode, HostPanel, HostStore, HostStoreEvent, SavedTerminal, SavedTerminalId,
-    confirm_delete_group, confirm_delete_host, open_group_dialog, open_host_dialog,
-    open_quick_connect_dialog, open_temporary_connection_dialog,
+    Dependents, ForwardId, GroupId, HostId, HostNode, HostPanel, HostStore, HostStoreEvent,
+    SavedTerminal, SavedTerminalId, confirm_delete_group, confirm_delete_host, open_group_dialog,
+    open_host_dialog, open_quick_connect_dialog, open_temporary_connection_dialog,
 };
 use crate::i18n::t;
 use crate::instance::InstanceServer;
@@ -62,11 +53,7 @@ use crate::settings::{
     Appearance, DEFAULT_INTERFACE_FONT_SIZE, SettingsPanel, SettingsPanelEvent, SettingsStore,
     SettingsStoreEvent, WindowSettings,
 };
-use crate::sftp::{
-    SftpRoute, SharedLocalDirectoryProvider, SharedSftpTransportProvider, SshSftpTransportProvider,
-    SystemLocalDirectoryProvider, TransferDirection,
-};
-use crate::shared::{commit_footer, confirm_danger, open_rename_tab_dialog};
+use crate::shared::{commit_footer, open_rename_tab_dialog};
 use crate::ssh::{
     authentication_fields, authentication_instructions, authentication_title,
     unknown_host_description,
@@ -88,7 +75,7 @@ use super::{
     recent_hosts::RecentHosts,
     sidebar::Sidebar,
     sidebar_widths::opening_widths,
-    status_bar::WorkspaceStatus,
+    status_bar::{WorkspaceStatus, WorkspaceStatusBar},
     title_bar::{SwitchEnd, render_sidebar_toggle, render_title_bar},
     tool_sidebar::{ToolSidebar, render_tool_switch},
     tools::set_right_dock_open,
@@ -144,7 +131,6 @@ pub fn window_options(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PromptOwner {
     Terminal(RemoteTerminalId),
-    Sftp(ExplorerId, u64),
     Forward(ForwardId, u64),
 }
 
@@ -173,15 +159,6 @@ pub struct Workspace {
     /// The start page the dock skin shows while the center has no tab.
     recent: Entity<RecentHosts>,
     pub(super) terminals: HashMap<RemoteTerminalId, Entity<TerminalPanel>>,
-    /// SFTP tabs; a host can have several, like terminals. The right
-    /// sidebar's 文件 are here too, so commands, questions and editors reach
-    /// them the same way.
-    pub(super) explorers: HashMap<ExplorerId, Entity<ExplorerPanel>>,
-    /// Each remote terminal's 文件, once shown: on the terminal's own
-    /// connection, and gone with the terminal.
-    pub(super) file_sidebars: HashMap<RemoteTerminalId, ExplorerId>,
-    /// 目录跟随: what each terminal's current connection was found to be.
-    pub(super) directory_follow: HashMap<RemoteTerminalId, super::follow::FollowState>,
     pub(super) local_terminals: HashMap<LocalTerminalId, Entity<LocalTerminalPanel>>,
     /// The local terminals kept in 项目, by the tab each is open in.
     pub(super) saved_terminals: HashMap<LocalTerminalId, SavedTerminalId>,
@@ -208,13 +185,10 @@ pub struct Workspace {
     pub(super) analytics: Option<super::analytics::Reporting>,
     local_terminal_provider: SharedLocalTerminalTransportProvider,
     host_terminals: HostTerminalTransports,
-    sftp_provider: SharedSftpTransportProvider,
-    pub(super) local_directory_provider: SharedLocalDirectoryProvider,
     /// Backs the host dialog's 「测试连接」.
     connection_tester: SharedConnectionTester,
     next_remote_terminal_id: u64,
     next_local_terminal_id: u64,
-    next_explorer_id: u64,
     /// The center tab in front: shown most recently, or, with the center
     /// split, the one the focus went into last (see `front.rs`).
     /// `CloseActiveTab` closes it. Changed through `set_active_tab`, which
@@ -232,9 +206,9 @@ pub struct Workspace {
     /// Dispatch target for the title bar and start page: actions sent to it
     /// reach the workspace handlers whatever is focused.
     pub(super) focus_handle: FocusHandle,
-    /// Editor tabs, one per file.
-    pub(super) editors: HashMap<EditorId, Entity<EditorPanel>>,
-    pub(super) next_editor_id: u64,
+    /// The file transfers that are running, each on a terminal's own
+    /// connection.
+    pub(super) transfers: Entity<crate::transfer::TransferManager>,
     /// When each terminal last notified, of each kind, keyed by
     /// `notices::notice_tag` and the kind.
     pub(super) notice_times: HashMap<String, std::time::Instant>,
@@ -284,11 +258,6 @@ impl Workspace {
             connector.clone(),
         ));
         let tester = Arc::new(crate::ssh::SshConnectionTester::new(connector.clone()));
-        let sftp: SharedSftpTransportProvider = Arc::new(SshSftpTransportProvider::new(
-            connector.clone(),
-            crate::app::data_dir().join("upload-resume"),
-            crate::app::data_dir().join("download-resume"),
-        ));
         let forward = Arc::new(SshForwardTransportProvider::new(connector.clone()));
         let mut this = Self::new_with_services(
             store,
@@ -299,8 +268,6 @@ impl Workspace {
             )),
             Arc::new(crate::serial::SerialTransportProvider),
             Arc::new(LocalPtyTransportProvider),
-            sftp.clone(),
-            Arc::new(SystemLocalDirectoryProvider),
             tester,
             forward,
             window,
@@ -341,8 +308,6 @@ impl Workspace {
         telnet_terminal_provider: SharedTelnetTerminalTransportProvider,
         serial_terminal_provider: SharedSerialTerminalTransportProvider,
         local_terminal_provider: SharedLocalTerminalTransportProvider,
-        sftp_provider: SharedSftpTransportProvider,
-        local_directory_provider: SharedLocalDirectoryProvider,
         connection_tester: SharedConnectionTester,
         forward_provider: SharedForwardTransportProvider,
         window: &mut Window,
@@ -367,6 +332,7 @@ impl Workspace {
         );
         let host_panel = cx.new(|cx| HostPanel::new(store.clone(), window, cx));
         let forwards = cx.new(|cx| ForwardManager::new(store.clone(), forward_provider, cx));
+        let transfers = cx.new(|_| crate::transfer::TransferManager::default());
         let update_settings = settings.read(cx).settings().update.clone();
         let updater = cx.new(|cx| {
             let mut updater = Updater::new();
@@ -433,6 +399,14 @@ impl Workspace {
                     cx.notify();
                 }
             }),
+            cx.observe(&transfers, |_, _, cx| cx.notify()),
+            cx.subscribe_in(
+                &transfers,
+                window,
+                |this, _, event: &crate::transfer::TransferEvent, window, cx| {
+                    this.on_transfer_event(event, window, cx)
+                },
+            ),
             cx.observe_in(&store, window, |this, _, window, cx| {
                 // The system a host runs decides which tools it is offered.
                 this.sync_tool_sidebar(window, cx);
@@ -535,13 +509,13 @@ impl Workspace {
                 });
             });
         });
-        // ⌘Q (and on Windows and Linux the window's close button) asks first
-        // when an editor has changes not saved yet.
+        // ⌘Q (and on Windows and Linux the window's close button) waits for
+        // a last round of sync.
         let this = cx.weak_entity();
         crate::app::set_quit_guard(
             window.window_handle(),
-            move |window, cx| {
-                this.update(cx, |this, cx| this.ask_before_quit(window, cx))
+            move |_, cx| {
+                this.update(cx, |this, cx| this.sync_before_quit(cx))
                     .unwrap_or(false)
             },
             cx,
@@ -671,9 +645,6 @@ impl Workspace {
             forwards,
             recent,
             terminals,
-            explorers: HashMap::new(),
-            file_sidebars: HashMap::new(),
-            directory_follow: HashMap::new(),
             local_terminals,
             saved_terminals,
             front_saved_terminal,
@@ -686,12 +657,9 @@ impl Workspace {
             analytics: None,
             local_terminal_provider,
             host_terminals,
-            sftp_provider,
-            local_directory_provider,
             connection_tester,
             next_remote_terminal_id,
             next_local_terminal_id,
-            next_explorer_id: 1,
             active_tab: None,
             broadcast: Default::default(),
             compose,
@@ -702,8 +670,7 @@ impl Workspace {
             prompt_queue: VecDeque::new(),
             active_prompt: None,
             focus_handle,
-            editors: HashMap::new(),
-            next_editor_id: 1,
+            transfers,
             notice_times: HashMap::new(),
             window_state_save: None,
             sidebar_widths: launch_settings.sidebar_widths,
@@ -765,102 +732,17 @@ impl Workspace {
             .filter(move |panel| panel.read(cx).host_id() == host)
     }
 
-    pub fn explorer(&self, id: ExplorerId) -> Option<&Entity<ExplorerPanel>> {
-        self.explorers.get(&id)
-    }
-
-    /// A host's SFTP tabs, oldest first. Not its terminals' 文件, which
-    /// come and go with the terminals.
-    pub fn explorers_of(&self, host: HostId, cx: &App) -> Vec<Entity<ExplorerPanel>> {
-        let mut explorers: Vec<_> = self
-            .explorers
-            .iter()
-            .filter(|(_, panel)| {
-                let panel = panel.read(cx);
-                panel.host_id() == host && !panel.is_sidebar()
-            })
-            .collect();
-        explorers.sort_by_key(|(id, _)| id.0);
-        explorers
-            .into_iter()
-            .map(|(_, panel)| panel.clone())
-            .collect()
-    }
-
     /// Whether a host has any tab open in the center.
     pub(super) fn has_tabs(&self, host: HostId, cx: &App) -> bool {
-        self.terminals_of(host, cx).next().is_some() || !self.explorers_of(host, cx).is_empty()
+        self.terminals_of(host, cx).next().is_some()
     }
 
-    /// Whether one of the host's terminals or SFTP tabs is connected. Each
-    /// tab goes by its own connection; this is for whoever asks after the
-    /// host as a whole.
+    /// Whether one of the host's terminals is connected. Each tab goes by
+    /// its own connection; this is for whoever asks after the host as a
+    /// whole.
     pub fn has_connection(&self, host: HostId, cx: &App) -> bool {
         self.terminals_of(host, cx)
             .any(|panel| panel.read(cx).connection_state(cx).is_connected())
-            || self
-                .explorers_of(host, cx)
-                .iter()
-                .any(|panel| panel.read(cx).connection_state().is_connected())
-    }
-
-    /// A remote terminal's 文件, once it has been shown.
-    pub fn file_sidebar(&self, terminal: RemoteTerminalId) -> Option<&Entity<ExplorerPanel>> {
-        self.explorers.get(self.file_sidebars.get(&terminal)?)
-    }
-
-    /// The terminal whose 文件 an explorer is, if it is one.
-    pub(super) fn sidebar_terminal(&self, explorer: ExplorerId) -> Option<RemoteTerminalId> {
-        self.file_sidebars
-            .iter()
-            .find(|(_, id)| **id == explorer)
-            .map(|(terminal, _)| *terminal)
-    }
-
-    /// A remote terminal's 文件, made the first time it is shown: SFTP on a
-    /// channel of the terminal's own connection, no login of its own.
-    pub(super) fn ensure_file_sidebar(
-        &mut self,
-        terminal: RemoteTerminalId,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Option<Entity<ExplorerPanel>> {
-        if let Some(panel) = self.file_sidebar(terminal) {
-            return Some(panel.clone());
-        }
-        // On the terminal's connection, so as the terminal took the host.
-        let panel = self.terminals.get(&terminal)?.read(cx);
-        let HostConnection::Ssh(login) = panel.connection().clone() else {
-            return None;
-        };
-        let host = panel.host().clone();
-        let channels = panel.terminal().read(cx).channels(cx);
-        let id = ExplorerId(self.next_explorer_id);
-        self.next_explorer_id += 1;
-        let route = SftpRoute::Terminal(channels);
-        let (panel, subscription) = new_explorer_panel(self, id, host, login, route, window, cx);
-        self._subscriptions.push(subscription);
-        self.explorers.insert(id, panel.clone());
-        self.file_sidebars.insert(terminal, id);
-        let follow = self.initial_follow(terminal, cx);
-        panel.update(cx, |panel, cx| panel.set_follow(follow, cx));
-        // Where the terminal is, rather than home, if its shell said.
-        self.follow_current_directory(terminal, window, cx);
-        Some(panel)
-    }
-
-    /// End a terminal's 文件 with the terminal. Its `Closed` does the rest,
-    /// as for an SFTP tab: its editors, its place in the registers.
-    fn close_file_sidebar(
-        &mut self,
-        terminal: RemoteTerminalId,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // It logs in nowhere, so no question of its own can be waiting.
-        if let Some(panel) = self.file_sidebar(terminal).cloned() {
-            panel.update(cx, |panel, cx| panel.close(window, cx));
-        }
     }
 
     pub fn local_terminal(&self, id: LocalTerminalId) -> Option<&Entity<LocalTerminalPanel>> {
@@ -936,10 +818,6 @@ impl Workspace {
                 .terminals
                 .get(&id)
                 .map(|panel| panel.read(cx).focus_handle(cx)),
-            CenterTab::Explorer(id) => self
-                .explorers
-                .get(&id)
-                .map(|panel| panel.read(cx).focus_handle(cx)),
             CenterTab::LocalTerminal(id) => self
                 .local_terminals
                 .get(&id)
@@ -947,10 +825,6 @@ impl Workspace {
             CenterTab::Settings => self
                 .settings_tab
                 .as_ref()
-                .map(|panel| panel.read(cx).focus_handle(cx)),
-            CenterTab::Editor(id) => self
-                .editors
-                .get(&id)
                 .map(|panel| panel.read(cx).focus_handle(cx)),
         }
     }
@@ -1027,7 +901,7 @@ impl Workspace {
         self.active_prompt = Some((terminal_id, host_id, request_id));
         let origin = match terminal_id {
             PromptOwner::Forward(id, _) => self.forward_prompt_origin(id, cx),
-            PromptOwner::Terminal(_) | PromptOwner::Sftp(..) => None,
+            PromptOwner::Terminal(_) => None,
         };
         // What a question says first when it needs saying who is asking.
         let introduced = |text: String| match &origin {
@@ -1215,7 +1089,6 @@ impl Workspace {
                     self.forwards
                         .update(cx, |forwards, cx| forwards.stop(id, cx));
                 }
-                PromptOwner::Sftp(..) => {}
             }
         }
     }
@@ -1223,10 +1096,6 @@ impl Workspace {
     fn prompt_owner_is_live(&self, owner: PromptOwner, cx: &App) -> bool {
         match owner {
             PromptOwner::Terminal(id) => self.terminals.contains_key(&id),
-            PromptOwner::Sftp(id, generation) => self
-                .explorers
-                .get(&id)
-                .is_some_and(|p| p.read(cx).generation() == generation),
             PromptOwner::Forward(id, generation) => {
                 self.forwards.read(cx).generation(id) == Some(generation)
             }
@@ -1244,13 +1113,6 @@ impl Workspace {
             PromptOwner::Terminal(id) => {
                 if let Some(panel) = self.terminals.get(&id) {
                     panel.read(cx).reply_to_prompt(request_id, reply, cx);
-                }
-            }
-            PromptOwner::Sftp(id, generation) => {
-                if let Some(panel) = self.explorers.get(&id)
-                    && panel.read(cx).generation() == generation
-                {
-                    panel.read(cx).reply_to_prompt(request_id, reply);
                 }
             }
             PromptOwner::Forward(id, generation) => {
@@ -1385,47 +1247,6 @@ impl Workspace {
         });
     }
 
-    fn on_open_explorer(
-        &mut self,
-        action: &OpenExplorer,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.open_explorer(action.0, window, cx);
-    }
-
-    pub(super) fn open_explorer(
-        &mut self,
-        host_id: HostId,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        // Only an SSH host has SFTP; nothing offers it another.
-        let store = self.store.read(cx);
-        let Some((host, login)) = store
-            .host(host_id)
-            .filter(|host| host.is_ssh())
-            .cloned()
-            .zip(store.login(host_id))
-        else {
-            return;
-        };
-        // Every request opens a tab of its own, as connecting does for
-        // terminals: two directories of one host side by side.
-        let id = ExplorerId(self.next_explorer_id);
-        self.next_explorer_id += 1;
-        let (panel, subscription) =
-            new_explorer_panel(self, id, host, login, SftpRoute::Login, window, cx);
-        self._subscriptions.push(subscription);
-        let focus = panel.read(cx).focus_handle(cx);
-        self._subscriptions
-            .push(follow_focus(CenterTab::Explorer(id), &focus, window, cx));
-        self.explorers.insert(id, panel.clone());
-        self.dock_area.update(cx, |area, cx| {
-            area.add_panel_view(panel_handle(panel), DockPlacement::Center, None, window, cx);
-        });
-    }
-
     fn on_new_local_terminal(
         &mut self,
         _: &NewLocalTerminal,
@@ -1554,27 +1375,10 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.close_terminal(action.0, true, window, cx);
+        self.close_terminal(action.0, window, cx);
     }
 
-    /// Close a remote terminal tab, asking first while its 文件 transfers or
-    /// has files open with changes not saved yet, unless that was asked.
     pub(super) fn close_terminal(
-        &mut self,
-        id: RemoteTerminalId,
-        ask_about_unsaved: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(&sidebar) = self.file_sidebars.get(&id)
-            && self.ask_before_closing(sidebar, ask_about_unsaved, true, window, cx)
-        {
-            return;
-        }
-        self.remove_terminal(id, window, cx);
-    }
-
-    fn remove_terminal(
         &mut self,
         id: RemoteTerminalId,
         window: &mut Window,
@@ -1583,196 +1387,6 @@ impl Workspace {
         if let Some(panel) = self.terminals.get(&id).cloned() {
             self.dock_area
                 .update(cx, |area, cx| area.remove_panel(panel, window, cx));
-        }
-    }
-
-    fn on_close_explorer(
-        &mut self,
-        action: &CloseExplorer,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.close_explorer(action.0, true, window, cx);
-    }
-
-    /// Close an SFTP tab, asking first while it transfers, and while files
-    /// it opened have changes not saved yet unless that was asked already.
-    pub(super) fn close_explorer(
-        &mut self,
-        id: ExplorerId,
-        ask_about_unsaved: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.explorers.contains_key(&id)
-            && !self.ask_before_closing(id, ask_about_unsaved, false, window, cx)
-        {
-            self.remove_explorer(id, window, cx);
-        }
-    }
-
-    /// Ask before closing an explorer that transfers, or whose files have
-    /// changes not saved yet (unless that was asked already): an SFTP tab,
-    /// or a terminal's 文件 as the terminal closes. Confirming sends the
-    /// explorer `CloseConfirmed`. `false` when there is nothing to ask.
-    fn ask_before_closing(
-        &mut self,
-        id: ExplorerId,
-        ask_about_unsaved: bool,
-        terminal: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let Some(panel) = self.explorers.get(&id).cloned() else {
-            return false;
-        };
-        let generation = panel.read(cx).generation();
-        // Its remote files close with it: changes not saved yet would be
-        // lost, so the question names them.
-        let unsaved = if ask_about_unsaved {
-            self.unsaved_files(&self.editors_of(id, cx), cx)
-        } else {
-            Vec::new()
-        };
-        let unsaved = (!unsaved.is_empty()).then(|| {
-            let files = describe_files(&unsaved);
-            if terminal {
-                t!("workspace.unsaved.close_terminal", files = files)
-            } else {
-                t!("workspace.unsaved.close_sftp", files = files)
-            }
-            .to_string()
-        });
-        if panel.read(cx).is_transferring() {
-            let direction = panel.read(cx).transfer_direction();
-            confirm_close_transfer(
-                id,
-                generation,
-                direction,
-                unsaved,
-                self.focus_handle.clone(),
-                window,
-                cx,
-            );
-        } else if let Some(unsaved) = unsaved {
-            let dispatch = self.focus_handle.clone();
-            confirm_danger(
-                if terminal {
-                    t!("workspace.unsaved.close_terminal_title")
-                } else {
-                    t!("workspace.unsaved.close_sftp_title")
-                },
-                Some(unsaved.into()),
-                t!("workspace.unsaved.discard_and_close"),
-                Rc::new(move |window, cx| {
-                    dispatch.dispatch_explorer_action(
-                        &ExplorerAction::new(id, ExplorerCommand::CloseConfirmed)
-                            .with_generation(generation),
-                        window,
-                        cx,
-                    )
-                }),
-                window,
-                cx,
-            );
-        } else {
-            return false;
-        }
-        true
-    }
-
-    /// Close an explorer the user agreed to close. A terminal's 文件 was
-    /// asked about as its terminal closed: the terminal goes, and it with it.
-    fn remove_explorer(&mut self, id: ExplorerId, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(terminal) = self.sidebar_terminal(id) {
-            self.remove_terminal(terminal, window, cx);
-            return;
-        }
-        if let Some(panel) = self.explorers.get(&id).cloned() {
-            self.cancel_prompts_for_owner(
-                PromptOwner::Sftp(id, panel.read(cx).generation()),
-                window,
-                cx,
-            );
-            self.dock_area
-                .update(cx, |area, cx| area.remove_panel(panel, window, cx));
-        }
-    }
-    fn on_explorer_action(
-        &mut self,
-        action: &ExplorerAction,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(panel) = self.explorers.get(&action.explorer()).cloned() else {
-            return;
-        };
-        if action
-            .generation()
-            .is_some_and(|g| g != panel.read(cx).generation())
-        {
-            return;
-        }
-        if matches!(action.command(), ExplorerCommand::CancelTransfer) {
-            self.cancel_prompts_for_owner(
-                PromptOwner::Sftp(action.explorer(), panel.read(cx).generation()),
-                window,
-                cx,
-            );
-        }
-        // A file open in an editor already shows that editor: no second read,
-        // no second tab.
-        if let ExplorerCommand::Edit { remote, path } = action.command()
-            && let Some(location) = panel.read(cx).edit_target(*remote, path.as_deref(), cx)
-            && let Some(editor) = self.editor_for_location(action.explorer(), &location, cx)
-        {
-            self.show_editor(&editor, window, cx);
-            return;
-        }
-        match action.command() {
-            ExplorerCommand::Enqueue(job) => self.count(match job.direction() {
-                TransferDirection::Upload => Counter::Upload,
-                TransferDirection::Download => Counter::Download,
-            }),
-            // The sidebar's 文件 has no 查找文件 to count.
-            ExplorerCommand::FindFiles
-                if panel.read(cx).connection_state() == ConnectionState::Connected
-                    && !panel.read(cx).is_sidebar() =>
-            {
-                self.count(Counter::SftpFind)
-            }
-            ExplorerCommand::Preview { remote, path } => {
-                if let Some((_, kind)) = panel.read(cx).preview_target(*remote, path.as_deref(), cx)
-                {
-                    self.count(match kind {
-                        PreviewKind::Image(_) => Counter::PreviewImage,
-                        PreviewKind::Markdown => Counter::PreviewMarkdown,
-                    });
-                }
-            }
-            _ => {}
-        }
-        if matches!(action.command(), ExplorerCommand::CloseConfirmed) {
-            self.remove_explorer(action.explorer(), window, cx);
-        } else {
-            panel.update(cx, |panel, cx| panel.execute(action.command(), window, cx));
-        }
-    }
-    /// File-list shortcuts go to the explorer holding focus, not the tab
-    /// activated last: two SFTP tabs can sit side by side in split groups.
-    fn on_explorer_shortcut(
-        &mut self,
-        action: &ExplorerShortcut,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let focused = self
-            .explorers
-            .iter()
-            .find(|(_, panel)| panel.read(cx).contains_focus(window, cx))
-            .map(|(id, _)| *id);
-        if let Some(id) = focused {
-            self.on_explorer_action(&ExplorerAction::new(id, action.0.clone()), window, cx);
         }
     }
 
@@ -1799,8 +1413,7 @@ impl Workspace {
         }
     }
 
-    /// Close one center tab through its own close path, so an explorer that
-    /// is uploading still asks first.
+    /// Close one center tab through its own close path.
     pub(super) fn close_center_tab(
         &mut self,
         tab: CenterTab,
@@ -1809,12 +1422,10 @@ impl Workspace {
     ) {
         match tab {
             CenterTab::Terminal(id) => self.on_close_terminal(&CloseTerminal(id), window, cx),
-            CenterTab::Explorer(id) => self.on_close_explorer(&CloseExplorer(id), window, cx),
             CenterTab::LocalTerminal(id) => {
                 self.on_close_local_terminal(&CloseLocalTerminal(id), window, cx)
             }
             CenterTab::Settings => self.on_close_settings(&CloseSettings, window, cx),
-            CenterTab::Editor(id) => self.on_close_editor(&CloseEditor(id), window, cx),
         }
     }
 
@@ -1829,20 +1440,12 @@ impl Workspace {
                 let panel = self.terminals.get(&id)?;
                 (panel.read(cx).tab_group(), panel.entity_id())
             }
-            CenterTab::Explorer(id) => {
-                let panel = self.explorers.get(&id)?;
-                (panel.read(cx).tab_group(), panel.entity_id())
-            }
             CenterTab::LocalTerminal(id) => {
                 let panel = self.local_terminals.get(&id)?;
                 (panel.read(cx).tab_group(), panel.entity_id())
             }
             CenterTab::Settings => {
                 let panel = self.settings_tab.as_ref()?;
-                (panel.read(cx).tab_group(), panel.entity_id())
-            }
-            CenterTab::Editor(id) => {
-                let panel = self.editors.get(&id)?;
                 (panel.read(cx).tab_group(), panel.entity_id())
             }
         };
@@ -1857,12 +1460,6 @@ impl Workspace {
             .find(|(_, entity)| is(entity.entity_id()))
             .map(|(id, _)| CenterTab::Terminal(*id))
             .or_else(|| {
-                self.explorers
-                    .iter()
-                    .find(|(_, entity)| is(entity.entity_id()))
-                    .map(|(id, _)| CenterTab::Explorer(*id))
-            })
-            .or_else(|| {
                 self.local_terminals
                     .iter()
                     .find(|(_, entity)| is(entity.entity_id()))
@@ -1873,12 +1470,6 @@ impl Workspace {
                     .as_ref()
                     .filter(|panel| is(panel.entity_id()))
                     .map(|_| CenterTab::Settings)
-            })
-            .or_else(|| {
-                self.editors
-                    .iter()
-                    .find(|(_, entity)| is(entity.entity_id()))
-                    .map(|(id, _)| CenterTab::Editor(*id))
             })
     }
 
@@ -1901,7 +1492,9 @@ impl Workspace {
             .into_iter()
             .filter_map(|target| self.center_tab_for_panel(panels[target]))
             .collect();
-        self.close_center_tabs(tabs, window, cx);
+        for tab in tabs {
+            self.close_center_tab(tab, window, cx);
+        }
     }
 
     fn on_rename_terminal(
@@ -1911,17 +1504,6 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if let Some(panel) = self.terminals.get(&action.0).cloned() {
-            open_rename_tab_dialog(panel, window, cx);
-        }
-    }
-
-    fn on_rename_explorer(
-        &mut self,
-        action: &RenameExplorer,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(panel) = self.explorers.get(&action.0).cloned() {
             open_rename_tab_dialog(panel, window, cx);
         }
     }
@@ -2011,7 +1593,7 @@ impl Workspace {
             CenterTab::LocalTerminal(id) => {
                 Some(self.local_terminals.get(&id)?.read(cx).terminal().clone())
             }
-            CenterTab::Explorer(_) | CenterTab::Settings | CenterTab::Editor(_) => None,
+            CenterTab::Settings => None,
         }
     }
 
@@ -2109,20 +1691,6 @@ impl Workspace {
         self.cancel_prompts_for_terminal(id, window, cx);
         if let Some(terminal) = self.terminals.get(&id).cloned() {
             terminal.update(cx, |terminal, cx| terminal.disconnect(cx));
-            self.disconnect_file_sidebar(id, window, cx);
-        }
-    }
-
-    /// A terminal's 文件 goes down with it at once, rather than finding out
-    /// when its channel ends and then retrying for a while.
-    fn disconnect_file_sidebar(
-        &mut self,
-        terminal: RemoteTerminalId,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(panel) = self.file_sidebar(terminal).cloned() {
-            panel.update(cx, |panel, cx| panel.disconnect(window, cx));
         }
     }
 
@@ -2421,33 +1989,6 @@ impl Workspace {
         });
     }
 
-    /// Saved like any setting; applying it redraws every SFTP tab.
-    fn on_set_file_size_format(
-        &mut self,
-        action: &SetFileSizeFormat,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let format = action.0;
-        self.settings.update(cx, |settings, cx| {
-            settings.update(|settings| settings.file_size_format = format, cx)
-        });
-    }
-
-    /// Saved like any setting; applying it lists that side of every SFTP
-    /// tab again.
-    fn on_toggle_hidden_files(
-        &mut self,
-        action: &ToggleHiddenFiles,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let side = action.0;
-        self.settings.update(cx, |settings, cx| {
-            settings.update(|settings| settings.show_hidden.toggle(side), cx)
-        });
-    }
-
     fn on_focus_search(&mut self, _: &FocusSearch, window: &mut Window, cx: &mut Context<Self>) {
         if !self.dock_area.read(cx).is_dock_open(DockPlacement::Left) {
             self.dock_area.update(cx, |area, cx| {
@@ -2544,8 +2085,6 @@ fn new_terminal_panel(
             TerminalPanelEvent::Closed(terminal_id, host_id) => {
                 this.cancel_prompts_for_terminal(*terminal_id, window, cx);
                 this.terminals.remove(terminal_id);
-                this.close_file_sidebar(*terminal_id, window, cx);
-                this.directory_follow.remove(terminal_id);
                 this.sync_broadcast(cx);
                 this.sync_compose(window, cx);
                 if this.active_tab == Some(CenterTab::Terminal(*terminal_id)) {
@@ -2558,41 +2097,10 @@ fn new_terminal_panel(
                 this.sync_compose(window, cx);
                 cx.notify();
             }
-            TerminalPanelEvent::Connected(terminal_id, host_id) => {
-                this.count_connection(*host_id, false, cx);
+            TerminalPanelEvent::Connected(_, host_id) => {
+                this.count_connection(*host_id, cx);
                 this.store
                     .update(cx, |store, cx| store.record_connection(*host_id, cx));
-                // A Telnet or serial terminal has no 文件 beside it.
-                if this
-                    .terminals
-                    .get(terminal_id)
-                    .is_none_or(|panel| !panel.read(cx).host().is_ssh())
-                {
-                    return;
-                }
-                // A new connection, maybe to another machine: its folder is
-                // what it reports from now on, and it is checked afresh,
-                // first, so the check runs before 文件's channel opens.
-                if let Some(panel) = this.file_sidebar(*terminal_id).cloned() {
-                    panel.update(cx, |panel, _| panel.forget_follow_target());
-                }
-                if this.tool_showing(cx) == Some(ToolKind::Files)
-                    && this.tool_terminal(cx).map(|shown| shown.id) == Some(*terminal_id)
-                {
-                    this.check_directory_follow(*terminal_id, window, cx);
-                }
-                // 文件 comes back with its terminal: a channel on the new
-                // connection, whatever the old one's state.
-                if let Some(panel) = this.file_sidebar(*terminal_id).cloned()
-                    && panel.read(cx).can_reconnect()
-                {
-                    let id = panel.read(cx).id();
-                    this.on_explorer_action(
-                        &ExplorerAction::new(id, ExplorerCommand::Reconnect),
-                        window,
-                        cx,
-                    );
-                }
             }
             TerminalPanelEvent::PromptRequested(terminal_id, host_id, prompt) => this
                 .enqueue_prompt(
@@ -2609,9 +2117,6 @@ fn new_terminal_panel(
             }
             TerminalPanelEvent::Notice(terminal_id, notice) => {
                 this.on_terminal_notice(CenterTab::Terminal(*terminal_id), notice, window, cx)
-            }
-            TerminalPanelEvent::DirectoryChanged(terminal_id, directory) => {
-                this.follow_directory(*terminal_id, directory, window, cx)
             }
             TerminalPanelEvent::ZmodemAsk(terminal_id, direction) => {
                 this.ask_zmodem(CenterTab::Terminal(*terminal_id), *direction, window, cx)
@@ -2678,95 +2183,6 @@ impl Render for AuthenticationPromptForm {
     }
 }
 
-/// An SFTP tab, or a terminal's 文件, for `host` as it is now, logging in
-/// with `login`.
-fn new_explorer_panel(
-    workspace: &Workspace,
-    id: ExplorerId,
-    host: Host,
-    login: HostLogin,
-    route: SftpRoute,
-    window: &mut Window,
-    cx: &mut Context<Workspace>,
-) -> (Entity<ExplorerPanel>, Subscription) {
-    let panel = cx.new(|cx| {
-        ExplorerPanel::new(
-            id,
-            host,
-            login,
-            workspace.store.clone(),
-            workspace.sftp_provider.clone(),
-            route,
-            workspace.local_directory_provider.clone(),
-            workspace.focus_handle.clone(),
-            window,
-            cx,
-        )
-    });
-    let subscription = cx.subscribe_in(
-        &panel,
-        window,
-        |this, _, event: &ExplorerPanelEvent, window, cx| match event {
-            ExplorerPanelEvent::Activated(id) => {
-                this.set_active_tab(Some(CenterTab::Explorer(*id)), window, cx)
-            }
-            ExplorerPanelEvent::Closed(id, host_id) => {
-                // Its remote files can no longer be written: their editors
-                // go with it (anything unsaved was asked about first).
-                for editor in this.editors_of(*id, cx) {
-                    this.remove_editor(editor, window, cx);
-                }
-                this.explorers.remove(id);
-                if this.active_tab == Some(CenterTab::Explorer(*id)) {
-                    this.set_active_tab(None, window, cx);
-                }
-                let sidebars = this.file_sidebars.len();
-                this.file_sidebars.retain(|_, sidebar| sidebar != id);
-                if this.file_sidebars.len() != sidebars {
-                    // The right sidebar lets go of it.
-                    this.sync_tool_sidebar(window, cx);
-                }
-                this.forget_unused_temporary_host(*host_id, window, cx);
-            }
-            ExplorerPanelEvent::StateChanged(id, host_id) => {
-                if let Some(panel) = this.explorers.get(id) {
-                    let generation = panel.read(cx).generation();
-                    this.prompt_queue.retain(|(owner,_,_)| !matches!(owner,PromptOwner::Sftp(s,g) if s == id && *g != generation));
-                    if let Some((owner @ PromptOwner::Sftp(s,g),_,_)) = this.active_prompt && s == *id && g != generation {
-                        this.cancel_prompts_for_owner(owner,window,cx);
-                    }
-                }
-                // Only connecting, connected and disconnected change it. A
-                // terminal's 文件 logs in nowhere: `tool_files` counts it.
-                if this.explorers.get(id).is_some_and(|panel| {
-                    let panel = panel.read(cx);
-                    panel.connection_state() == ConnectionState::Connected && !panel.is_sidebar()
-                }) {
-                    this.count_connection(*host_id, true, cx);
-                    this.store
-                        .update(cx, |store, cx| store.record_connection(*host_id, cx));
-                }
-            },
-            ExplorerPanelEvent::StatusChanged(id) => {
-                if this.active_tab == Some(CenterTab::Explorer(*id)) {
-                    cx.notify();
-                }
-            }
-            ExplorerPanelEvent::PromptRequested(id, host_id, generation, prompt) => this.enqueue_prompt(
-                PromptOwner::Sftp(*id, *generation),
-                *host_id,
-                prompt.clone(),
-                window,
-                cx,
-            ),
-            ExplorerPanelEvent::EditFile(id, location, file) => {
-                this.open_editor(*id, location.clone(), file.clone(), window, cx)
-            }
-        },
-    );
-    (panel, subscription)
-}
-
 fn new_local_terminal_panel(
     id: LocalTerminalId,
     factory: SharedTerminalTransportFactory,
@@ -2829,7 +2245,7 @@ impl Render for Workspace {
                 Some(panel) => {
                     let panel = panel.read(cx);
                     WorkspaceStatus::Host(
-                        Some((panel.host().clone(), panel.connection_state(cx))),
+                        Some(Box::new((panel.host().clone(), panel.connection_state(cx)))),
                         Some(panel.status(cx)),
                     )
                 }
@@ -2840,36 +2256,6 @@ impl Render for Workspace {
                 .get(&id)
                 .map(|panel| WorkspaceStatus::Local(panel.read(cx).status(cx)))
                 .unwrap_or(WorkspaceStatus::Host(None, None)),
-            // An SFTP tab tells its own connection, and what went wrong in it.
-            Some(CenterTab::Explorer(id)) => match self.explorers.get(&id) {
-                Some(panel) => {
-                    let panel = panel.read(cx);
-                    WorkspaceStatus::Explorer(Some(panel.host().clone()), panel.status(cx))
-                }
-                None => WorkspaceStatus::Host(None, None),
-            },
-            // An editor of a remote file tells the connection of the SFTP
-            // tab its saves go through.
-            Some(CenterTab::Editor(id)) => match self.editors.get(&id) {
-                Some(editor) => {
-                    let editor = editor.read(cx);
-                    let remote = editor.explorer_id().map(|explorer| {
-                        let panel = self.explorers.get(&explorer).map(|panel| panel.read(cx));
-                        (
-                            panel.map(|panel| panel.host().clone()),
-                            panel.map_or(ConnectionState::Disconnected, |panel| {
-                                panel.connection_state()
-                            }),
-                        )
-                    });
-                    WorkspaceStatus::Editor {
-                        remote,
-                        cursor: editor.cursor_label(),
-                        format: editor.format_label(),
-                    }
-                }
-                None => WorkspaceStatus::Host(None, None),
-            },
             _ => WorkspaceStatus::Host(None, None),
         };
         let sidebar = self.sidebar_showing(cx);
@@ -2885,6 +2271,11 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_new_temporary_connection))
             .on_action(cx.listener(Self::on_quick_connect))
             .on_action(cx.listener(Self::on_new_local_terminal))
+            .on_action(cx.listener(Self::on_upload_files))
+            .on_action(cx.listener(Self::on_download_files))
+            .on_action(cx.listener(Self::on_start_upload))
+            .on_action(cx.listener(Self::on_start_download))
+            .on_action(cx.listener(Self::on_cancel_file_transfers))
             .on_action(cx.listener(Self::on_toggle_terminal_broadcast))
             .on_action(cx.listener(Self::on_set_broadcast_target))
             .on_action(cx.listener(Self::on_toggle_compose_pane))
@@ -2911,22 +2302,13 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_reconnect_terminal))
             .on_action(cx.listener(Self::on_disconnect_terminal))
             .on_action(cx.listener(Self::on_send_break))
-            .on_action(cx.listener(Self::on_open_explorer))
-            .on_action(cx.listener(Self::on_explorer_action))
-            .on_action(cx.listener(Self::on_explorer_shortcut))
             .on_action(cx.listener(Self::on_close_terminal))
-            .on_action(cx.listener(Self::on_close_explorer))
-            .on_action(cx.listener(Self::on_close_editor))
-            .on_action(cx.listener(Self::on_editor_action))
-            .on_action(cx.listener(Self::on_editor_shortcut))
             .on_action(cx.listener(Self::on_close_local_terminal))
             .on_action(cx.listener(Self::on_enable_app_lock))
             .on_action(cx.listener(Self::on_change_app_lock_password))
             .on_action(cx.listener(Self::on_disable_app_lock))
             .on_action(cx.listener(Self::on_lock_app))
             .on_action(cx.listener(Self::on_open_settings))
-            .on_action(cx.listener(Self::on_set_file_size_format))
-            .on_action(cx.listener(Self::on_toggle_hidden_files))
             .on_action(cx.listener(Self::on_check_for_updates))
             .on_action(cx.listener(Self::on_download_update))
             .on_action(cx.listener(Self::on_show_update))
@@ -2951,7 +2333,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_switch_to_tab))
             .on_action(cx.listener(Self::on_close_tabs))
             .on_action(cx.listener(Self::on_rename_terminal))
-            .on_action(cx.listener(Self::on_rename_explorer))
             .on_action(cx.listener(Self::on_copy_host_address))
             .on_action(cx.listener(Self::on_copy_host_id))
             .on_action(cx.listener(Self::on_restart_local_terminal))
@@ -2978,8 +2359,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_detach_tmux))
             .on_action(cx.listener(Self::on_rename_tmux_session))
             .on_action(cx.listener(Self::on_kill_tmux_session))
-            .on_action(cx.listener(Self::on_toggle_directory_follow))
-            .on_action(cx.listener(Self::on_install_directory_follow))
             .on_action(cx.listener(Self::on_toggle_monitor_detail))
             .on_action(cx.listener(Self::on_refresh_connections))
             .on_action(cx.listener(Self::on_refresh_processes))
@@ -3084,7 +2463,11 @@ impl Render for Workspace {
                         ))
                     }),
             )
-            .child(status)
+            .child(WorkspaceStatusBar {
+                status,
+                transfers: self.transfers.read(cx).status(),
+                dispatch: self.focus_handle.clone(),
+            })
             .children(Root::render_sheet_layer(window, cx))
             .children(Root::render_dialog_layer(window, cx))
             .children(

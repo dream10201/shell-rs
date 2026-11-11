@@ -160,8 +160,6 @@ pub fn open_sized_workspace_with_forwards(
                 fake_telnet_terminals(),
                 fake_serial_terminals(),
                 fake_local_terminals(),
-                Arc::new(FakeSftpProvider::default()),
-                Arc::new(FakeLocalDirectory::default()),
                 Arc::new(FakeConnectionTester::default()),
                 provider,
                 window,

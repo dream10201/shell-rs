@@ -205,7 +205,9 @@ async fn an_open_serial_terminal_keeps_its_line_and_a_new_one_takes_the_new_rate
 }
 
 #[gpui_kit::test]
-async fn a_serial_terminal_has_no_sftp_and_only_snippets_beside_it(cx: &mut TestAppContext) {
+async fn a_serial_terminal_has_no_file_transfer_and_only_snippets_beside_it(
+    cx: &mut TestAppContext,
+) {
     let (store, id) = serial_store();
     let line = Arc::new(FakeTerminalFactory::default());
     let (handle, _) = open_workspace_with_terminals(
@@ -216,7 +218,7 @@ async fn a_serial_terminal_has_no_sftp_and_only_snippets_beside_it(cx: &mut Test
     );
     connect(cx, handle, id).await;
     in_frame(cx, handle, |window, _| {
-        assert!(window.try_find(("sftp", 1_u64)).is_none());
+        assert!(window.try_find(("upload-files", 1_u64)).is_none());
         assert!(window.find(("reconnect", 1_u64)).visible());
         assert_eq!(
             window.find(("terminal-tab-os", 1_u64)).label(),
@@ -227,7 +229,6 @@ async fn a_serial_terminal_has_no_sftp_and_only_snippets_beside_it(cx: &mut Test
         assert!(window.find("tool-snippets").visible());
         for tool in [
             "tool-history",
-            "tool-files",
             "tool-tmux",
             "tool-processes",
             "tool-monitor",

@@ -14,11 +14,11 @@ use crate::i18n::t;
 use crate::secrets::{SecretRef, SharedSecretStore};
 
 use super::{
-    ApplyError, BookmarkSide, CredentialDraft, CredentialId, ErrorMessage as _, ForwardDraft,
-    ForwardId, GroupDraft, GroupId, GroupPlan, HostData, HostDatabase, HostDraft, HostEvent,
-    HostId, HostNode, HostOs, NodeDrop, SavedTerminalId, SavedTerminalTab, SecretJob, SecretWork,
-    SecretsWritten, SnippetCategoryDraft, SnippetCategoryId, SnippetDraft, SnippetDrop, SnippetId,
-    SnippetNode, SshLink, SyncExport, TerminalDrop, TerminalGroupId, TerminalNode,
+    ApplyError, CredentialDraft, CredentialId, ErrorMessage as _, ForwardDraft, ForwardId,
+    GroupDraft, GroupId, GroupPlan, HostData, HostDatabase, HostDraft, HostEvent, HostId, HostNode,
+    HostOs, NodeDrop, SavedTerminalId, SavedTerminalTab, SecretJob, SecretWork, SecretsWritten,
+    SnippetCategoryDraft, SnippetCategoryId, SnippetDraft, SnippetDrop, SnippetId, SnippetNode,
+    SshLink, SyncExport, TerminalDrop, TerminalGroupId, TerminalNode,
 };
 
 /// The single source of truth for hosts and everything kept with them (see
@@ -148,9 +148,6 @@ impl HostStore {
         fn remove(id: HostId) -> bool;
         fn insert_group(draft: GroupDraft) -> GroupId;
         fn update_group(id: GroupId, draft: GroupDraft) -> bool;
-        fn add_bookmark(id: HostId, side: BookmarkSide, path: &str) -> bool;
-        fn remove_bookmark(id: HostId, side: BookmarkSide, path: &str) -> bool;
-        fn move_bookmark(id: HostId, side: BookmarkSide, path: &str, to: usize) -> bool;
         fn insert_forward(draft: ForwardDraft) -> Option<ForwardId>;
         fn update_forward(id: ForwardId, draft: ForwardDraft) -> bool;
         fn remove_forward(id: ForwardId) -> bool;
@@ -164,7 +161,6 @@ impl HostStore {
         fn record_connection(id: HostId);
         fn set_host_os(id: HostId, os: Option<HostOs>);
         fn set_host_sidebar_tool(id: HostId, tool: Option<SharedString>);
-        fn set_host_directory_follow(id: HostId, follow: bool);
         fn save_secret(secret: SecretRef, value: Option<String>);
         fn insert_terminal_group(name: SharedString) -> TerminalGroupId;
         fn rename_terminal_group(id: TerminalGroupId, name: SharedString) -> bool;
@@ -190,7 +186,7 @@ impl HostStore {
         fn adopt_synced_secrets(written: &SecretsWritten);
     }
 
-    /// Connect to what an `ssh://` or `sftp://` link from outside names
+    /// Connect to what an `ssh://` link from outside names
     /// without saving it (外部连接); see [`HostData::insert_external`].
     pub fn insert_external(&mut self, link: SshLink, cx: &mut Context<Self>) -> HostId {
         let id = self.data.insert_external(link.draft(), link.password);

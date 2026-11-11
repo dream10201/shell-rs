@@ -129,9 +129,6 @@ app.shortcut.terminal_zoom_out:
 app.shortcut.terminal_zoom_reset:
   zh-CN: 默认字号
   en: Default text size
-app.shortcut.editor_save:
-  zh-CN: 保存
-  en: Save
 app.shortcut.switch_to_tab:
   zh-CN: 切换到标签 1…9
   en: Switch to tab 1…9
@@ -145,10 +142,6 @@ app.shortcut_group.tabs:
 app.shortcut_group.terminal:
   zh-CN: 终端
   en: Terminal
-app.shortcut_group.editor:
-  zh-CN: 编辑器
-  en: Editor
-
 app.shortcut_refusal.needs_modifier_mac:
   zh-CN: 快捷键要带 ⌘、⌥ 或 ⌃，或者使用 F1–F12。
   en: A shortcut needs ⌘, ⌥ or ⌃, or one of F1–F12.

@@ -479,8 +479,8 @@ impl fmt::Display for PasswordWanted {
 
 impl Error for PasswordWanted {}
 
-/// Why a channel on a live connection failed: the shell's, a command's
-/// beside it, or SFTP's.
+/// Why a channel on a live connection failed: the shell's or a command's
+/// beside it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChannelError {
     SessionFailed,
@@ -492,11 +492,8 @@ pub enum ChannelError {
     ExecSendFailed,
     ExecRefused,
     ExecTimeout,
-    SftpRefused,
-    SftpTimeout,
     /// A bastion host's link carries the shell and nothing else.
     ShellOnly,
-    ShellOnlySftp,
 }
 
 impl fmt::Display for ChannelError {
@@ -511,10 +508,7 @@ impl fmt::Display for ChannelError {
             Self::ExecSendFailed => "couldn't send the command",
             Self::ExecRefused => "the server refused to run the command",
             Self::ExecTimeout => "the command timed out",
-            Self::SftpRefused => "the server doesn't offer SFTP",
-            Self::SftpTimeout => "opening SFTP timed out",
             Self::ShellOnly => "this connection carries the shell only",
-            Self::ShellOnlySftp => "this connection carries the shell only, not SFTP",
         })
     }
 }

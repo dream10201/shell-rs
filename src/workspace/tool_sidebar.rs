@@ -12,7 +12,6 @@ use gpui_kit::*;
 
 use crate::app::{CatalogIcon, NewSavedTerminal, NewTerminalGroup, ToggleTool, ToolKind};
 use crate::docker::{Container, DockerObject, DockerPanel, ObjectSummary};
-use crate::explorer::ExplorerPanel;
 use crate::gpu::GpuPanel;
 use crate::history::HistoryPanel;
 use crate::host::{HostId, HostOs, HostStore, SavedTerminalId, SnippetCategoryId, SnippetNode};
@@ -28,7 +27,7 @@ use crate::terminal::{ExecTarget, LocalTerminalId, RemoteTerminalId, TerminalVie
 use crate::tmux::{TmuxPanel, TmuxTable};
 
 impl ToolKind {
-    /// Whether the tool runs commands or SFTP on a channel of its own beside
+    /// Whether the tool runs commands on a channel of its own beside
     /// the terminal, which a terminal a bastion host opened cannot have.
     /// Command snippets only type into the terminal.
     pub fn runs_commands(self) -> bool {
@@ -54,7 +53,7 @@ impl ToolKind {
             | ToolKind::Connections
             | ToolKind::Monitor
             | ToolKind::Gpu => os.is_none_or(HostOs::is_linux),
-            ToolKind::Snippets | ToolKind::Files | ToolKind::Projects => true,
+            ToolKind::Snippets | ToolKind::Projects => true,
             // Wherever `sh` runs `docker`, `kubectl` or `tmux`: Linux, and a
             // Mac with Docker Desktop, kubectl or tmux; and bash's history
             // file wherever `sh` reads it.
@@ -69,7 +68,6 @@ impl ToolKind {
         match self {
             ToolKind::Snippets => "tool-snippets",
             ToolKind::History => "tool-history",
-            ToolKind::Files => "tool-files",
             ToolKind::Tmux => "tool-tmux",
             ToolKind::Docker => "tool-docker",
             ToolKind::Kubernetes => "tool-kubernetes",
@@ -129,9 +127,6 @@ pub struct ToolSidebar {
     monitor: Entity<MonitorPanel>,
     snippets: Entity<SnippetPanel>,
     history: Entity<HistoryPanel>,
-    /// The terminal in front's 文件, which the workspace owns: one per
-    /// terminal, made the first time it is shown.
-    files: Option<Entity<ExplorerPanel>>,
     tmux: Entity<TmuxPanel>,
     docker: Entity<DockerPanel>,
     /// Created only when Kubernetes is first selected; unused terminals
@@ -163,7 +158,6 @@ impl ToolSidebar {
             projects: cx.new(|cx| ProjectPanel::new(store.clone(), dispatch.clone(), cx)),
             snippets: cx.new(|cx| SnippetPanel::new(store, dispatch.clone(), window, cx)),
             history: cx.new(|cx| HistoryPanel::new(dispatch.clone(), window, cx)),
-            files: None,
             tmux: cx.new(|_| TmuxPanel::new(dispatch.clone())),
             docker: cx.new(|_| DockerPanel::new(dispatch.clone())),
             kubernetes: None,
@@ -431,24 +425,6 @@ impl ToolSidebar {
             .update(cx, |panel, cx| panel.set_target(target, netstat, cx));
     }
 
-    /// Show another terminal's 文件, or none. A focus inside the one going
-    /// away moves to the sidebar itself, as on `show`.
-    pub fn set_files(
-        &mut self,
-        files: Option<Entity<ExplorerPanel>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.files == files {
-            return;
-        }
-        if self.focus_handle.contains_focused(window, cx) {
-            window.focus(&self.focus_handle, cx);
-        }
-        self.files = files;
-        cx.notify();
-    }
-
     /// Show another tool. A focus inside the one going away moves to the
     /// sidebar itself: left on an element no longer drawn, it would take
     /// every window-level shortcut's dispatch path with it.
@@ -572,10 +548,6 @@ impl Render for ToolSidebar {
                 let panel = match self.tool {
                     ToolKind::Snippets => self.snippets.clone().into_any_element(),
                     ToolKind::History => self.history.clone().into_any_element(),
-                    ToolKind::Files => match &self.files {
-                        Some(files) => files.clone().into_any_element(),
-                        None => Empty.into_any_element(),
-                    },
                     ToolKind::Tmux => self.tmux.clone().into_any_element(),
                     ToolKind::Docker => self.docker.clone().into_any_element(),
                     ToolKind::Kubernetes => self.kubernetes.as_ref().map_or_else(

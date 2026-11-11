@@ -1,7 +1,5 @@
 //! The links ShellRS is opened with, the way bastion hosts open Xshell:
-//! `ShellRS ssh://user@host:port`, or `ShellRS -url ssh://… -newtab 名称`;
-//! and WinSCP: `ShellRS sftp://user@host:port`, or with
-//! `/sessionname=名称` in front.
+//! `ShellRS ssh://user@host:port`, or `ShellRS -url ssh://… -newtab 名称`.
 //!
 //! Only told apart from other arguments here; the link itself is read by
 //! the app (`host::SshLink`), which says what is wrong
@@ -21,7 +19,7 @@ pub struct OpenLink {
     /// May hold a password. Empty when the arguments named no link, so the
     /// app can say so: a second ShellRS on Windows has no console to.
     pub url: String,
-    /// What to call the tab: Xshell's `-newtab`, WinSCP's `/sessionname`.
+    /// What to call the tab: Xshell's `-newtab`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tab: Option<String>,
 }
@@ -59,34 +57,16 @@ const URL_OPTION: &str = "-url";
 const TAB_OPTION: &str = "-newtab";
 const WINDOW_OPTION: &str = "-newwin";
 
-/// WinSCP's switches, written `/name[=value]` or `-name[=value]`:
-/// `/sessionname=名称` names the tab, the others mean nothing to ShellRS
-/// (`/newinstance` asks for a window of its own, `/ini=nul` not to read
-/// WinSCP's settings, `/privatekey=` and `/hostkey=` are ShellRS's to
-/// know).
-const WINSCP_SWITCHES: &[&str] = &[
-    SESSION_NAME,
-    "newinstance",
-    "privatekey",
-    "hostkey",
-    "passphrase",
-    "rawsettings",
-    "ini",
-    "log",
-    "timeout",
-];
-const SESSION_NAME: &str = "sessionname";
-
 /// The link `args` (without the program) open, or `None` when they name
 /// none. Only the first argument decides: a link launch starts with one of
-/// Xshell's options, one of WinSCP's switches or the link itself.
+/// Xshell's options or the link itself.
 pub fn link_arguments(args: &[OsString]) -> Option<OpenLink> {
     let args: Vec<String> = args
         .iter()
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     let first = args.first()?;
-    if !is_option(first) && winscp_switch(first).is_none() && !looks_like_link(first) {
+    if !is_option(first) && !looks_like_link(first) {
         return None;
     }
     let mut given = None;
@@ -106,10 +86,6 @@ pub fn link_arguments(args: &[OsString]) -> Option<OpenLink> {
             {
                 tab = tab_name(&args.next().unwrap_or_default()).or(tab);
             }
-        } else if let Some((switch, value)) = winscp_switch(&arg) {
-            if switch == SESSION_NAME {
-                tab = value.and_then(tab_name).or(tab);
-            }
         } else if option == WINDOW_OPTION || arg.starts_with('-') {
             // Ignored, like any option ShellRS does not know.
         } else if bare.is_none() && looks_like_link(&arg) {
@@ -124,19 +100,6 @@ pub fn link_arguments(args: &[OsString]) -> Option<OpenLink> {
 
 fn is_option(arg: &str) -> bool {
     [URL_OPTION, TAB_OPTION, WINDOW_OPTION].contains(&arg.to_lowercase().as_str())
-}
-
-/// The name and value of one of WinSCP's switches, the name in lower case.
-fn winscp_switch(arg: &str) -> Option<(String, Option<&str>)> {
-    let switch = arg.strip_prefix(['/', '-'])?;
-    let (name, value) = match switch.split_once('=') {
-        Some((name, value)) => (name, Some(value)),
-        None => (switch, None),
-    };
-    let name = name.to_lowercase();
-    WINSCP_SWITCHES
-        .contains(&name.as_str())
-        .then_some((name, value))
 }
 
 /// A tab's name as given, without the spaces or quotes around it; `None`
@@ -202,36 +165,6 @@ mod tests {
         // Unknown options are passed over, their values with them unless
         // they look like a link.
         assert_eq!(link(&["-newwin", "-folder", "x", url]), open(url, None));
-    }
-
-    #[test]
-    fn winscps_switches_are_understood_too() {
-        // How JumpServer opens WinSCP: the link alone.
-        let url = "sftp://b478e26f:secret@172.16.0.28:12024";
-        assert_eq!(link(&[url]), open(url, None));
-        assert_eq!(
-            link(&["/sessionname=生产库", url]),
-            open(url, Some("生产库"))
-        );
-        assert_eq!(
-            link(&[
-                "/newinstance",
-                "/ini=nul",
-                "-SessionName=\"文件 服务器\"",
-                url
-            ]),
-            open(url, Some("文件 服务器"))
-        );
-        assert_eq!(
-            link(&[
-                "/rawsettings",
-                "Compression=1",
-                url,
-                "/hostkey=ssh-ed25519 255 x"
-            ]),
-            open(url, None)
-        );
-        assert_eq!(link(&["/sessionname=生产库"]), open("", Some("生产库")));
     }
 
     #[test]

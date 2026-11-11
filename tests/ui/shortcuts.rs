@@ -32,7 +32,7 @@ fn terminal(id: u64) -> Option<CenterTab> {
 fn open_shortcuts(cx: &mut TestAppContext, handle: WindowHandle<Root>) {
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
     in_frame(cx, handle, |window, cx| {
-        window.within("settings").click("0-4", cx)
+        window.within("settings").click("0-3", cx)
     });
 }
 

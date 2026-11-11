@@ -30,6 +30,6 @@ pub use outline::{first_matching_host, group_options, host_tree_items, matches_q
 pub use quick_connect::{QuickChoice, QuickHost, open_quick_connect_dialog, quick_hosts};
 pub use secret_fields::SecretFields;
 pub use shellrs_hosts::*;
-pub use ssh_link::{LinkKind, SshLink, standard_url};
+pub use ssh_link::{SshLink, standard_url};
 pub use state::ConnectionState;
 pub use store::{HostStore, HostStoreEvent};

@@ -1,8 +1,8 @@
 //! The right sidebar's part of `Workspace`: the tools for the terminal in
 //! front, and the switch that picks one.
 //!
-//! The sidebar goes with terminals: with an SFTP tab, the settings or the
-//! start page in front it is not there at all, switch included. Beside an
+//! The sidebar goes with terminals: with the settings or the start page
+//! in front it is not there at all, switch included. Beside an
 //! SSH terminal it has the host's tools; beside a local terminal 项目 and
 //! 命令片段.
 //! With the center split it goes with the terminal in front last, as long
@@ -819,23 +819,8 @@ impl Workspace {
                 .update(cx, |tools, cx| tools.show(tool, window, cx));
         }
         let open = tool.is_some();
-        // A terminal's 文件 is made the first time it is shown, and kept.
-        // 目录跟随's check goes first: the terminal's channels open one at a
-        // time, so it is answered before 文件's opens and 文件 starts out in
-        // the terminal's folder.
-        let files = match &target {
-            Some(SidebarTarget::Remote(terminal))
-                if open && self.tools.read(cx).tool() == ToolKind::Files =>
-            {
-                self.check_directory_follow(terminal.id, window, cx);
-                self.ensure_file_sidebar(terminal.id, window, cx)
-            }
-            _ => None,
-        };
-        self.tools.update(cx, |tools, cx| {
-            tools.set_files(files, window, cx);
-            tools.set_target(target, open, cx);
-        });
+        self.tools
+            .update(cx, |tools, cx| tools.set_target(target, open, cx));
         if self.dock_area.read(cx).is_dock_open(DockPlacement::Right) != open {
             // A focus inside the sidebar would go off screen with it.
             let focus_inside = self

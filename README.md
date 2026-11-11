@@ -5,7 +5,7 @@
 <h1 align="center">ShellRS</h1>
 
 <p align="center">
-  A high-performance, native, cross-platform SSH client written in Rust, with a GPU-rendered interface: Xshell-style host management, WinSCP-style SFTP and port forwarding, all in one window.
+  A high-performance, native, cross-platform SSH client written in Rust, with a GPU-rendered interface: Xshell-style host management, tabbed terminals, file uploads and downloads, and port forwarding, all in one window.
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 
 ## About
 
-ShellRS brings Xshell-style host management and tabbed terminals, a WinSCP-style dual-pane SFTP browser and SSH port forwarding together in one cross-platform app, which bastion hosts such as JumpServer can launch the way they launch Xshell and WinSCP. It is written in Rust, and its UI is built on GPUI, the GPU-accelerated UI framework of the Zed editor (through [gpui-kit](https://gpui-kit.com)). There is no Electron and no JVM.
+ShellRS brings Xshell-style host management and tabbed terminals, file uploads and downloads over a terminal’s connection, and SSH port forwarding together in one cross-platform app, which bastion hosts such as JumpServer can launch the way they launch Xshell. It is written in Rust, and its UI is built on GPUI, the GPU-accelerated UI framework of the Zed editor (through [gpui-kit](https://gpui-kit.com)). There is no Electron and no JVM.
 
 Hosts, groups, credentials and forwarding rules live in a local SQLite database. Passwords and key passphrases go only into the system keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service); the database never holds a secret.
 
@@ -36,7 +36,7 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 - Groups nest to any depth; drag to rearrange, type to search.
 - The remote OS is detected on connect and shown as a badge in the host tree and on tabs (Linux distributions, the BSDs, macOS, Windows).
 - Three ways to log in: password; no password (the server's `none` auth, then the SSH agent, then the default keys in `~/.ssh`); or a saved credential.
-- Three ways to connect: directly, through a chain of SSH jump hosts, or through an HTTP or SOCKS5 proxy. Terminals, SFTP and port forwards all follow it.
+- Three ways to connect: directly, through a chain of SSH jump hosts, or through an HTTP or SOCKS5 proxy. Terminals, file transfers and port forwards all follow it.
 - "Test connection" performs a real login and explains any failure.
 - Besides SSH: Telnet hosts for switches, console servers and lab devices, with automatic login at the device's prompts and the same jump hosts and proxies; and serial ports of this computer, for console cables and debug ports.
 
@@ -46,7 +46,7 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 - Each tab shows the SSH round-trip latency live.
 - Find (smart case) and local clear; configurable font, size and line height.
 - ZMODEM: `rz` and `sz` upload and download files right in the terminal, over SSH, Telnet or a serial line; drop files on a terminal to upload them.
-- Drag tabs into side-by-side or stacked splits to watch a terminal and SFTP together.
+- Drag tabs into side-by-side or stacked splits to watch several terminals together.
 
 **Right sidebar tools**
 
@@ -57,22 +57,18 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 - Kubernetes: select a cluster from the host's kubeconfig, filter resources by namespace, inspect workloads and services, browse related pods, search container logs and copy kubectl commands. Off by default; turn it on in the settings. See the [user manual](docs/manual.md#kubernetes).
 - Command history reads `~/.bash_history` on the host, and snippets, shared by every host, can be sorted into categories; click one to type it into the terminal, or run it straight away.
 - tmux: the host's tmux sessions, with the one the terminal is in marked; start one, attach the terminal to one or detach it, rename and end them.
-- Files: a single remote file list beside the terminal, on an SFTP channel of the terminal's own connection, following the terminal's current folder. Browse, edit and preview, drop files in to upload, and download to your Downloads folder.
 - GPU/NPU: an AI host's NVIDIA GPUs and Huawei Ascend NPUs, laid out for eight: totals, each device's utilization, memory, temperature, power and health, and the compute processes, which you can end. Off by default; turn it on in the settings, where the other tools can be hidden too.
 
-**SFTP**
+**File transfer**
 
-- A dual-pane browser modeled on WinSCP Commander: symmetric local and remote panes with WinSCP's columns, path labels, bookmarks and shortcuts (F5, F2, F7, F8…).
-- Upload and download by dragging or by shortcut, recursively. Start new transfers while one runs; they wait in a per-tab transfer queue.
-- Resumable transfers: data goes to a `.filepart` first, dropped connections are retried after 1, 3 and 10 seconds, and after a restart ShellRS offers to resume the same transfer.
-- Delete (local items go to the Trash), rename, create, and change permissions (a 3×3 grid plus octal, optionally recursive).
-- Built-in editor: double-click a text file to edit it, ⌘S writes it back in place, after checking nobody else changed it; syntax highlighting for common formats. Images and Markdown can be previewed.
-- Each SFTP tab has its own connection and asks only for the SFTP subsystem, so no shell is needed on the server.
+- Once an SSH terminal is connected, "Upload files…" and "Download files…" at the right of its tab bar move files and folders over that terminal's own connection: no second login, and jump hosts and proxies work as they do for the terminal.
+- Neither SFTP nor `scp`: only `cat`, `wc`, `mkdir`, `mv` and `find` in the host's shell, so a server without the SFTP subsystem works too.
+- An upload goes to a temporary file first and replaces the old one only once it has arrived whole, so a dropped connection leaves no half file. Progress shows in the status bar, and you can cancel.
 
 **Opening from a bastion host**
 
-- Launched the way Xshell and WinSCP are: in the client of a bastion host such as JumpServer, set ShellRS as the SSH or SFTP client. An `ssh://` link opens a terminal, an `sftp://` link an SFTP tab.
-- Understands Xshell's `-url` and `-newtab` and WinSCP's `/sessionname=`. When ShellRS is already running, the link opens there.
+- Launched the way Xshell is: in the client of a bastion host such as JumpServer, set ShellRS as the SSH client. An `ssh://` link opens a terminal.
+- Understands Xshell's `-url` and `-newtab`. When ShellRS is already running, the link opens there.
 - What opens is an unsaved external connection: it stays out of the host list, keeps the link's password in memory only and goes away with its tabs. Each connection uses a single channel, so bastion hosts that allow no more still work. See the [user manual](docs/manual.md#opening-from-a-bastion-host-external-connections).
 
 **Port forwarding**
@@ -95,18 +91,8 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/en/split.png" alt="A split view: a remote terminal on top and SFTP for the same host below"><br>
-  <em>Dock splits: a remote terminal and SFTP stacked in one window</em>
-</p>
-
-<p align="center">
   <img src="docs/screenshots/en/tools.png" alt="Five right sidebar tools side by side: Monitor, Processes, Services, Docker and Network"><br>
   <em>Right sidebar tools: Monitor, Processes, Services, Docker and Network</em>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/en/sftp.png" alt="Dual-pane SFTP: three local items selected on the left, remote /etc on the right, and a transfer queue with one batch uploading and one waiting"><br>
-  <em>WinSCP-style SFTP: highlight selection and a transfer queue with progress, speed and time left</em>
 </p>
 
 <p align="center">
@@ -134,7 +120,7 @@ Once installed, ShellRS keeps itself up to date: it checks, downloads and verifi
 
 1. Click "New host…" in the title bar (⌘N, or Ctrl+N on Windows and Linux) and fill in the address, port and login. Passwords go into the system keychain.
 2. Double-click a host to open a terminal. On the first connection you're asked to confirm the host key.
-3. Right-click a host and choose "Open SFTP", or click "SFTP" at the right of the terminal's tab bar. Drag files between the two panes to transfer them.
+3. Once a terminal is connected, click "Upload files…" or "Download files…" at the right of its tab bar to move files.
 4. The three icons after "ShellRS" in the title bar switch the sidebar between hosts, port forwards and credentials.
 5. ⌘T (Ctrl+T) opens a local terminal. Drag a tab to the top, bottom, left or right edge of the tab area to split it.
 
@@ -163,7 +149,6 @@ Apart from the user manual and the changelog, the documentation is in Chinese fo
 
 Not implemented yet:
 
-- Directory sync, filtering, file search and a directory tree in SFTP
 - Keeping the Dock layout across restarts
 - Combining a jump host chain with a proxy, and HTTPS proxies
 - Code signing for the Windows installer
@@ -182,12 +167,11 @@ cargo test
 
 - [ShellRS](https://github.com/since2006/shell-rs) by since2006: the project this one is forked from
 - [GPUI](https://github.com/zed-industries/zed) (Zed) and [gpui-kit](https://gpui-kit.com): the UI framework
-- [russh](https://github.com/Eugeny/russh) and [russh-sftp](https://github.com/AspectUnk/russh-sftp): SSH and SFTP
+- [russh](https://github.com/Eugeny/russh): SSH
 - [alacritty_terminal](https://crates.io/crates/alacritty_terminal) and [portable-pty](https://crates.io/crates/portable-pty): terminal emulation and local PTYs
 - [keyring](https://crates.io/crates/keyring): the system keychain
 - [Simple Icons](https://simpleicons.org): the OS logos on host badges and the Docker logo in the right sidebar (CC0)
-- [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme): the SFTP lists' color icons (MIT)
-- [Termark](https://www.termark.app/), [WinSCP](https://winscp.net) and Xshell: the interaction designs ShellRS follows
+- [Termark](https://www.termark.app/) and Xshell: the interaction designs ShellRS follows
 
 ## License
 

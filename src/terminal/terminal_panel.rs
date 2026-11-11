@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use gpui_kit::component::{
-    Icon, IconName, Sizable as _, WindowExt as _,
+    Disableable as _, Icon, IconName, Sizable as _, WindowExt as _,
     button::Button,
     dock::{BasePanel, Panel, PanelEvent, TabGroup},
     menu::PopupMenu,
@@ -13,7 +13,8 @@ use gpui_kit::*;
 
 use crate::app::{
     CatalogIcon, CenterTab, CloseTerminal, CopyHostAddress, CopyHostId, DisconnectTerminal,
-    DuplicateTerminal, EditHost, OpenExplorer, ReconnectTerminal, RenameTerminal, SendBreak,
+    DownloadFiles, DuplicateTerminal, EditHost, ReconnectTerminal, RenameTerminal, SendBreak,
+    UploadFiles,
 };
 use crate::connection::{ConnectionPrompt, ConnectionPromptReply};
 use crate::host::{ConnectionState, Host, HostConnection, HostId, HostOs, HostStore, ProtocolKind};
@@ -36,8 +37,6 @@ pub enum TerminalPanelEvent {
     PromptRequested(RemoteTerminalId, HostId, ConnectionPrompt),
     HostOsDetected(HostId, HostOs),
     Notice(RemoteTerminalId, TerminalNotice),
-    /// The shell reported another folder; the right sidebar's 文件 follows.
-    DirectoryChanged(RemoteTerminalId, ReportedDirectory),
     /// `rz` or `sz` started: the user chooses, and the answer goes to
     /// [`TerminalPanel::zmodem_reply`].
     ZmodemAsk(RemoteTerminalId, ZmodemDirection),
@@ -54,7 +53,7 @@ pub struct TerminalPanel {
     terminal: Entity<TerminalView>,
     transports: HostTerminalTransports,
     /// The host as it was when the tab opened: what the tab shows, what
-    /// it offers (only SSH has SFTP, only a serial port no address to copy)
+    /// it offers (only SSH has file transfers, only a serial port no address to copy)
     /// and what it connects with, every reconnection included. Editing or
     /// deleting the host leaves it alone: connecting the host anew takes
     /// the new settings, while duplicating a tab copies its snapshot.
@@ -216,12 +215,7 @@ impl TerminalPanel {
                     TerminalEvent::Notice(notice) => {
                         cx.emit(TerminalPanelEvent::Notice(this.id, notice.clone()));
                     }
-                    TerminalEvent::DirectoryChanged(directory) => {
-                        cx.emit(TerminalPanelEvent::DirectoryChanged(
-                            this.id,
-                            directory.clone(),
-                        ));
-                    }
+                    TerminalEvent::DirectoryChanged(_) => {}
                     TerminalEvent::ZmodemAsk(direction) => {
                         cx.emit(TerminalPanelEvent::ZmodemAsk(this.id, *direction));
                     }
@@ -287,7 +281,6 @@ impl TerminalPanel {
             protocol: self.host.kind(),
             running: self.lifecycle(cx) == TerminalLifecycle::Running,
             host_exists: store.host(self.host_id).is_some(),
-            host_is_ssh: store.host(self.host_id).is_some_and(|host| host.is_ssh()),
             editable: !store.is_temporary(self.host_id),
             group: self.tab_group.clone(),
             panel: cx.entity_id(),
@@ -462,24 +455,29 @@ impl Panel for TerminalPanel {
     }
 
     fn toolbar_buttons(&mut self, _: &mut Window, cx: &mut Context<Self>) -> Option<Vec<Button>> {
-        let host_id = self.host_id;
         let terminal_id = self.id;
         let reconnect_dispatch = self.focus_handle(cx);
-        // SFTP is a new connection to the host as it is now: none once it
-        // is gone or no longer an SSH host.
-        let offers_sftp = self
-            .store
-            .read(cx)
-            .host(self.host_id)
-            .is_some_and(|host| host.is_ssh());
-        let sftp = offers_sftp.then(|| {
-            Button::new(("sftp", terminal_id.0))
-                .icon(Icon::new(CatalogIcon::FolderTree))
-                .label("SFTP")
-                .tooltip(t!("terminal.remote.sftp_tooltip"))
-                .on_click(move |_, window, cx| {
-                    window.dispatch_action(Box::new(OpenExplorer(host_id)), cx)
-                })
+        // Files go over the terminal's own connection: an SSH one, while
+        // it is up.
+        let connected = self.terminal.read(cx).lifecycle(cx) == TerminalLifecycle::Running;
+        let transfers = self.host.is_ssh().then(|| {
+            let (upload, download) = (reconnect_dispatch.clone(), reconnect_dispatch.clone());
+            [
+                Button::new(("upload-files", terminal_id.0))
+                    .icon(Icon::new(CatalogIcon::Upload))
+                    .tooltip(t!("terminal.remote.upload_files"))
+                    .disabled(!connected)
+                    .on_click(move |_, window, cx| {
+                        upload.dispatch_action(&UploadFiles(terminal_id), window, cx)
+                    }),
+                Button::new(("download-files", terminal_id.0))
+                    .icon(Icon::new(CatalogIcon::Download))
+                    .tooltip(t!("terminal.remote.download_files"))
+                    .disabled(!connected)
+                    .on_click(move |_, window, cx| {
+                        download.dispatch_action(&DownloadFiles(terminal_id), window, cx)
+                    }),
+            ]
         });
         let reconnect = Button::new(("reconnect", terminal_id.0))
             .icon(Icon::new(CatalogIcon::RefreshCw))
@@ -487,7 +485,7 @@ impl Panel for TerminalPanel {
             .on_click(move |_, window, cx| {
                 reconnect_dispatch.dispatch_action(&ReconnectTerminal(terminal_id), window, cx)
             });
-        Some(sftp.into_iter().chain([reconnect]).collect())
+        Some(transfers.into_iter().flatten().chain([reconnect]).collect())
     }
 
     fn dropdown_menu(
@@ -506,8 +504,8 @@ impl Panel for TerminalPanel {
 
 /// What a remote terminal adds to its context menu: copying the host's
 /// address and ID below 复制, and the connection's commands at the bottom.
-/// Only an SSH host has SFTP to open, and a serial host no address to copy;
-/// a deleted host has neither.
+/// Only an SSH host has files to copy, and a serial host no address to
+/// copy; a deleted host has no address either.
 fn remote_menu_items(
     id: RemoteTerminalId,
     host_id: HostId,
@@ -541,11 +539,19 @@ fn remote_menu_items(
             lifecycle,
             TerminalLifecycle::Starting | TerminalLifecycle::Running
         );
+        let running = matches!(lifecycle, TerminalLifecycle::Running);
         menu.when(protocol.is_ssh(), |menu| {
-            menu.menu_with_icon(
-                t!("terminal.remote.open_sftp"),
-                Icon::new(CatalogIcon::FolderTree),
-                Box::new(OpenExplorer(host_id)),
+            menu.menu_with_icon_and_disabled(
+                t!("terminal.remote.upload_files"),
+                Icon::new(CatalogIcon::Upload),
+                Box::new(UploadFiles(id)),
+                !running,
+            )
+            .menu_with_icon_and_disabled(
+                t!("terminal.remote.download_files"),
+                Icon::new(CatalogIcon::Download),
+                Box::new(DownloadFiles(id)),
+                !running,
             )
         })
         .menu_with_icon(
@@ -571,17 +577,15 @@ struct TabMenu {
     id: RemoteTerminalId,
     host_id: HostId,
     host_is_ip: bool,
-    /// What the host is: an SSH host's tab has SFTP, a Telnet or serial
+    /// What the host is: an SSH host's tab has file transfers, a Telnet or serial
     /// host's 发送 Break, and all but a serial host's the address.
     protocol: ProtocolKind,
-    /// Whether the terminal is connected, which a break needs.
+    /// Whether the terminal is connected, which a break and a file
+    /// transfer need.
     running: bool,
     /// The host is still there: deleted, it has nothing to connect to,
-    /// open SFTP on, copy or edit.
+    /// copy or edit.
     host_exists: bool,
-    /// It is an SSH host now, which a new SFTP connection needs whatever
-    /// the tab's own protocol.
-    host_is_ssh: bool,
     /// A saved host; a temporary one has nothing to edit.
     editable: bool,
     group: Option<WeakEntity<TabGroup>>,
@@ -638,11 +642,18 @@ impl TabMenu {
                     !self.running,
                 )
             })
-            .when(self.host_is_ssh, |menu| {
-                menu.menu_with_icon(
-                    t!("terminal.remote.open_sftp"),
-                    Icon::new(CatalogIcon::FolderTree),
-                    Box::new(OpenExplorer(host_id)),
+            .when(protocol.is_ssh(), |menu| {
+                menu.menu_with_icon_and_disabled(
+                    t!("terminal.remote.upload_files"),
+                    Icon::new(CatalogIcon::Upload),
+                    Box::new(UploadFiles(id)),
+                    !self.running,
+                )
+                .menu_with_icon_and_disabled(
+                    t!("terminal.remote.download_files"),
+                    Icon::new(CatalogIcon::Download),
+                    Box::new(DownloadFiles(id)),
+                    !self.running,
                 )
             })
             .when(protocol.has_address() && exists, |menu| {

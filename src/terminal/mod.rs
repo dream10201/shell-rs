@@ -3,7 +3,6 @@
 mod box_drawing;
 mod broadcast;
 mod directory;
-mod directory_setup;
 mod engine;
 mod environment;
 mod exec;
@@ -28,11 +27,6 @@ mod zmodem;
 
 pub(crate) use broadcast::BroadcastSelection;
 pub use directory::ReportedDirectory;
-pub use directory_setup::{
-    FollowCheck, FollowSetup, check_command as directory_check_command,
-    install_command as directory_install_command, installed as directory_installed,
-    parse_check as parse_directory_check,
-};
 pub use engine::{TerminalCell, TerminalEngine, TerminalEvent, TerminalSnapshot};
 pub(crate) use environment::strip_launcher_vars;
 pub use exec::{ExecTarget, exec_answer};
@@ -64,14 +58,13 @@ pub use terminal_view::{
 pub use theme::{TerminalColors, TerminalTheme};
 pub(crate) use transport::send_event;
 pub use transport::{
-    ChannelStream, ExecRequest, ExecResult, FixedLocalTerminalTransportProvider,
+    CommandRequest, ExecRequest, ExecResult, FixedLocalTerminalTransportProvider,
     FixedRemoteTerminalTransportProvider, FixedSerialTerminalTransportProvider,
     FixedTelnetTerminalTransportProvider, HostTerminalTransports, LocalTerminalTransportProvider,
-    RemoteTerminalTransportProvider, SerialTerminalTransportProvider, SftpChannel,
-    SftpChannelRequest, SharedLocalTerminalTransportProvider,
-    SharedRemoteTerminalTransportProvider, SharedSerialTerminalTransportProvider,
-    SharedTelnetTerminalTransportProvider, SharedTerminalTransportFactory,
-    TelnetTerminalTransportProvider, TerminalChannels, TerminalTransport, TerminalTransportCommand,
-    TerminalTransportEvent, TerminalTransportFactory,
+    RemoteTerminalTransportProvider, SerialTerminalTransportProvider,
+    SharedLocalTerminalTransportProvider, SharedRemoteTerminalTransportProvider,
+    SharedSerialTerminalTransportProvider, SharedTelnetTerminalTransportProvider,
+    SharedTerminalTransportFactory, TelnetTerminalTransportProvider, TerminalChannels,
+    TerminalTransport, TerminalTransportCommand, TerminalTransportEvent, TerminalTransportFactory,
 };
 pub use zmodem::{ZmodemDirection, ZmodemReply};

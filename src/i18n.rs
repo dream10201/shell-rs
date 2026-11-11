@@ -205,7 +205,6 @@ mod tests {
         // nothing in words: the apps word what they say.
         sources(&root.join("crates/shellrs-ssh/src"), &mut files);
         sources(&root.join("crates/shellrs-hosts/src"), &mut files);
-        sources(&root.join("crates/shellrs-mobile/src"), &mut files);
         files.sort();
         files
             .into_iter()
@@ -579,8 +578,8 @@ mod tests {
         );
         assert_eq!(join_list(&["甲", "乙", "丙"]), "甲、乙和丙");
         assert_eq!(
-            join_list(&["2 个远程终端", "1 个 SFTP 标签", "1 个本地终端"]),
-            "2 个远程终端、1 个 SFTP 标签和 1 个本地终端"
+            join_list(&["2 个远程终端", "1 个本地终端", "3 条端口转发"]),
+            "2 个远程终端、1 个本地终端和 3 条端口转发"
         );
         set_locale("en");
         assert_eq!(join_list(&["a", "b", "c"]), "a, b and c");

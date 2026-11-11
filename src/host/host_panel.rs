@@ -24,7 +24,7 @@ use crate::app::{
     CatalogIcon, CollapseAllGroups, ConnectGroup, ConnectHost, ConnectSelected, CopyHostAddress,
     CopyHostId, DeleteGroup, DeleteHost, DuplicateHost, EditHost, ExpandAllGroups,
     HOST_PANEL_CONTEXT, ImportKnownHosts, ImportSshConfig, MoveHostNode, NewChildGroup, NewGroup,
-    NewHost, NewHostInGroup, OpenExplorer, RenameGroup,
+    NewHost, NewHostInGroup, RenameGroup,
 };
 
 use crate::i18n::{UiLocale, t, tn};
@@ -807,10 +807,9 @@ fn valid_drop(
 /// start page's recent hosts both build it here, so they cannot drift.
 /// Built as it opens, from the host as it is then.
 ///
-/// Only an SSH host has SFTP, and a serial host has no address to copy.
+/// A serial host has no address to copy.
 pub fn host_menu(menu: PopupMenu, host: &Host) -> PopupMenu {
     let id = host.id;
-    let ssh = host.is_ssh();
     let has_address = host.kind().has_address();
     // Named after what the address is, as in the tabs' menus.
     let copy_address = if host.address_is_ip() {
@@ -823,13 +822,6 @@ pub fn host_menu(menu: PopupMenu, host: &Host) -> PopupMenu {
         Icon::new(CatalogIcon::Plug),
         Box::new(ConnectHost(id)),
     )
-    .when(ssh, |menu| {
-        menu.menu_with_icon(
-            t!("host.menu.open_sftp"),
-            Icon::new(CatalogIcon::FolderTree),
-            Box::new(OpenExplorer(id)),
-        )
-    })
     .separator()
     .menu_with_icon(
         t!("host.menu.edit_host"),

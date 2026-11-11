@@ -9,6 +9,7 @@ use super::{LocalLaunch, LocalShell, TerminalSize};
 use crate::connection::Latency;
 use crate::connection::{ConnectionPrompt, ConnectionPromptReply};
 use crate::host::{HostConnection, HostLogin, HostOs, SerialLine, TelnetLogin};
+use crate::ssh::transfer::RunningCommand;
 
 /// Commands accepted by every terminal byte-stream transport.
 pub enum TerminalTransportCommand {
@@ -24,9 +25,9 @@ pub enum TerminalTransportCommand {
     /// Run a command beside the shell. Only a transport with a connection of
     /// its own runs it; the others drop the request.
     Exec(ExecRequest),
-    /// Open an SFTP channel beside the shell, for the right sidebar's
-    /// 文件. Dropped like `Exec` by a transport without a connection.
-    OpenSftp(SftpChannelRequest),
+    /// Start a command of a file transfer beside the shell. Dropped like
+    /// `Exec` by a transport without a connection.
+    StartCommand(CommandRequest),
     /// 发送 Break: a serial transport holds its line in the break condition
     /// for a moment, a Telnet one sends Telnet's break (which a console
     /// server passes on to its line). SSH has none and drops it.
@@ -49,14 +50,17 @@ pub struct ExecRequest {
     pub reply: mpsc::Sender<ExecResult>,
 }
 
-pub use crate::ssh::{ChannelStream, SftpChannel};
-
-/// Answered once on `reply` with the channel, or with why the server or the
-/// terminal would not open it. A request sent while the terminal logs in
-/// waits for its shell; one with no connection to go to is dropped, which
-/// the asker sees as the reply channel closing.
-pub struct SftpChannelRequest {
-    pub reply: oneshot::Sender<Result<SftpChannel, String>>,
+/// A command of a file transfer, started on a channel of the terminal's
+/// own connection and handed back running: whoever asked gives it its
+/// input and takes its output, on a runtime of its own.
+///
+/// Answered once on `reply` with the command, or with why the server or
+/// the terminal would not start it. A request sent while the terminal logs
+/// in waits for its shell; one with no connection to go to is dropped,
+/// which the asker sees as the reply channel closing.
+pub struct CommandRequest {
+    pub command: String,
+    pub reply: oneshot::Sender<Result<Box<dyn RunningCommand>, String>>,
 }
 
 /// Where a terminal's channels beside the shell are opened: whichever
@@ -75,9 +79,12 @@ impl TerminalChannels {
         *self.0.lock().unwrap_or_else(|error| error.into_inner()) = None;
     }
 
-    /// Ask for an SFTP channel. The answer closes without a value when there
-    /// is no connection to open it on.
-    pub fn open_sftp(&self) -> oneshot::Receiver<Result<SftpChannel, String>> {
+    /// Ask for `command` to be started. The answer closes without a value
+    /// when there is no connection to start it on.
+    pub fn start_command(
+        &self,
+        command: String,
+    ) -> oneshot::Receiver<Result<Box<dyn RunningCommand>, String>> {
         let (reply, answer) = oneshot::channel();
         if let Some(commands) = self
             .0
@@ -85,7 +92,8 @@ impl TerminalChannels {
             .unwrap_or_else(|error| error.into_inner())
             .as_ref()
         {
-            let _ = commands.send(TerminalTransportCommand::OpenSftp(SftpChannelRequest {
+            let _ = commands.send(TerminalTransportCommand::StartCommand(CommandRequest {
+                command,
                 reply,
             }));
         }
@@ -111,7 +119,7 @@ impl std::fmt::Debug for TerminalTransportCommand {
                 .debug_tuple("Exec")
                 .field(&request.command.len())
                 .finish(),
-            Self::OpenSftp(_) => formatter.write_str("OpenSftp"),
+            Self::StartCommand(_) => formatter.write_str("StartCommand"),
             Self::SendBreak => formatter.write_str("SendBreak"),
             Self::Shutdown => formatter.write_str("Shutdown"),
         }

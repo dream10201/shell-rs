@@ -9,9 +9,8 @@ use std::error::Error;
 
 use super::{
     AgentProblem, AgentUnreachable, AuthError, AuthenticationPrompt, AuthenticationRequest,
-    ChannelError, ConnectError, ConnectionPromptField, ExecFailure, ForwardProblem,
-    KnownHostsError, Latency, MissingCredential, PasswordWanted, ProxyError, RouteFailure,
-    UnknownHostPrompt, link_as,
+    ChannelError, ConnectError, ConnectionPromptField, ForwardProblem, KnownHostsError, Latency,
+    MissingCredential, PasswordWanted, ProxyError, RouteFailure, UnknownHostPrompt, link_as,
 };
 use crate::i18n::t;
 
@@ -240,9 +239,6 @@ fn link(cause: Cause<'_>, rest: &[Cause<'_>]) -> String {
     if link_as::<PasswordWanted>(cause).is_some() {
         return t!("ssh.password_wanted").into();
     }
-    if let Some(failure) = link_as::<ExecFailure>(cause) {
-        return exec_failure(failure, rest);
-    }
     if let Some(io) = cause.downcast_ref::<std::io::Error>() {
         return io_text(io);
     }
@@ -439,28 +435,7 @@ pub fn describe_channel_error(error: &ChannelError) -> String {
         ChannelError::ExecSendFailed => t!("ssh.exec.send_failed"),
         ChannelError::ExecRefused => t!("ssh.exec.refused"),
         ChannelError::ExecTimeout => t!("ssh.exec.timeout"),
-        ChannelError::SftpRefused => t!("ssh.terminal.sftp_refused"),
-        ChannelError::SftpTimeout => t!("ssh.terminal.sftp_timeout"),
         ChannelError::ShellOnly => t!("ssh.terminal.shell_only"),
-        ChannelError::ShellOnlySftp => t!("ssh.terminal.shell_only_sftp"),
-    }
-    .into()
-}
-
-fn exec_failure(failure: &ExecFailure, rest: &[Cause<'_>]) -> String {
-    let under = || chain_text(rest);
-    match failure {
-        ExecFailure::RuntimeFailed => t!("ssh.exec.runtime_failed", error = under()),
-        ExecFailure::CommandFailed => t!("ssh.exec.command_failed", error = under()),
-        ExecFailure::Aborted => t!("ssh.exec.aborted"),
-        ExecFailure::Refused => t!("ssh.exec.refused"),
-        ExecFailure::Disconnected => t!("ssh.exec.disconnected"),
-        ExecFailure::HostKeyChanged { endpoint } => {
-            t!("ssh.exec.host_key_changed", endpoint = endpoint)
-        }
-        ExecFailure::HostKeyUnknown { endpoint } => {
-            t!("ssh.exec.host_key_unknown", endpoint = endpoint)
-        }
     }
     .into()
 }

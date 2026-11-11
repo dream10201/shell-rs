@@ -49,9 +49,6 @@ impl Workspace {
         if !lock.read(cx).is_enabled() || lock.read(cx).is_busy() {
             return;
         }
-        for explorer in self.explorers.values() {
-            explorer.update(cx, |explorer, cx| explorer.close_find(cx));
-        }
         lock.update(cx, |lock, cx| lock.lock(cx));
     }
 

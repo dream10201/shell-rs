@@ -39,8 +39,6 @@ fn open_workspace_with_local_terminals(
                 fake_telnet_terminals(),
                 fake_serial_terminals(),
                 local.clone(),
-                Arc::new(FakeSftpProvider::default()),
-                Arc::new(FakeLocalDirectory::default()),
                 Arc::new(FakeConnectionTester::default()),
                 Arc::new(FakeForwardProvider::default()),
                 window,
@@ -1106,19 +1104,7 @@ async fn the_status_bar_shows_the_size_of_the_terminal_in_front(cx: &mut TestApp
     })
     .await;
 
-    // An SFTP tab has no terminal, so no size either.
     in_frame(cx, handle, |window, cx| {
-        window.dispatch_action(Box::new(OpenExplorer(HostId(WEB_01))), cx);
-    });
-    cx.wait_for(handle.into(), Duration::from_secs(2), |window, _| {
-        window
-            .try_find(("explorer", SFTP_TAB))
-            .is_some_and(|explorer| explorer.visible())
-    })
-    .await;
-    in_frame(cx, handle, |window, cx| {
-        assert!(window.find("status-connection").visible());
-        assert!(window.try_find("status-terminal-size").is_none());
         window.click("new-local-terminal", cx);
     });
 

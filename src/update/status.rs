@@ -204,21 +204,17 @@ pub fn percent(done: u64, total: u64) -> u64 {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RestartImpact {
     pub remote_terminals: usize,
-    pub sftp_tabs: usize,
     pub local_terminals: usize,
     pub transfers: usize,
     pub forwards: usize,
-    /// Editor tabs with changes not saved yet; a restart loses them.
-    pub unsaved_files: usize,
 }
 
-/// 「重启会关闭 2 个远程终端和 1 个 SFTP 标签，停止 1 个传输（保留续传进度）。」,
+/// 「重启会关闭 2 个远程终端和 1 个本地终端，停止 1 个文件传输。」,
 /// or nothing when a restart interrupts nothing.
 pub fn restart_note(impact: RestartImpact) -> Option<String> {
     let closes = phrases(&[
         (impact.remote_terminals > 0)
             .then(|| tn!("update.restart.remote_terminals", impact.remote_terminals)),
-        (impact.sftp_tabs > 0).then(|| tn!("update.restart.sftp_tabs", impact.sftp_tabs)),
         (impact.local_terminals > 0)
             .then(|| tn!("update.restart.local_terminals", impact.local_terminals)),
     ]);
@@ -236,20 +232,10 @@ pub fn restart_note(impact: RestartImpact) -> Option<String> {
             stops = stops
         )),
     };
-    let unsaved = (impact.unsaved_files > 0)
-        .then(|| tn!("update.restart.unsaved_files", impact.unsaved_files));
-    let note = match (note, unsaved) {
-        (Some(note), Some(unsaved)) => Some(t!(
-            "update.restart.and_unsaved_files",
-            note = note,
-            unsaved = unsaved
-        )),
-        (note, unsaved) => note.or(unsaved),
-    };
     note.map(|note| note.to_string())
 }
 
-/// `2 个远程终端、1 个 SFTP 标签和 1 个本地终端`, leaving out what is none.
+/// `2 个远程终端和 1 个本地终端`, leaving out what is none.
 fn phrases(parts: &[Option<SharedString>]) -> Option<String> {
     let parts: Vec<&SharedString> = parts.iter().flatten().collect();
     (!parts.is_empty()).then(|| join_list(&parts))
@@ -294,17 +280,12 @@ mod tests {
         assert_eq!(
             restart_note(RestartImpact {
                 remote_terminals: 2,
-                sftp_tabs: 1,
                 local_terminals: 1,
                 transfers: 1,
                 forwards: 3,
-                unsaved_files: 0,
             })
             .as_deref(),
-            Some(
-                "重启会关闭 2 个远程终端、1 个 SFTP 标签和 1 个本地终端，\
-                 停止 1 个传输（保留续传进度）和 3 条端口转发。"
-            )
+            Some("重启会关闭 2 个远程终端和 1 个本地终端，停止 1 个文件传输和 3 条端口转发。")
         );
         assert_eq!(
             restart_note(RestartImpact {
@@ -313,15 +294,6 @@ mod tests {
             })
             .as_deref(),
             Some("重启会停止 1 条端口转发。")
-        );
-        assert_eq!(
-            restart_note(RestartImpact {
-                sftp_tabs: 1,
-                unsaved_files: 2,
-                ..RestartImpact::default()
-            })
-            .as_deref(),
-            Some("重启会关闭 1 个 SFTP 标签。2 个文件有未保存的修改，重启后会丢失。")
         );
     }
 
@@ -332,34 +304,15 @@ mod tests {
         assert_eq!(
             restart_note(RestartImpact {
                 remote_terminals: 2,
-                sftp_tabs: 1,
                 local_terminals: 1,
                 transfers: 1,
                 forwards: 3,
-                unsaved_files: 0,
             })
             .as_deref(),
             Some(
-                "Restarting closes 2 remote terminals, 1 SFTP tab and 1 local terminal \
-                 and stops 1 transfer (its progress is kept) and 3 port forwards."
+                "Restarting closes 2 remote terminals and 1 local terminal \
+                 and stops 1 file transfer and 3 port forwards."
             )
-        );
-        assert_eq!(
-            restart_note(RestartImpact {
-                sftp_tabs: 2,
-                unsaved_files: 1,
-                ..RestartImpact::default()
-            })
-            .as_deref(),
-            Some("Restarting closes 2 SFTP tabs. Unsaved changes in 1 file will be lost.")
-        );
-        assert_eq!(
-            restart_note(RestartImpact {
-                unsaved_files: 3,
-                ..RestartImpact::default()
-            })
-            .as_deref(),
-            Some("Unsaved changes in 3 files will be lost.")
         );
         assert_eq!(
             snapshot(Phase::Downloading {

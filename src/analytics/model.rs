@@ -46,12 +46,6 @@ pub enum Counter {
     SshTemporary,
     /// 外部连接: opened by a link from a bastion host.
     SshExternal,
-    /// An SFTP tab connected, a reconnection too.
-    Sftp,
-    SftpTemporary,
-    SftpExternal,
-    /// 查找文件 opened in an SFTP tab.
-    SftpFind,
     LocalTerminal,
     /// A serial host's terminal connected, a reconnection too.
     Serial,
@@ -61,22 +55,16 @@ pub enum Counter {
     ForwardLocal,
     ForwardRemote,
     ForwardDynamic,
-    /// A batch of transfers queued in an SFTP tab.
+    /// Files copied to or from a host over a remote terminal's connection.
     Upload,
     Download,
     /// Files uploaded or downloaded in a terminal with ZMODEM (`rz` /
     /// `sz`), files dropped on one included.
     ZmodemUpload,
     ZmodemDownload,
-    /// A file opened in the editor.
-    EditorLocal,
-    EditorRemote,
-    PreviewImage,
-    PreviewMarkdown,
     /// A tool of the right sidebar opened.
     ToolSnippets,
     ToolHistory,
-    ToolFiles,
     ToolDocker,
     ToolKubernetes,
     ToolServices,
@@ -108,7 +96,7 @@ pub enum Counter {
 }
 
 impl Counter {
-    pub const ALL: [Counter; 48] = [
+    pub const ALL: [Counter; 39] = [
         Self::Ssh,
         Self::SshJump,
         Self::SshProxy,
@@ -116,10 +104,6 @@ impl Counter {
         Self::SshNoPassword,
         Self::SshTemporary,
         Self::SshExternal,
-        Self::Sftp,
-        Self::SftpTemporary,
-        Self::SftpExternal,
-        Self::SftpFind,
         Self::LocalTerminal,
         Self::Serial,
         Self::Telnet,
@@ -130,13 +114,8 @@ impl Counter {
         Self::Download,
         Self::ZmodemUpload,
         Self::ZmodemDownload,
-        Self::EditorLocal,
-        Self::EditorRemote,
-        Self::PreviewImage,
-        Self::PreviewMarkdown,
         Self::ToolSnippets,
         Self::ToolHistory,
-        Self::ToolFiles,
         Self::ToolDocker,
         Self::ToolKubernetes,
         Self::ToolServices,
@@ -168,10 +147,6 @@ impl Counter {
             Self::SshNoPassword => "ssh_no_password",
             Self::SshTemporary => "ssh_temporary",
             Self::SshExternal => "ssh_external",
-            Self::Sftp => "sftp",
-            Self::SftpTemporary => "sftp_temporary",
-            Self::SftpExternal => "sftp_external",
-            Self::SftpFind => "sftp_find",
             Self::LocalTerminal => "local_terminal",
             Self::Serial => "serial",
             Self::Telnet => "telnet",
@@ -182,13 +157,8 @@ impl Counter {
             Self::Download => "download",
             Self::ZmodemUpload => "zmodem_upload",
             Self::ZmodemDownload => "zmodem_download",
-            Self::EditorLocal => "editor_local",
-            Self::EditorRemote => "editor_remote",
-            Self::PreviewImage => "preview_image",
-            Self::PreviewMarkdown => "preview_markdown",
             Self::ToolSnippets => "tool_snippets",
             Self::ToolHistory => "tool_history",
-            Self::ToolFiles => "tool_files",
             Self::ToolDocker => "tool_docker",
             Self::ToolKubernetes => "tool_kubernetes",
             Self::ToolServices => "tool_services",
@@ -236,8 +206,6 @@ pub struct Snapshot {
     pub update_channel: &'static str,
     /// Whether any keyboard shortcut was changed.
     pub custom_shortcuts: bool,
-    /// The SFTP lists' 图标风格: `monochrome` or `color`.
-    pub file_icons: &'static str,
     /// How this copy was installed: `setup`, `portable`, `bundle`,
     /// `appimage` or `other` (`InstallKind::install_type`).
     pub install: &'static str,
@@ -265,7 +233,6 @@ impl Snapshot {
                 "custom_shortcuts",
                 if self.custom_shortcuts { "yes" } else { "no" },
             ),
-            ("file_icons", self.file_icons),
             ("install", self.install),
             ("hosts", band(self.hosts)),
             ("credentials", band(self.credentials)),
@@ -723,7 +690,6 @@ mod tests {
             light_theme: "shellrs-light",
             dark_theme: "shellrs-dark",
             update_channel: "stable",
-            file_icons: "monochrome",
             install: "portable",
             hosts: 7,
             ..Snapshot::default()
@@ -818,7 +784,6 @@ mod tests {
         assert_eq!(props["credentials"], "0");
         assert_eq!(props["highlight"], "off");
         assert_eq!(props["custom_shortcuts"], "no");
-        assert_eq!(props["file_icons"], "monochrome");
         assert_eq!(props["install"], "portable");
         assert!(props.values().all(Value::is_string));
         assert_eq!(band(5), "1-5");
@@ -921,7 +886,7 @@ mod tests {
     fn uses_from_an_earlier_run_go_out_with_the_start() {
         let first = started_at(at(9, 0));
         let mut first = first;
-        first.signal(Signal::Count(Counter::Sftp), at(10, 0));
+        first.signal(Signal::Count(Counter::Ssh), at(10, 0));
         let saved = first.state().clone();
         // Quit before the four hours; started again the next day.
         let mut reporter = Reporter::new(saved, Pace::Release);
