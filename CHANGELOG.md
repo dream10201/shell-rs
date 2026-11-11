@@ -4,6 +4,16 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.2]
+
+### Added
+
+- File transfer: once an SSH terminal is connected, “Upload files…” and “Download files…” at the right of its tab bar and in the context menus move files and folders over that terminal’s own connection, with no second login. It uses neither SFTP nor `scp`, only `cat`, `wc`, `mkdir`, `mv` and `find` in the host’s shell, so a server without the SFTP subsystem works too. Progress shows in the status bar, and you can cancel.
+
+### Removed
+
+- SFTP is gone, with everything built on it: SFTP tabs, Files in the right sidebar and its folder following, the built-in editor, image and Markdown previews, Find files, the transfer queue and resuming, and `sftp://` links and WinSCP’s launch switches. The SFTP page in Settings went with them. Through a bastion host that allows only one channel, use ZMODEM (`rz` / `sz`) in the terminal to move files.
+
 ## [1.0.1]
 
 ### Removed
