@@ -298,3 +298,32 @@ async fn up_and_down_go_through_what_was_sent(cx: &mut TestAppContext) {
     })
     .await;
 }
+
+#[gpui_kit::test]
+async fn coming_back_to_the_window_types_into_the_terminal(cx: &mut TestAppContext) {
+    let fixture = open(cx, false).await;
+    let handle = fixture.handle;
+    let leave_and_return = |cx: &mut TestAppContext| {
+        gpui_kit::VisualTestContext::from_window(handle.into(), cx).deactivate_window();
+        in_frame(cx, handle, |window, _| window.activate_window());
+    };
+    // Left in the host search, the keyboard is the terminal's on return.
+    in_frame(cx, handle, |window, cx| window.click("host-search", cx));
+    in_frame(cx, handle, |window, cx| window.input("we", cx));
+    assert_eq!(fixture.web.written_text(), "");
+    leave_and_return(cx);
+    in_frame(cx, handle, |window, cx| window.input("ls", cx));
+    cx.wait_for(handle.into(), Duration::from_secs(2), |_, _| {
+        fixture.web.written_text() == "ls"
+    })
+    .await;
+    // 撰写窗格 keeps it: nothing reaches the terminal before Enter.
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(Box::new(ToggleComposePane), cx);
+    });
+    in_frame(cx, handle, |_, _| {});
+    leave_and_return(cx);
+    in_frame(cx, handle, |window, cx| window.input("pwd", cx));
+    cx.run_until_parked();
+    assert_eq!(fixture.web.written_text(), "ls");
+}

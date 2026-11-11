@@ -526,6 +526,53 @@ async fn double_clicking_a_tab_toggles_the_host_sidebar(cx: &mut TestAppContext)
     assert!(sidebar_shown(cx));
 }
 
+/// Double-clicking the tab bar where it holds no tab opens a local
+/// terminal; on a tab it does not.
+#[gpui_kit::test]
+async fn double_clicking_the_empty_tab_bar_opens_a_local_terminal(cx: &mut TestAppContext) {
+    let (handle, workspace) = open_workspace(cx);
+    cx.run_until_parked();
+    let double_click_at = |cx: &mut TestAppContext, right_of_last_tab: bool| {
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            let title = window
+                .find(("terminal-tab", INITIAL_STAGING_TERMINAL))
+                .bounds();
+            let bar = window.find("center-tab-bar").bounds();
+            let position = if right_of_last_tab {
+                gpui_kit::point((title.right() + bar.right()) / 2., title.center().y)
+            } else {
+                title.center()
+            };
+            assert!(bar.contains(&position));
+            window.dispatch_event(
+                gpui_kit::PlatformInput::MouseDown(gpui_kit::MouseDownEvent {
+                    button: MouseButton::Left,
+                    position,
+                    modifiers: gpui_kit::Modifiers::default(),
+                    click_count: 2,
+                    first_mouse: false,
+                }),
+                cx,
+            );
+        })
+        .unwrap();
+        cx.run_until_parked();
+    };
+    let opened = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            workspace
+                .read(cx)
+                .local_terminal(LocalTerminalId(1))
+                .is_some()
+        })
+    };
+    double_click_at(cx, false);
+    assert!(!opened(cx));
+    double_click_at(cx, true);
+    assert!(opened(cx));
+}
+
 /// Both states survive a fresh settings load and workspace, including the
 /// search/list commands that reopen a hidden sidebar. An empty start still
 /// has a keyboard dispatch path when the sidebar starts hidden.

@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{cell::Cell, rc::Rc};
 
 use gpui_kit::component::{
     ActiveTheme as _, IconName, Sizable as _,
@@ -12,6 +12,17 @@ use gpui_kit::*;
 use crate::app::ToggleHostPanel;
 use crate::host::ConnectionState;
 use crate::i18n::t;
+
+thread_local! {
+    /// Where the last left press on a tab title was.
+    static PRESSED_AT: Cell<Option<Point<Pixels>>> = const { Cell::new(None) };
+}
+
+/// Whether the press at `position` was on a tab title rather than the bar
+/// around it. The bar's own listener runs after its titles'.
+pub fn tab_pressed_at(position: Point<Pixels>) -> bool {
+    PRESSED_AT.get() == Some(position)
+}
 
 type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>;
 
@@ -164,6 +175,15 @@ impl RenderOnce for ClosableTabTitle {
             })
             .test_support()
             .aria_label(self.label)
+            .relative()
+            // Over the tab's padding too, which is the dock's, not the
+            // title's.
+            .child(div().absolute().inset(rems(-1.)).on_mouse_down(
+                MouseButton::Left,
+                |event, _, _| {
+                    PRESSED_AT.set(Some(event.position));
+                },
+            ))
             .child(match self.menu {
                 Some(menu) => row
                     .context_menu(move |popup, window, cx| menu(popup, window, cx))

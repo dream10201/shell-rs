@@ -4,8 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use crate::app::{CatalogIcon, ToggleTerminalBroadcast};
+use crate::app::{CatalogIcon, NewLocalTerminal, ToggleTerminalBroadcast};
 use crate::i18n::t;
+use crate::shared::tab_pressed_at;
 use gpui_kit::component::dock::{
     BasePanelView, DockArea, DockAreaRenderer, DockContext, DockSkin, DropIndicator, NodeId,
     PanelState, PanelStyle, TabGroupContext, TabGroupRenderer, TilesRenderer,
@@ -225,7 +226,8 @@ impl DockAreaRenderer for WorkspaceDockSkin {
 }
 
 /// A center tab bar, in a column as base lays the bars out, that a mouse
-/// wheel scrolls sideways (#66).
+/// wheel scrolls sideways (#66), and whose empty part opens a local terminal
+/// on a double click, as browsers open a tab.
 ///
 /// The bar scrolls only along itself, dropping vertical deltas, while a
 /// mouse wheel turns only vertically: tabs scrolled out of view could be
@@ -234,6 +236,11 @@ impl DockAreaRenderer for WorkspaceDockSkin {
 /// trackpad swipes sideways itself.
 fn wheel_scrolls_tabs(tabs: AnyElement) -> Div {
     v_flex()
+        .on_mouse_down(MouseButton::Left, |event, window, cx| {
+            if event.click_count == 2 && !tab_pressed_at(event.position) {
+                window.dispatch_action(Box::new(NewLocalTerminal), cx);
+            }
+        })
         .on_scroll_wheel(|event, window, cx| {
             let ScrollDelta::Lines(lines) = event.delta else {
                 return;

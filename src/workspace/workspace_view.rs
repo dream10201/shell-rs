@@ -160,6 +160,8 @@ pub struct Workspace {
     pub(super) compose: Entity<ComposePane>,
     /// How tall 撰写窗格 was last: it opens again so.
     pub(super) compose_height: Pixels,
+    /// Where the focus was when the window stopped being the active one.
+    focus_when_left: Option<Option<FocusHandle>>,
     pub(super) store: Entity<HostStore>,
     pub(super) dock_area: Entity<DockArea>,
     pub(super) skin: Rc<WorkspaceDockSkin>,
@@ -539,6 +541,9 @@ impl Workspace {
             cx.observe_window_activation(window, |this, window, cx| {
                 if window.is_window_active() {
                     this.sync.update(cx, |sync, cx| sync.window_activated(cx));
+                    this.focus_terminal_on_return(window, cx);
+                } else {
+                    this.focus_when_left = Some(window.focused(cx));
                 }
             }),
             cx.subscribe_in(
@@ -743,6 +748,7 @@ impl Workspace {
             broadcast: Default::default(),
             compose,
             compose_height: COMPOSE_HEIGHT,
+            focus_when_left: None,
             tool_target_choice: None,
             deleted_host_tools: HashMap::new(),
             prompt_queue: VecDeque::new(),
@@ -952,6 +958,31 @@ impl Workspace {
         });
         if let Some(handle) = handle {
             window.focus(&handle, cx);
+        }
+    }
+
+    /// Back from another app, typing goes to the terminal shown, wherever
+    /// the focus was left. A dialog keeps it, and so does 撰写窗格, which
+    /// types for the terminal.
+    fn focus_terminal_on_return(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // What brought the window back may have put the focus somewhere
+        // itself: a click, a command.
+        if self.focus_when_left.take() != Some(window.focused(cx)) {
+            return;
+        }
+        let on_terminal = matches!(
+            self.active_tab,
+            Some(CenterTab::Terminal(_) | CenterTab::LocalTerminal(_))
+        );
+        if on_terminal
+            && !window.has_active_dialog(cx)
+            && !self
+                .compose
+                .read(cx)
+                .focus_handle(cx)
+                .contains_focused(window, cx)
+        {
+            self.focus_center(window, cx);
         }
     }
 
