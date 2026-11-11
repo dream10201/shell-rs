@@ -4,6 +4,19 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.4]
+
+### Improved
+
+- The UI framework gpui-kit is updated to 0.9.1.
+- What is wrong with a form shows over its dialog, no longer hidden behind it.
+- Locking the app closes open dialogs and notifications.
+
+### Fixed
+
+- Save and Cancel in the host dialog did nothing while a dropdown had the focus.
+- A quick connection couldn’t take a password on a computer without a system keychain.
+
 ## [1.0.3]
 
 ### Improved
