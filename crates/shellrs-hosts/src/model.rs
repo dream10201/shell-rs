@@ -576,8 +576,8 @@ impl HostDraft {
         }
     }
 
-    /// Log in with a saved credential instead of `auth`. The store takes the
-    /// user name from the credential when the draft is saved.
+    /// Log in with a saved credential instead of `auth`. A draft with no
+    /// user name takes the credential's when the store saves it.
     pub fn with_credential(mut self, credential: CredentialId) -> Self {
         self.credential = Some(credential);
         self

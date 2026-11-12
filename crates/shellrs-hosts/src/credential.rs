@@ -1,5 +1,5 @@
-//! Saved logins that hosts share: a user name with a password, a private key
-//! file or the SSH agent. They live with the hosts because hosts refer to
+//! Saved logins that hosts share: a password, a private key file or the SSH
+//! agent, with a user name or without. They live with the hosts because hosts refer to
 //! them and they are stored in the same database; the `credential` module
 //! that lists and edits them depends on this one, never the reverse.
 
@@ -89,6 +89,7 @@ pub const DEFAULT_USER: &str = "root";
 pub struct CredentialDraft {
     pub name: SharedString,
     pub kind: CredentialKind,
+    /// Empty for a credential of no one user: each host names its own.
     pub user: SharedString,
     /// The private key file. Set exactly for [`CredentialKind::Key`].
     pub key_path: Option<SharedString>,
@@ -114,20 +115,14 @@ impl CredentialDraft {
         self
     }
 
-    /// The draft with surrounding blanks removed, an empty user name taken
-    /// as [`DEFAULT_USER`] and a key file kept only by a key credential, or
-    /// the first thing wrong with it.
+    /// The draft with surrounding blanks removed and a key file kept only
+    /// by a key credential, or the first thing wrong with it.
     pub fn validated(mut self) -> Result<Self, CredentialDraftError> {
         self.name = self.name.trim().to_string().into();
         if self.name.is_empty() {
             return Err(CredentialDraftError::Name);
         }
-        let user = self.user.trim();
-        self.user = if user.is_empty() {
-            DEFAULT_USER.into()
-        } else {
-            user.to_string().into()
-        };
+        self.user = self.user.trim().to_string().into();
         self.key_path = match self.kind {
             CredentialKind::Key => Some(
                 self.key_path
@@ -187,6 +182,17 @@ impl Credential {
         }
     }
 
+    /// The user a host logs in as through it: `own`, the one the host
+    /// names, else the credential's, else [`DEFAULT_USER`].
+    pub fn user_for(&self, own: &str) -> SharedString {
+        [own.trim(), self.user.as_ref(), DEFAULT_USER]
+            .into_iter()
+            .find(|user| !user.is_empty())
+            .unwrap_or_default()
+            .to_string()
+            .into()
+    }
+
     /// Where a password credential keeps its password.
     pub fn password_secret(&self) -> SecretRef {
         SecretRef::credential(self.keychain_id.as_str())
@@ -220,7 +226,11 @@ mod tests {
             .validated()
             .unwrap();
         assert_eq!(saved.name.as_ref(), "运维");
-        assert_eq!(saved.user.as_ref(), DEFAULT_USER);
+        assert_eq!(saved.user.as_ref(), "");
+        let named = CredentialDraft::new("运维", CredentialKind::Password, " deploy ")
+            .validated()
+            .unwrap();
+        assert_eq!(named.user.as_ref(), "deploy");
 
         assert_eq!(
             CredentialDraft::new(" ", CredentialKind::Password, "root").validated(),

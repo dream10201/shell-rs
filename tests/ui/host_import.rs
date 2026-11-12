@@ -170,7 +170,7 @@ Host *
             panic!("one key credential: {:?}", store.credentials());
         };
         assert_eq!(credential.kind, CredentialKind::Key);
-        assert_eq!(credential.user.as_ref(), "deploy");
+        assert_eq!(credential.user.as_ref(), "");
         assert_eq!(
             credential.key_path.as_deref().map(Path::new),
             Some(ssh_dir(&home).join("deploy_key").as_path())

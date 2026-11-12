@@ -238,6 +238,9 @@ pub struct HostForm {
     /// The password of a login typed here.
     fields: Entity<SecretFields>,
     credential: Entity<SelectState<Vec<SharedString>>>,
+    /// The user to log in as through the credential; empty for the
+    /// credential's own, which its placeholder shows.
+    credential_user: Entity<InputState>,
     /// The credentials as they were when the form opened, parallel to the
     /// credential select's rows. The dialog is modal, so nothing can change
     /// them while it is open.
@@ -455,6 +458,15 @@ impl HostForm {
             )
             .searchable(true)
         });
+        let credential_user = cx.new(|cx| {
+            let used = credential_ix.and_then(|ix| credentials.get(ix));
+            InputState::new(window, cx)
+                .placeholder(used.map_or(DEFAULT_USER.into(), |used| used.user_for("")))
+                .default_value(match (ssh_login, used) {
+                    (Some(draft), Some(used)) if draft.user != used.user => draft.user.clone(),
+                    _ => SharedString::default(),
+                })
+        });
         // Telnet: a password credential's user name and password, or
         // whatever the host already uses.
         let telnet_credentials = credentials
@@ -611,7 +623,16 @@ impl HostForm {
         });
 
         let subscriptions = vec![
-            cx.observe(&credential, |_, _, cx| cx.notify()),
+            cx.observe_in(&credential, window, |this, _, window, cx| {
+                let user = this
+                    .selected_credential(cx)
+                    .map_or(DEFAULT_USER.into(), |credential| credential.user_for(""));
+                this.credential_user.update(cx, |input, cx| {
+                    input.set_placeholder(user, window, cx);
+                });
+                cx.notify();
+            }),
+            cx.observe(&credential_user, |_, _, cx| cx.notify()),
             cx.observe(&fields, |_, _, cx| cx.notify()),
             cx.observe(&telnet_credential, |_, _, cx| cx.notify()),
             cx.observe(&telnet_fields, |_, _, cx| cx.notify()),
@@ -663,6 +684,7 @@ impl HostForm {
             user,
             fields,
             credential,
+            credential_user,
             credentials,
             key_dir,
             telnet_auto_login: telnet.is_some()
@@ -963,8 +985,10 @@ impl HostForm {
                 let credential = self
                     .selected_credential(cx)
                     .ok_or_else(|| t!("host.dialog.choose_credential"))?;
+                let user = credential.user_for(self.credential_user.read(cx).value().as_ref());
                 LoginTest::saved(
-                    HostLogin::with_credential(host, port, credential).with_route(route_login),
+                    HostLogin::with_credential(host, port, user.as_ref(), credential)
+                        .with_route(route_login),
                 )
             }
             Some(auth) => {
@@ -1239,7 +1263,7 @@ impl HostForm {
                 .selected_credential(cx)
                 .map(|credential| CommittedLogin::Saved {
                     credential: credential.id,
-                    user: credential.user.clone(),
+                    user: credential.user_for(self.credential_user.read(cx).value().as_ref()),
                 })
                 .ok_or_else(|| t!("host.dialog.choose_credential")),
         }
@@ -1484,12 +1508,31 @@ impl HostForm {
         })
     }
 
+    /// The fields of a host that logs in with a saved credential: the
+    /// credential, and the user when it is not the credential's.
+    fn credential_fields(&self, form: Form, cx: &App) -> Form {
+        form.child(self.credential_field(cx)).child(
+            Field::new()
+                .label(t!("host.dialog.user"))
+                .col_span(4)
+                .child(
+                    Input::new(&self.credential_user)
+                        .id("host-credential-user")
+                        .small(),
+                ),
+        )
+    }
+
     /// The field that picks a saved credential, with what it logs in as.
     fn credential_field(&self, cx: &App) -> Field {
+        let selected = self.selected_credential(cx);
         self.credential_choice(
             CredentialChoice {
                 state: &self.credential,
-                selected: self.selected_credential(cx),
+                user: selected.map(|credential| {
+                    credential.user_for(self.credential_user.read(cx).value().as_ref())
+                }),
+                selected,
                 none: self.credentials.is_empty(),
                 id: "host-credential",
                 summary_id: "host-credential-summary",
@@ -1505,6 +1548,7 @@ impl HostForm {
         self.credential_choice(
             CredentialChoice {
                 state: &self.telnet_credential,
+                user: None,
                 selected: self.selected_telnet_credential(cx),
                 none: self.telnet_credentials.is_empty(),
                 id: "host-telnet-credential",
@@ -1518,7 +1562,11 @@ impl HostForm {
 
     fn credential_choice(&self, choice: CredentialChoice<'_>, _: &App) -> Field {
         let summary = match choice.selected {
-            Some(credential) => Some(logs_in_with(credential, self.key_dir.as_deref())),
+            Some(credential) => Some(logs_in_with(
+                credential,
+                choice.user.as_ref().unwrap_or(&credential.user),
+                self.key_dir.as_deref(),
+            )),
             None if choice.none => Some(choice.hint),
             None => None,
         };
@@ -2201,7 +2249,7 @@ impl HostForm {
         );
         match source.auth() {
             Some(auth) => self.own_fields(form, auth, cx),
-            None => form.child(self.credential_field(cx)),
+            None => self.credential_fields(form, cx),
         }
     }
 }
@@ -2226,6 +2274,9 @@ type TestJob = Box<dyn FnOnce(TrustCallback) -> Result<(), String> + Send>;
 struct CredentialChoice<'a> {
     state: &'a Entity<SelectState<Vec<SharedString>>>,
     selected: Option<&'a Credential>,
+    /// The user the host logs in as through it, when that is not simply
+    /// the credential's.
+    user: Option<SharedString>,
     /// Whether there are no credentials to pick at all.
     none: bool,
     id: &'static str,
@@ -2255,10 +2306,13 @@ pub(super) fn credential_option(credential: &Credential, key_dir: Option<&Path>)
     )
 }
 
-/// What a host using `credential` logs in as and with.
-fn logs_in_with(credential: &Credential, key_dir: Option<&Path>) -> SharedString {
-    let user = &credential.user;
+/// What a host using `credential` logs in as and with. A Telnet device
+/// asking only for a password is typed no `user`.
+fn logs_in_with(credential: &Credential, user: &str, key_dir: Option<&Path>) -> SharedString {
     match credential.kind {
+        CredentialKind::Password if user.is_empty() => {
+            t!("host.dialog.logs_in_with.password_only")
+        }
         CredentialKind::Password => t!("host.dialog.logs_in_with.password", user = user),
         CredentialKind::Key if credential.keeps_key_in(key_dir) => {
             t!("host.dialog.logs_in_with.kept_key", user = user)

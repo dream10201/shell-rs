@@ -567,7 +567,8 @@ impl ImportDialog {
                 .store
                 .read(cx)
                 .credential(id)
-                .map(|credential| credential.user.to_string()),
+                .map(|credential| credential.user.to_string())
+                .filter(|user| !user.is_empty()),
             _ => None,
         };
         let user = match (editors, credential_user) {

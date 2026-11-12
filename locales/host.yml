@@ -262,6 +262,9 @@ host.dialog.credential_option:
 host.dialog.logs_in_with.password:
   zh-CN: 以 %{user} 登录，使用凭据保存的密码
   en: Logs in as %{user} with the password saved in the credential
+host.dialog.logs_in_with.password_only:
+  zh-CN: 只输入凭据保存的密码，不输入用户名
+  en: Types only the password saved in the credential, no username
 host.dialog.logs_in_with.kept_key:
   zh-CN: 以 %{user} 登录，使用 ShellRS 保存的私钥
   en: Logs in as %{user} with the private key ShellRS keeps

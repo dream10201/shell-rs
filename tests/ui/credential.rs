@@ -19,7 +19,7 @@ fn store_with_credential(secrets: Arc<InMemorySecretStore>) -> (HostStore, Crede
         )
         .unwrap();
     let host = store.insert_unnotified(
-        HostDraft::new("db-01", "10.0.2.5", 22, "root", AuthKind::Password, None)
+        HostDraft::new("db-01", "10.0.2.5", 22, "", AuthKind::Password, None)
             .with_credential(credential),
     );
     (store.with_secrets(secrets), credential, host)
@@ -176,7 +176,8 @@ async fn the_credential_kind_decides_which_fields_show(cx: &mut TestAppContext) 
         assert_eq!(credential.kind, CredentialKind::Agent);
         // The key file picked on the way is not kept by an agent credential.
         assert_eq!(credential.key_path, None);
-        assert_eq!(credential.user.as_ref(), "root");
+        // No user of its own: each host names the one it logs in as.
+        assert_eq!(credential.user.as_ref(), "");
     });
 }
 
@@ -239,9 +240,11 @@ async fn a_host_can_use_a_credential_instead_of_typing_a_login(cx: &mut TestAppC
         window.within("host-auth-source").click(1usize, cx);
     });
     in_frame(cx, handle, |window, cx| {
-        // The credential brings the user and the secret: neither is asked.
+        // The credential brings the secret, and the user unless one is
+        // typed here.
         assert!(window.try_find("host-user").is_none());
         assert!(window.try_find("host-password").is_none());
+        assert_eq!(window.find("host-credential-user").value(), Some(""));
         assert_eq!(window.find("host-credential").value(), Some("请选择凭据"));
         window.click("commit", cx);
     });
@@ -280,6 +283,93 @@ async fn a_host_can_use_a_credential_instead_of_typing_a_login(cx: &mut TestAppC
     });
     // Nothing of the host's own went to the keychain.
     assert_eq!(secrets.len(), 1);
+}
+
+#[gpui_kit::test]
+async fn a_host_names_its_own_user_beside_a_credential(cx: &mut TestAppContext) {
+    let secrets = Arc::new(InMemorySecretStore::default());
+    let (store, credential, host) = store_with_credential(secrets);
+    let tester = Arc::new(FakeConnectionTester::default());
+    let (handle, workspace) = open_workspace_with_credentials(
+        cx,
+        store,
+        Arc::new(RecordingRemoteProvider::default()),
+        tester.clone(),
+    );
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(Box::new(EditHost(host)), cx)
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.click("host-credential-user", cx);
+        window.input("admin", cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert_eq!(
+            window.find("host-credential-summary").label(),
+            Some("以 admin 登录，使用凭据保存的密码")
+        );
+        window.click("test-connection", cx);
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(3), |window, cx| {
+        window.render_frame(cx);
+        window.notifications(cx).len() == 1
+    })
+    .await;
+    assert_eq!(
+        tester.requests(),
+        [("10.0.2.5".to_string(), 22, "admin".to_string(), None)]
+    );
+    in_frame(cx, handle, |window, cx| window.click("commit", cx));
+    wait_for_dialog_to_close(cx, handle).await;
+    let user = |cx: &mut TestAppContext| {
+        cx.update(|cx| {
+            let store = workspace.read(cx).store().read(cx);
+            (
+                store.host(host).unwrap().user.to_string(),
+                store.login(host).unwrap().user,
+            )
+        })
+    };
+    assert_eq!(user(cx), ("admin".to_string(), "admin".to_string()));
+
+    // The credential's own user is no longer this host's.
+    cx.update(|cx| {
+        workspace.read(cx).store().clone().update(cx, |store, cx| {
+            let mut draft = store.credential(credential).unwrap().draft();
+            draft.user = "ops".into();
+            store.update_credential(credential, draft, cx);
+        })
+    });
+    assert_eq!(user(cx), ("admin".to_string(), "admin".to_string()));
+}
+
+#[gpui_kit::test]
+async fn the_host_form_opens_with_the_user_the_host_names_beside_its_credential(
+    cx: &mut TestAppContext,
+) {
+    let secrets = Arc::new(InMemorySecretStore::default());
+    let (mut store, credential, host) = store_with_credential(secrets);
+    store.update_unnotified(
+        host,
+        HostDraft::new("db-01", "10.0.2.5", 22, "admin", AuthKind::Password, None)
+            .with_credential(credential),
+    );
+    let (handle, _) = open_workspace_with_credentials(
+        cx,
+        store,
+        Arc::new(RecordingRemoteProvider::default()),
+        Arc::new(FakeConnectionTester::default()),
+    );
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(Box::new(EditHost(host)), cx)
+    });
+    in_frame(cx, handle, |window, _| {
+        assert_eq!(window.find("host-credential-user").value(), Some("admin"));
+        assert_eq!(
+            window.find("host-credential-summary").label(),
+            Some("以 admin 登录，使用凭据保存的密码")
+        );
+    });
 }
 
 #[gpui_kit::test]

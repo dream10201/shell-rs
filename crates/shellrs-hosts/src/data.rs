@@ -488,8 +488,8 @@ impl HostData {
             bookmark_meta.insert((host, side, path.clone()), meta);
             bookmarks.entry((host, side)).or_default().push(path);
         }
-        // A host using a credential has no user name of its own on disk:
-        // memory keeps a copy of the credential's, taken here.
+        // A host using a credential may have no user name of its own on
+        // disk: memory keeps a copy of the credential's, taken here.
         for host in &mut hosts {
             let draft = normalized(&credentials, host.draft());
             host.user = draft.user;
@@ -1602,19 +1602,22 @@ impl HostData {
         id
     }
 
-    /// Replace the editable fields of a credential. Every host using it
-    /// takes the new user name; what is connected stays as it was.
+    /// Replace the editable fields of a credential. Every host logging in
+    /// as its user takes the new user name; what is connected stays as it
+    /// was.
     pub fn update_credential(&mut self, id: CredentialId, draft: CredentialDraft) -> bool {
         let Some(previous) = self.credential(id).cloned() else {
             return false;
         };
         let logins = self.logins();
-        if !self.update_credential_unnotified(id, draft) {
+        let Some(kept) = self.replace_credential(id, draft) else {
             return false;
-        }
+        };
         if let Some(credential) = self.credential(id) {
+            let kept = kept.iter().filter_map(|host| self.saved_host(*host));
             self.persist(Change::SaveCredential, |db| {
-                db.update_credential(credential)
+                db.update_credential(credential)?;
+                kept.clone().try_for_each(|host| db.update_host(host))
             });
         }
         self.date_private_key(id);
@@ -1646,28 +1649,60 @@ impl HostData {
         id: CredentialId,
         draft: CredentialDraft,
     ) -> bool {
-        let Some(credential) = self
+        self.replace_credential(id, draft).is_some()
+    }
+
+    /// [`Self::update_credential_unnotified`], giving the hosts that keep
+    /// the user name the credential no longer has: they are edited on the
+    /// user's behalf, for sync to carry the name they now hold themselves.
+    fn replace_credential(
+        &mut self,
+        id: CredentialId,
+        draft: CredentialDraft,
+    ) -> Option<Vec<HostId>> {
+        let credential = self
             .credentials
             .iter_mut()
-            .find(|credential| credential.id == id)
-        else {
-            return false;
-        };
+            .find(|credential| credential.id == id)?;
         let keychain_id = credential.keychain_id.clone();
         let sort_order = credential.sort_order;
         let edited_ms = credential.edited_ms;
+        let old_user = credential.user.clone();
         *credential = Credential::new(id, draft);
         credential.keychain_id = keychain_id;
         credential.sort_order = sort_order;
         credential.edited_ms = edited_after(edited_ms);
         self.sync_revision += 1;
         let user = credential.user.clone();
+        let kept = self.follow_credential_user(id, &old_user, &user);
+        for host in self.hosts.iter_mut().filter(|host| kept.contains(&host.id)) {
+            host.edited_ms = edited_after(host.edited_ms);
+        }
+        Some(kept)
+    }
+
+    /// Credential `id`'s user name went from `old` to `new`: the hosts
+    /// logging in as `old` through it log in as `new`. When there is no new
+    /// name they keep the old one as their own, and are returned. A Telnet
+    /// host types whatever the credential has.
+    pub(crate) fn follow_credential_user(
+        &mut self,
+        id: CredentialId,
+        old: &SharedString,
+        new: &SharedString,
+    ) -> Vec<HostId> {
+        let mut kept = Vec::new();
         for host in self.hosts.iter_mut().chain(&mut self.temporary) {
-            if host.credential == Some(id) {
-                host.user = user.clone();
+            if host.credential != Some(id) {
+                continue;
+            }
+            if host.protocol.is_telnet() || (host.user == *old && !new.is_empty()) {
+                host.user = new.clone();
+            } else if host.user == *old && old != new {
+                kept.push(host.id);
             }
         }
-        true
+        kept
     }
 
     /// Delete a credential. The hosts using it log in on their own again,
@@ -2369,9 +2404,10 @@ impl HostData {
 }
 
 /// `draft` as the store keeps it. A host using a credential logs in as
-/// the credential's user and keeps nothing of its own login; one naming a
-/// credential that is not there logs in on its own. A Telnet host is kept
-/// as an SSH one: its credential is its 自动登录's.
+/// the user it names, or the credential's when it names none, and keeps
+/// nothing else of its own login; one naming a credential that is not
+/// there logs in on its own. A Telnet host is kept as an SSH one: its
+/// credential is its 自动登录's.
 fn normalized(credentials: &[Credential], mut draft: HostDraft) -> HostDraft {
     if draft.protocol.is_serial() {
         // Nothing of a login: no credential to count it as a user of, no
@@ -2385,12 +2421,23 @@ fn normalized(credentials: &[Credential], mut draft: HostDraft) -> HostDraft {
         .and_then(|id| credentials.iter().find(|credential| credential.id == id));
     match credential {
         Some(credential) => {
-            draft.user = credential.user.clone();
+            draft.user = user_through(credential, draft.protocol.is_telnet(), &draft.user);
             draft.auth = AuthKind::default();
         }
         None => draft.credential = None,
     }
     draft
+}
+
+/// The user a host logs in as through `credential`: [`Credential::user_for`]
+/// the one it names. A Telnet host types the credential's, which may be
+/// none for a device that asks only for a password.
+pub(crate) fn user_through(credential: &Credential, telnet: bool, own: &str) -> SharedString {
+    if telnet {
+        credential.user.clone()
+    } else {
+        credential.user_for(own)
+    }
 }
 
 #[cfg(test)]
@@ -2400,6 +2447,12 @@ mod tests {
 
     fn draft(name: &str, group: Option<GroupId>) -> HostDraft {
         HostDraft::new(name, "10.0.0.1", 22, "root", AuthKind::Password, group)
+    }
+
+    /// A host naming no user of its own, to log in as its credential's.
+    fn through(name: &str, credential: CredentialId) -> HostDraft {
+        HostDraft::new(name, "10.0.0.1", 22, "", AuthKind::Password, None)
+            .with_credential(credential)
     }
 
     /// What the user changes is dated, each time anew, for sync to tell an
@@ -2727,7 +2780,7 @@ mod tests {
     fn a_host_using_a_credential_logs_in_as_its_user() {
         let mut store = HostData::empty();
         let credential = password_credential(&mut store, "deploy");
-        let mut form = draft("web", None).with_credential(credential);
+        let mut form = through("web", credential);
         // Whatever the form still held of its own login is dropped.
         form.auth = AuthKind::NoPassword;
         let web = store.insert_unnotified(form);
@@ -2758,8 +2811,10 @@ mod tests {
     fn renaming_a_credentials_user_renames_every_host_using_it() {
         let mut store = HostData::empty();
         let credential = password_credential(&mut store, "deploy");
-        let web = store.insert_unnotified(draft("web", None).with_credential(credential));
+        let web = store.insert_unnotified(through("web", credential));
         let db = store.insert_unnotified(draft("db", None));
+        // One naming a user of its own keeps it.
+        let api = store.insert_unnotified(draft("api", None).with_credential(credential));
 
         let mut edited = store.credential(credential).unwrap().draft();
         edited.user = "admin".into();
@@ -2767,10 +2822,93 @@ mod tests {
         assert_eq!(store.host(web).unwrap().user.as_ref(), "admin");
         assert_eq!(store.host(web).unwrap().endpoint(), "admin@10.0.0.1:22");
         assert_eq!(store.host(db).unwrap().user.as_ref(), "root");
+        assert_eq!(store.host(api).unwrap().user.as_ref(), "root");
+        assert_eq!(store.login(api).unwrap().user, "root");
         assert!(!store.update_credential_unnotified(
             CredentialId(9),
             CredentialDraft::new("x", CredentialKind::Agent, "x")
         ));
+    }
+
+    #[test]
+    fn a_host_names_its_own_user_beside_a_credential_of_none() {
+        let mut store = HostData::empty();
+        let key = store.insert_credential_unnotified(
+            CredentialDraft::new("部署", CredentialKind::Key, "").with_key_path("/tmp/id"),
+        );
+        let mut form = draft("web", None).with_credential(key);
+        form.user = "deploy".into();
+        let web = store.insert_unnotified(form);
+        // Naming none either is the default user.
+        let db = store.insert_unnotified(through("db", key));
+
+        let login = store.login(web).unwrap();
+        assert_eq!(
+            (login.user.as_str(), login.method),
+            ("deploy", LoginMethod::Key)
+        );
+        assert_eq!(store.host(db).unwrap().user.as_ref(), "root");
+
+        // A name the credential gets later is not theirs.
+        let mut edited = store.credential(key).unwrap().draft();
+        edited.user = "admin".into();
+        assert!(store.update_credential_unnotified(key, edited));
+        assert_eq!(store.host(web).unwrap().user.as_ref(), "deploy");
+        assert_eq!(store.host(db).unwrap().user.as_ref(), "root");
+    }
+
+    #[test]
+    fn a_credential_losing_its_user_leaves_it_to_its_hosts_for_the_next_launch() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shellrs.db");
+        let open = || HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
+        let mut store = open();
+        let credential = store.insert_credential(CredentialDraft::new(
+            "运维",
+            CredentialKind::Agent,
+            "deploy",
+        ));
+        let web = store.insert(through("web", credential));
+        let created = store.host(web).unwrap().edited_ms;
+        let export = |store: &HostData| {
+            store
+                .sync_export()
+                .records
+                .into_iter()
+                .find_map(|record| match record.data {
+                    shellrs_sync::RecordData::Host(host) => {
+                        Some((host.credential_username, record.edited_ms))
+                    }
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert_eq!(export(&store), (None, created));
+
+        let mut edited = store.credential(credential).unwrap().draft();
+        edited.user = "".into();
+        assert!(store.update_credential(credential, edited));
+        // Edited on the user's behalf, for sync to carry the name.
+        let host = store.host(web).unwrap();
+        assert_eq!(host.user.as_ref(), "deploy");
+        assert!(host.edited_ms > created);
+        assert_eq!(export(&store), (Some("deploy".into()), host.edited_ms));
+
+        drop(store);
+        let mut store = open();
+        assert_eq!(store.host(web).unwrap().user.as_ref(), "deploy");
+        assert_eq!(store.credential(credential).unwrap().user.as_ref(), "");
+
+        // Named again as the hosts are, it is the credential's once more:
+        // the next change of it takes them along.
+        for user in ["deploy", "admin"] {
+            let mut edited = store.credential(credential).unwrap().draft();
+            edited.user = user.into();
+            assert!(store.update_credential(credential, edited));
+        }
+        assert_eq!(store.host(web).unwrap().user.as_ref(), "admin");
+        drop(store);
+        assert_eq!(open().host(web).unwrap().user.as_ref(), "admin");
     }
 
     #[test]
@@ -2798,7 +2936,7 @@ mod tests {
         let credential = store.insert_credential_unnotified(
             CredentialDraft::new("部署", CredentialKind::Key, "deploy").with_key_path("/tmp/id"),
         );
-        let web = store.insert_unnotified(draft("web", None).with_credential(credential));
+        let web = store.insert_unnotified(through("web", credential));
         let db = store.insert_unnotified(draft("db", None));
 
         assert_eq!(store.remove_credential_unnotified(credential), [web]);
@@ -2855,6 +2993,7 @@ mod tests {
         let mut stale = Host::new(HostId(1), draft("web", None));
         stale.credential = Some(credential.id);
         stale.auth = AuthKind::NoPassword;
+        stale.user = "".into();
         database.insert_host(&stale).unwrap();
 
         let mut store = HostData::load(database).unwrap();
@@ -3206,7 +3345,7 @@ mod tests {
                 "阿里云99",
                 "120.25.220.186",
                 22,
-                "root",
+                "",
                 AuthKind::Password,
                 None,
             )
@@ -3644,10 +3783,8 @@ mod tests {
             draft("typed", Some(GroupId(9))).with_route(Route::Jump(vec![Some(saved)])),
             Some(Zeroizing::new("p@ss".into())),
         );
-        let with_ops =
-            store.insert_temporary_unnotified(draft("with-ops", None).with_credential(ops), None);
-        let with_key = store
-            .insert_temporary_unnotified(draft("with-key", None).with_credential(deploy), None);
+        let with_ops = store.insert_temporary_unnotified(through("with-ops", ops), None);
+        let with_key = store.insert_temporary_unnotified(through("with-key", deploy), None);
         assert_eq!(store.hosts().len(), 1);
         let host = store.host(typed).unwrap();
         assert_eq!((host.group, &host.route), (None, &Route::Direct));

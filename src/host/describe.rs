@@ -298,6 +298,7 @@ pub fn secret_error(error: &anyhow::Error) -> SharedString {
 /// What a credential logs in as and with: `root · 密码`, or
 /// `deploy · id_ed25519` for a key file. A key ShellRS keeps in `key_dir`
 /// has a random file name nobody knows it by, so it is just `deploy · 密钥`.
+/// One of no one user is only what it logs in with.
 pub fn credential_summary(credential: &Credential, key_dir: Option<&Path>) -> String {
     let with = match (credential.kind, credential.key_path.as_deref()) {
         (CredentialKind::Key, Some(path)) if !credential.keeps_key_in(key_dir) => {
@@ -305,7 +306,10 @@ pub fn credential_summary(credential: &Credential, key_dir: Option<&Path>) -> St
         }
         (kind, _) => kind.label().to_string(),
     };
-    format!("{} · {with}", credential.user)
+    match credential.user.as_ref() {
+        "" => with,
+        user => format!("{user} · {with}"),
+    }
 }
 
 /// The last component of a key file's path, which is how people know their
@@ -433,6 +437,12 @@ mod tests {
             CredentialDraft::new("agent", CredentialKind::Agent, "me"),
         );
         assert_eq!(credential_summary(&agent, None), "me · SSH Agent");
+
+        let shared = Credential::new(
+            CredentialId(4),
+            CredentialDraft::new("共用", CredentialKind::Agent, ""),
+        );
+        assert_eq!(credential_summary(&shared, None), "SSH Agent");
     }
 
     #[test]

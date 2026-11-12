@@ -14,9 +14,9 @@ use gpui_kit::*;
 use zeroize::Zeroizing;
 
 use crate::host::{
-    CredentialDraft, CredentialId, CredentialKind, DEFAULT_USER, ErrorMessage as _, GeneratedKey,
-    HostStore, KeyAlgorithm, KindLabel as _, PastedKey, PastedKeyError, SecretFields,
-    join_sentences, read_public_key,
+    CredentialDraft, CredentialId, CredentialKind, ErrorMessage as _, GeneratedKey, HostStore,
+    KeyAlgorithm, KindLabel as _, PastedKey, PastedKeyError, SecretFields, join_sentences,
+    read_public_key,
 };
 use crate::i18n::{t, tn};
 use crate::secrets::SecretRef;
@@ -156,7 +156,7 @@ impl CredentialForm {
         let draft = credential
             .as_ref()
             .map(|credential| credential.draft())
-            .unwrap_or_else(|| CredentialDraft::new("", CredentialKind::default(), DEFAULT_USER));
+            .unwrap_or_else(|| CredentialDraft::new("", CredentialKind::default(), ""));
         // Without a place to keep it, 「生成密钥…」 still opens at a key,
         // one that has to be a file.
         let generate = dialog == CredentialDialog::GenerateKey;
@@ -178,7 +178,7 @@ impl CredentialForm {
         });
         let user = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder(DEFAULT_USER)
+                .placeholder(t!("credential.dialog.user_placeholder"))
                 .default_value(draft.user.clone())
         });
         let fields = cx.new(|cx| SecretFields::new(secrets, draft.key_path.clone(), window, cx));

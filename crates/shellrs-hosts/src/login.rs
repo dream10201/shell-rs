@@ -150,13 +150,20 @@ pub trait HostLoginExt {
         auth: AuthKind,
     ) -> HostLogin;
 
-    /// A login through `credential` to `host:port`.
-    fn with_credential(host: impl Into<String>, port: u16, credential: &Credential) -> HostLogin;
+    /// A login as `user` through `credential` to `host:port`.
+    fn with_credential(
+        host: impl Into<String>,
+        port: u16,
+        user: impl Into<String>,
+        credential: &Credential,
+    ) -> HostLogin;
 
     /// How `host` logs in, given the credential it uses, as if it were
     /// reached directly: its route takes the store to look up. `credential`
     /// is ignored unless it is the one the host names, so a host whose
-    /// credential has gone logs in with what the form holds.
+    /// credential has gone logs in with what the form holds. The user is
+    /// the host's either way: the store keeps it the credential's for a
+    /// host that names none of its own.
     fn of(host: &Host, credential: Option<&Credential>) -> HostLogin;
 }
 
@@ -174,9 +181,14 @@ impl HostLoginExt for HostLogin {
         HostLogin::new(host, port, user, method)
     }
 
-    fn with_credential(host: impl Into<String>, port: u16, credential: &Credential) -> HostLogin {
+    fn with_credential(
+        host: impl Into<String>,
+        port: u16,
+        user: impl Into<String>,
+        credential: &Credential,
+    ) -> HostLogin {
         let host = host.into();
-        let user = credential.user.to_string();
+        let user = user.into();
         let (method, key_path, password) = match credential.kind {
             CredentialKind::Password => (LoginMethod::Password, None, credential.password_secret()),
             CredentialKind::Key => (
@@ -199,7 +211,12 @@ impl HostLoginExt for HostLogin {
 
     fn of(host: &Host, credential: Option<&Credential>) -> HostLogin {
         match credential.filter(|credential| host.credential == Some(credential.id)) {
-            Some(credential) => Self::with_credential(host.address.as_ref(), host.port, credential),
+            Some(credential) => Self::with_credential(
+                host.address.as_ref(),
+                host.port,
+                host.user.as_ref(),
+                credential,
+            ),
             None => Self::manual(
                 host.address.as_ref(),
                 host.port,
@@ -235,6 +252,7 @@ mod tests {
         let credential = credential(kind);
         let mut host = host(AuthKind::Password);
         host.credential = Some(credential.id);
+        host.user = credential.user.clone();
         (host, credential)
     }
 
@@ -363,7 +381,15 @@ mod tests {
         let before = HostLogin::of(&host, Some(&credential));
         credential.name = "别的名字".into();
         assert_eq!(HostLogin::of(&host, Some(&credential)), before);
-        credential.user = "admin".into();
-        assert_ne!(HostLogin::of(&host, Some(&credential)), before);
+    }
+
+    #[test]
+    fn a_host_logs_in_through_a_credential_as_the_user_it_names() {
+        let (mut host, credential) = using(CredentialKind::Key);
+        host.user = "admin".into();
+        let login = HostLogin::of(&host, Some(&credential));
+        assert_eq!(login.user, "admin");
+        assert_eq!(login.key_path, Some(PathBuf::from("/tmp/id_deploy")));
+        assert_eq!(login.password, SecretRef::password("admin", "10.0.0.1", 22));
     }
 }

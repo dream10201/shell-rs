@@ -41,8 +41,8 @@ fn from_sql(id: i64) -> u64 {
 /// command snippets, 15 the serial hosts, 16 the Telnet hosts, 17 each
 /// host's right sidebar, 18 the saved local terminals, 19 their titles, 20
 /// what sync needs, 21 the snippet categories' nesting and the snippets'
-/// order.
-const SCHEMA_VERSION: i64 = 22;
+/// order, 23 a user name of the host's own beside its credential.
+const SCHEMA_VERSION: i64 = 23;
 
 /// The whole schema, as a new database gets it.
 ///
@@ -57,10 +57,10 @@ const SCHEMA_VERSION: i64 = 22;
 ///   credential's password is in the keychain under `keychain_id`.
 /// - **hosts** carry how they log in and how they are reached:
 ///   - `auth` is `password` or `no-password` for a login of their own, with
-///     `username`, or `credential`, with `credential_id` and no user name of
-///     their own (the credential's is used). Deleting a credential that is
-///     still used is refused: the store first gives its hosts a login of
-///     their own.
+///     `username`, or `credential`, with `credential_id` and no `username`:
+///     such a host logs in as its `credential_user`, or as the credential's
+///     user while that is `NULL`. Deleting a credential that is still used
+///     is refused: the store first gives its hosts a login of their own.
 ///   - `route` is `direct`, `jump` (the hops are in `host_jumps`) or
 ///     `proxy`, whose four columns are set exactly for a proxy route.
 ///   - `public_id` may be missing, which a row added by hand is until the
@@ -176,6 +176,8 @@ CREATE TABLE hosts (
     sidebar_tool      TEXT,
     edited_ms         INTEGER NOT NULL DEFAULT 0,
     directory_follow  INTEGER CHECK (directory_follow IN (0, 1)),
+    credential_user   TEXT CHECK (credential_user <> '')
+        CHECK (credential_id IS NOT NULL OR credential_user IS NULL),
     CHECK ((auth = 'credential') = (credential_id IS NOT NULL)),
     CHECK ((auth = 'credential') = (username IS NULL)),
     CHECK ((route = 'proxy') = (proxy_kind IS NOT NULL)),
@@ -300,7 +302,7 @@ enum Step {
 ///
 /// A step is history: it says what that version's change was, and stays as
 /// written when `SCHEMA` changes again.
-const STEPS: [(i64, Step); 9] = [
+const STEPS: [(i64, Step); 10] = [
     (
     13,
     // The command snippets.
@@ -422,6 +424,18 @@ COMMIT;",
             "BEGIN;
 ALTER TABLE hosts ADD COLUMN directory_follow  INTEGER CHECK (directory_follow IN (0, 1));
 PRAGMA user_version = 22;
+COMMIT;",
+        ),
+    ),
+    (
+        22,
+        // A user name of the host's own beside its credential: none yet, so
+        // every host goes on logging in as its credential's user.
+        Step::Sql(
+            "BEGIN;
+ALTER TABLE hosts ADD COLUMN credential_user   TEXT CHECK (credential_user <> '')
+        CHECK (credential_id IS NOT NULL OR credential_user IS NULL);
+PRAGMA user_version = 23;
 COMMIT;",
         ),
     ),
@@ -832,7 +846,7 @@ impl HostDatabase {
                  credential_id, route, proxy_kind, proxy_host, proxy_port, proxy_username, \
                  notes, os, protocol, serial_baud, serial_data_bits, serial_parity, \
                  serial_stop_bits, serial_flow, telnet_user_prompt, telnet_pass_prompt, \
-                 sidebar_tool, edited_ms, directory_follow \
+                 sidebar_tool, edited_ms, directory_follow, credential_user \
                  FROM hosts ORDER BY id",
             )?
             .query_map([], |row| {
@@ -843,7 +857,12 @@ impl HostDatabase {
                 let address: String = row.get(5)?;
                 let port: u16 = row.get(6)?;
                 let auth: String = row.get(7)?;
-                let user: Option<String> = row.get(8)?;
+                // A host using a credential: its own user name, or none
+                // for the store to take the credential's.
+                let user = match row.get::<_, Option<String>>(8)? {
+                    Some(user) => Some(user),
+                    None => row.get(28)?,
+                };
                 let credential: Option<i64> = row.get(9)?;
                 let route: String = row.get(10)?;
                 let proxy_kind: Option<String> = row.get(11)?;
@@ -1311,9 +1330,10 @@ impl HostDatabase {
              username, credential_id, route, proxy_kind, proxy_host, proxy_port, \
              proxy_username, notes, os, protocol, serial_baud, serial_data_bits, \
              serial_parity, serial_stop_bits, serial_flow, telnet_user_prompt, \
-             telnet_pass_prompt, sidebar_tool, edited_ms, directory_follow) \
+             telnet_pass_prompt, sidebar_tool, edited_ms, directory_follow, credential_user) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-             ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
+             ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, \
+             NULLIF(?29, (SELECT username FROM credentials WHERE id = ?10)))",
             params![
                 to_sql(host.id.0),
                 host.public_id.as_str(),
@@ -1343,6 +1363,7 @@ impl HostDatabase {
                 host.sidebar_tool.as_deref(),
                 to_sql(host.edited_ms),
                 host.directory_follow,
+                row.credential_user,
             ],
         )?;
             write_jumps(connection, host)
@@ -1364,7 +1385,9 @@ impl HostDatabase {
              proxy_kind = ?11, proxy_host = ?12, proxy_port = ?13, proxy_username = ?14, \
              notes = ?15, serial_baud = ?16, serial_data_bits = ?17, serial_parity = ?18, \
              serial_stop_bits = ?19, serial_flow = ?20, telnet_user_prompt = ?21, \
-             telnet_pass_prompt = ?22, protocol = ?23, edited_ms = ?24 WHERE id = ?1",
+             telnet_pass_prompt = ?22, protocol = ?23, edited_ms = ?24, \
+             credential_user = NULLIF(?25, (SELECT username FROM credentials WHERE id = ?9)) \
+             WHERE id = ?1",
                 params![
                     to_sql(host.id.0),
                     host.group.map(|group| to_sql(group.0)),
@@ -1390,6 +1413,7 @@ impl HostDatabase {
                     row.telnet_password_prompt,
                     host.protocol.as_str(),
                     to_sql(host.edited_ms),
+                    row.credential_user,
                 ],
             )?;
             write_jumps(connection, host)
@@ -1568,28 +1592,36 @@ impl HostDatabase {
         Ok(())
     }
 
-    /// Rewrite a credential. The hosts using it have no user name of
-    /// their own here, so they follow without being touched.
+    /// Rewrite a credential. The hosts using it with no user name of
+    /// their own here follow without being touched, and one whose own is
+    /// the credential's new one follows from now on.
     pub fn update_credential(&self, credential: &Credential) -> rusqlite::Result<()> {
-        self.connection.execute(
-            "UPDATE credentials SET name = ?2, kind = ?3, username = ?4, key_path = ?5, \
-             sort_order = ?6, edited_ms = ?7 WHERE id = ?1",
-            params![
-                to_sql(credential.id.0),
-                credential.name.as_ref(),
-                credential.kind.as_str(),
-                credential.user.as_ref(),
-                credential.key_path.as_deref(),
-                credential.sort_order,
-                to_sql(credential.edited_ms),
-            ],
-        )?;
-        Ok(())
+        self.atomically(|connection| {
+            connection.execute(
+                "UPDATE credentials SET name = ?2, kind = ?3, username = ?4, key_path = ?5, \
+                 sort_order = ?6, edited_ms = ?7 WHERE id = ?1",
+                params![
+                    to_sql(credential.id.0),
+                    credential.name.as_ref(),
+                    credential.kind.as_str(),
+                    credential.user.as_ref(),
+                    credential.key_path.as_deref(),
+                    credential.sort_order,
+                    to_sql(credential.edited_ms),
+                ],
+            )?;
+            connection.execute(
+                "UPDATE hosts SET credential_user = NULL \
+                 WHERE credential_id = ?1 AND credential_user = ?2",
+                params![to_sql(credential.id.0), credential.user.as_ref()],
+            )?;
+            Ok(())
+        })
     }
 
     /// Delete a credential. The hosts using it go back to logging in on
-    /// their own with `auth`, as the credential's user, first, edited at
-    /// `edited_ms`: a credential still in use cannot be deleted.
+    /// their own with `auth`, as the user they logged in as, first, edited
+    /// at `edited_ms`: a credential still in use cannot be deleted.
     pub fn remove_credential(
         &self,
         id: CredentialId,
@@ -1598,8 +1630,9 @@ impl HostDatabase {
     ) -> rusqlite::Result<()> {
         self.atomically(|connection| {
             connection.execute(
-                "UPDATE hosts SET auth = ?2, credential_id = NULL, \
-                 username = (SELECT username FROM credentials WHERE id = ?1), edited_ms = ?3 \
+                "UPDATE hosts SET auth = ?2, credential_id = NULL, credential_user = NULL, \
+                 username = COALESCE(credential_user, \
+                 (SELECT username FROM credentials WHERE id = ?1)), edited_ms = ?3 \
                  WHERE credential_id = ?1",
                 params![to_sql(id.0), auth.as_str(), to_sql(edited_ms)],
             )?;
@@ -1925,6 +1958,9 @@ struct HostRow<'a> {
     telnet_password_prompt: Option<&'a str>,
     auth: &'static str,
     username: Option<&'a str>,
+    /// What a host using a credential logs in as; stored only when it is
+    /// not the credential's.
+    credential_user: Option<&'a str>,
     credential: Option<i64>,
     route: &'static str,
     proxy_kind: Option<&'static str>,
@@ -1950,12 +1986,14 @@ impl<'a> HostRow<'a> {
                 Some(_) => "credential",
                 None => host.auth.as_str(),
             },
-            // A host using a credential logs in as the credential's
-            // user; the copy the store keeps in memory is not stored.
             username: match host.credential {
                 Some(_) => None,
                 None => Some(host.user.as_ref()),
             },
+            credential_user: host
+                .credential
+                .map(|_| host.user.as_ref())
+                .filter(|user| !user.is_empty()),
             credential: host.credential.map(|id| to_sql(id.0)),
             route: match host.route {
                 Route::Direct => "direct",
@@ -3060,6 +3098,63 @@ INSERT INTO snippets (id, category_id, name, command, sync_id, edited_ms) \
     }
 
     #[test]
+    fn a_version_22_file_gets_the_credential_user_column_and_keeps_its_hosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shellrs.db");
+        {
+            // Version 22 as files of it have it: 15's schema, taken on by
+            // its steps.
+            let old = Connection::open(&path).unwrap();
+            old.execute_batch(&format!(
+                "BEGIN;\n{SCHEMA_15}\nPRAGMA user_version = 15;\nCOMMIT;"
+            ))
+            .unwrap();
+            add_telnet(&old).unwrap();
+            for (_, step) in &STEPS[3..6] {
+                let Step::Sql(sql) = step else {
+                    panic!("versions 17 to 19 are SQL steps");
+                };
+                old.execute_batch(sql).unwrap();
+            }
+            add_sync(&old).unwrap();
+            for (_, step) in &STEPS[7..9] {
+                let Step::Sql(sql) = step else {
+                    panic!("versions 21 and 22 are SQL steps");
+                };
+                old.execute_batch(sql).unwrap();
+            }
+            old.execute_batch(
+                "INSERT INTO credentials (id, keychain_id, name, kind, username) \
+                 VALUES (1, 'k1', '运维', 'agent', 'deploy');
+                 INSERT INTO hosts (id, name, address, port, auth, credential_id, edited_ms) \
+                 VALUES (1, 'web', '10.0.0.1', 22, 'credential', 1, 5);
+                 INSERT INTO hosts (id, name, address, port, auth, username) \
+                 VALUES (2, 'db', '10.0.0.2', 22, 'password', 'root');",
+            )
+            .unwrap();
+        }
+
+        let db = HostDatabase::open(&path).unwrap();
+        let version: i64 = db
+            .connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        assert!(dir.path().join("shellrs.db.v22.bak").exists());
+        let fresh = HostDatabase::in_memory().unwrap();
+        assert_eq!(schema_of(&db.connection), schema_of(&fresh.connection));
+
+        // No user name of its own yet, so its credential's; nothing edited.
+        let data = db.load().unwrap();
+        let web = &data.hosts[0];
+        assert_eq!(
+            (web.user.as_ref(), web.credential, web.edited_ms),
+            ("", Some(CredentialId(1)), 5)
+        );
+        assert_eq!(data.hosts[1].user.as_ref(), "root");
+    }
+
+    #[test]
     fn a_row_added_by_hand_gets_a_sync_id_at_the_next_open() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("shellrs.db");
@@ -3712,10 +3807,17 @@ INSERT INTO snippets (id, category_id, name, command, sync_id, edited_ms) \
         db.insert_credential(&key).unwrap();
         db.insert_host(&using(host(1, "web", None), &key)).unwrap();
         db.insert_host(&host(2, "db", None)).unwrap();
+        // One naming a user of its own beside the credential keeps it.
+        let mut api = using(host(3, "api", None), &key);
+        api.user = "admin".into();
+        db.insert_host(&api).unwrap();
+        assert_eq!(db.load().unwrap().hosts[2].user.as_ref(), "admin");
 
         db.remove_credential(key.id, AuthKind::NoPassword, 5)
             .unwrap();
         let data = db.load().unwrap();
+        assert_eq!(data.hosts[2].user.as_ref(), "admin");
+        assert_eq!(data.hosts[2].credential, None);
         assert!(data.credentials.is_empty());
         assert_eq!(data.hosts[0].credential, None);
         assert_eq!(data.hosts[0].auth, AuthKind::NoPassword);

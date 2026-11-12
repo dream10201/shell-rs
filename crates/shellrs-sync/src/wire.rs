@@ -60,8 +60,10 @@ pub enum CredentialKind {
     Agent,
 }
 
-/// A saved host. `username` is `None` exactly when `auth` is `Credential`
-/// (the credential's is used), and `credential` is set exactly then.
+/// A saved host. `username` is `None` exactly when `auth` is `Credential`,
+/// and `credential` is set exactly then. `credential_username` is the user
+/// name such a host logs in with when it is not the credential's: `None`
+/// for the credential's, and always for a host that uses none.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostData {
     pub name: String,
@@ -73,6 +75,7 @@ pub struct HostData {
     pub auth: Auth,
     pub username: Option<String>,
     pub credential: Option<String>,
+    pub credential_username: Option<String>,
     pub route: Route,
     pub notes: String,
 }
@@ -345,6 +348,15 @@ fn parse_host(key: &RecordKey, r: &Reader) -> Result<HostData, String> {
     if (auth == Auth::Credential) != username.is_none() {
         return Err("a user name goes with sign-in of the host's own".into());
     }
+    // A repair by a version that does not know the field leaves it on a
+    // host that no longer uses a credential, where it means nothing.
+    let credential_username = r
+        .later(
+            |r| r.optional_string("credential_username"),
+            "credential_username",
+            None,
+        )?
+        .filter(|user| auth == Auth::Credential && !user.is_empty());
     let route = match r.string("route")?.as_str() {
         "direct" => Route::Direct,
         "jump" => {
@@ -385,6 +397,7 @@ fn parse_host(key: &RecordKey, r: &Reader) -> Result<HostData, String> {
         auth,
         username,
         credential,
+        credential_username,
         route,
         notes: r.string("notes")?,
     })
@@ -455,6 +468,7 @@ fn known_fields(kind: &Kind) -> &'static [&'static str] {
             "auth",
             "username",
             "credential",
+            "credential_username",
             "route",
             "jumps",
             "proxy",
@@ -521,6 +535,7 @@ fn fields(data: &RecordData) -> Vec<(&'static str, Value)> {
             out.push(("auth", json!(host.auth.as_str())));
             out.push(("username", json!(host.username)));
             out.push(("credential", json!(host.credential)));
+            out.push(("credential_username", json!(host.credential_username)));
             match &host.route {
                 Route::Direct => out.push(("route", json!("direct"))),
                 Route::Jump(hops) => {
@@ -722,6 +737,7 @@ pub(crate) mod tests {
             auth: Auth::Password,
             username: Some("root".into()),
             credential: None,
+            credential_username: None,
             route: Route::Direct,
             notes: String::new(),
         }
@@ -937,8 +953,40 @@ pub(crate) mod tests {
             json!({
                 "name": "web", "address": "10.0.0.1", "port": 22, "group": null,
                 "sort_order": 0, "protocol": "ssh", "auth": "password",
-                "username": "root", "credential": null, "route": "direct", "notes": ""
+                "username": "root", "credential": null, "credential_username": null,
+                "route": "direct", "notes": ""
             })
+        );
+    }
+
+    #[test]
+    fn a_host_s_own_user_name_beside_a_credential_is_a_later_field() {
+        let host = HostData {
+            auth: Auth::Credential,
+            username: None,
+            credential: Some("c1".into()),
+            credential_username: Some("deploy".into()),
+            ..ssh_host("web")
+        };
+        let key = RecordKey::new(Kind::Host, "h1");
+        let mut written = write_into(&RecordData::Host(host.clone()), None);
+        assert_eq!(written["credential_username"], json!("deploy"));
+        assert_eq!(parse(&key, &written), Ok(RecordData::Host(host.clone())));
+
+        // A copy an older version wrote has none: the credential's.
+        written.remove("credential_username");
+        let older = HostData {
+            credential_username: None,
+            ..host
+        };
+        assert_eq!(parse(&key, &written), Ok(RecordData::Host(older)));
+
+        // Left behind by an older version's repair, it means nothing.
+        let mut repaired = write_into(&RecordData::Host(ssh_host("web")), None);
+        repaired.insert("credential_username".into(), json!("deploy"));
+        assert_eq!(
+            parse(&key, &repaired),
+            Ok(RecordData::Host(ssh_host("web")))
         );
     }
 

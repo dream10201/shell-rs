@@ -29,7 +29,7 @@ use shellrs_sync::{
 };
 use zeroize::Zeroizing;
 
-use super::{BookmarkMeta, Failure, HostData, SecretError};
+use super::{BookmarkMeta, Failure, HostData, SecretError, user_through};
 use crate::private_key::{read_small, write_key_file};
 use crate::secrets::{SecretRef, SecretStore};
 use crate::{
@@ -383,8 +383,6 @@ impl HostData {
     pub fn sync_export(&self) -> SyncExport {
         let group_id = |id: GroupId| self.group(id).map(|group| group.sync_id.to_string());
         let host_id = |id: HostId| self.synced_host(id).map(|host| host.public_id.to_string());
-        let credential_id =
-            |id: CredentialId| self.credential(id).map(|c| c.keychain_id.to_string());
         let mut records = Vec::new();
         for group in &self.groups {
             records.push(LocalRecord {
@@ -417,8 +415,15 @@ impl HostData {
                 }),
                 _ => sync::Protocol::Ssh,
             };
-            let (auth, username, credential) = match host.credential.and_then(credential_id) {
-                Some(credential) => (sync::Auth::Credential, None, Some(credential)),
+            let credential = host.credential.and_then(|id| self.credential(id));
+            let (auth, username, credential_username) = match credential {
+                // The user name goes along only when it is the host's own.
+                Some(credential) => (
+                    sync::Auth::Credential,
+                    None,
+                    Some(host.user.to_string())
+                        .filter(|user| !user.is_empty() && *user != credential.user.as_ref()),
+                ),
                 None => (
                     match host.auth {
                         AuthKind::Password => sync::Auth::Password,
@@ -428,6 +433,7 @@ impl HostData {
                     None,
                 ),
             };
+            let credential = credential.map(|credential| credential.keychain_id.to_string());
             let route = match &host.route {
                 Route::Direct => sync::Route::Direct,
                 Route::Jump(hops) => {
@@ -455,6 +461,7 @@ impl HostData {
                     auth,
                     username,
                     credential,
+                    credential_username,
                     route,
                     notes: host.notes.to_string(),
                 }),
@@ -1025,13 +1032,18 @@ impl HostData {
                     Some(slot) => *slot = fresh,
                     None => self.credentials.push(fresh),
                 }
-                // The hosts using it keep a copy of its user name.
-                for host in self.hosts.iter_mut().chain(&mut self.temporary) {
-                    if host.credential == Some(credential_id) {
-                        host.user = user.clone();
-                    }
-                }
                 writes.push(Write::Credential(credential_id, old.is_none()));
+                // The hosts logging in as its user keep a copy of the name,
+                // and keep it for themselves when the credential has none
+                // any more: written after the credential, to stay theirs.
+                if let Some(old) = &old {
+                    let kept = self.follow_credential_user(credential_id, &old.user, &user);
+                    writes.extend(
+                        kept.into_iter()
+                            .filter(|host| self.saved_host(*host).is_some())
+                            .map(|host| Write::Host(host, false)),
+                    );
+                }
             }
             RecordData::Host(data) => {
                 let Some(host_id) = host(id) else {
@@ -1043,7 +1055,11 @@ impl HostData {
                     .and_then(|id| ids.credentials.get(id))
                     .and_then(|id| self.credential(*id));
                 let user = match credential {
-                    Some(credential) => credential.user.clone(),
+                    Some(credential) => user_through(
+                        credential,
+                        matches!(data.protocol, sync::Protocol::Telnet(_)),
+                        data.credential_username.as_deref().unwrap_or_default(),
+                    ),
                     None => data.username.clone().unwrap_or_default().into(),
                 };
                 let auth = match data.auth {
@@ -1887,6 +1903,7 @@ mod tests {
                 auth: sync::Auth::Password,
                 username: Some("root".into()),
                 credential: None,
+                credential_username: None,
                 route: sync::Route::Direct,
                 notes: String::new(),
             }),
@@ -1898,6 +1915,85 @@ mod tests {
         assert_eq!(store.sync_state(), None);
         let reopened = HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
         assert!(reopened.groups().is_empty());
+    }
+
+    #[test]
+    fn a_host_s_own_user_beside_its_credential_comes_and_stays_by_sync() {
+        let data = tempfile::tempdir().unwrap();
+        let path = data.path().join("shellrs.db");
+        let mut store = HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
+        let credential = |username: &str| sync::Change::Upsert {
+            id: "c1aaaaaaaaaaaaaa".into(),
+            data: RecordData::Credential(sync::CredentialData {
+                name: "部署".into(),
+                kind: sync::CredentialKind::Agent,
+                username: username.into(),
+                sort_order: 0,
+            }),
+        };
+        let host = |id: &str, credential_username: Option<&str>| sync::Change::Upsert {
+            id: id.into(),
+            data: RecordData::Host(sync::HostData {
+                name: id.into(),
+                address: "10.0.0.1".into(),
+                port: 22,
+                group: None,
+                sort_order: 0,
+                protocol: sync::Protocol::Ssh,
+                auth: sync::Auth::Credential,
+                username: None,
+                credential: Some("c1aaaaaaaaaaaaaa".into()),
+                credential_username: credential_username.map(Into::into),
+                route: sync::Route::Direct,
+                notes: String::new(),
+            }),
+        };
+        let users = |store: &HostData| {
+            store
+                .hosts()
+                .iter()
+                .map(|host| host.user.to_string())
+                .collect::<Vec<_>>()
+        };
+        let exported = |store: &HostData| {
+            store
+                .sync_export()
+                .records
+                .into_iter()
+                .filter_map(|record| match record.data {
+                    RecordData::Host(host) => Some(host.credential_username),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let export = store.sync_export();
+        let changes = [
+            credential("deploy"),
+            host("h1aaaaaaaaaaaaaa", None),
+            host("h2aaaaaaaaaaaaaa", Some("admin")),
+        ];
+        store.apply_sync(&changes, b"state", &export).unwrap();
+        assert_eq!(users(&store), ["deploy", "admin"]);
+        assert_eq!(exported(&store), [None, Some("admin".into())]);
+
+        // The credential names another user: the host without one follows.
+        let export = store.sync_export();
+        store
+            .apply_sync(&[credential("ops")], b"state", &export)
+            .unwrap();
+        assert_eq!(users(&store), ["ops", "admin"]);
+
+        // It names none: the host keeps the one it had, here and on disk.
+        let export = store.sync_export();
+        store
+            .apply_sync(&[credential("")], b"state", &export)
+            .unwrap();
+        assert_eq!(users(&store), ["ops", "admin"]);
+        assert_eq!(exported(&store), [Some("ops".into()), Some("admin".into())]);
+        drop(store);
+        let reopened = HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
+        assert_eq!(users(&reopened), ["ops", "admin"]);
     }
 
     /// A state that has seen nothing yet: every secret is read.

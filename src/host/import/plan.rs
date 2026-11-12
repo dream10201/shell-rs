@@ -104,8 +104,9 @@ fn default_auth(candidate: &ImportCandidate, store: &HostStore) -> RowAuth {
     }
 }
 
-/// A saved key credential for this file and user: one naming the file,
-/// or one keeping a copy of it, as importing it makes.
+/// A saved key credential for this file that `user` can log in with: one
+/// of no one user or of this one, naming the file or keeping a copy of it,
+/// as importing it makes.
 fn saved_key(store: &HostStore, path: &Path, user: &str) -> Option<CredentialId> {
     let same_key = |key: &str| {
         Path::new(key) == path
@@ -117,7 +118,7 @@ fn saved_key(store: &HostStore, path: &Path, user: &str) -> Option<CredentialId>
         .iter()
         .find(|credential| {
             credential.kind == CredentialKind::Key
-                && credential.user.as_ref() == user
+                && (credential.user.is_empty() || credential.user.as_ref() == user)
                 && credential.key_path.as_deref().is_some_and(same_key)
         })
         .map(|credential| credential.id)
@@ -192,12 +193,12 @@ impl ImportError {
 }
 
 /// Check the rows to import and work out what to write: nothing is
-/// written when any of them is wrong. A key file shared by rows logging in
-/// as the same user gets one credential, an existing one when there is.
+/// written when any of them is wrong. A key file gets one credential,
+/// whoever its rows log in as, an existing one when there is.
 pub fn plan_import(rows: &[ImportRow], store: &HostStore) -> Result<ImportPlan, ImportError> {
     let mut entries = Vec::new();
     let mut credentials = Vec::new();
-    let mut new_keys: HashMap<(PathBuf, String), usize> = HashMap::new();
+    let mut new_keys: HashMap<PathBuf, usize> = HashMap::new();
     for row in rows.iter().filter(|row| row.will_import()) {
         let candidate = &row.candidate;
         if is_saved(store, &candidate.address, candidate.port) {
@@ -225,13 +226,10 @@ pub fn plan_import(rows: &[ImportRow], store: &HostStore) -> Result<ImportPlan, 
                 Some(path) => match saved_key(store, path, &user) {
                     Some(id) => (AuthKind::default(), Login::Saved(id)),
                     None => {
-                        let index =
-                            *new_keys
-                                .entry((path.clone(), user.clone()))
-                                .or_insert_with(|| {
-                                    credentials.push(key_credential(path, &user));
-                                    credentials.len() - 1
-                                });
+                        let index = *new_keys.entry(path.clone()).or_insert_with(|| {
+                            credentials.push(key_credential(path));
+                            credentials.len() - 1
+                        });
                         (AuthKind::default(), Login::New(index))
                     }
                 },
@@ -263,13 +261,14 @@ pub fn plan_import(rows: &[ImportRow], store: &HostStore) -> Result<ImportPlan, 
     })
 }
 
-/// A key credential for a file, named after it.
-fn key_credential(path: &Path, user: &str) -> CredentialDraft {
+/// A key credential for a file, named after it and of no one user: each
+/// host logs in with it as its own.
+fn key_credential(path: &Path) -> CredentialDraft {
     let name = path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string_lossy().into_owned());
-    CredentialDraft::new(name, CredentialKind::Key, user.to_string())
+    CredentialDraft::new(name, CredentialKind::Key, "")
         .with_key_path(path.to_string_lossy().into_owned())
 }
 
@@ -327,7 +326,16 @@ pub fn apply_import(
                 };
                 draft = match entry.login {
                     Login::Own => draft,
-                    Login::Saved(id) => draft.with_credential(id),
+                    Login::Saved(id) => {
+                        // As the preview shows it: the credential's user
+                        // when it has one.
+                        if let Some(credential) = store.credential(id)
+                            && !credential.user.is_empty()
+                        {
+                            draft.user = credential.user.clone();
+                        }
+                        draft.with_credential(id)
+                    }
                     Login::New(index) => draft.with_credential(made[index]),
                 };
                 store.insert(draft, cx);
@@ -431,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn a_key_file_gets_one_credential_per_user_and_reuses_a_saved_one() {
+    fn a_key_file_gets_one_credential_and_reuses_a_saved_one_of_the_same_user() {
         let mut store = HostStore::empty();
         let saved = store.insert_credential_unnotified(
             CredentialDraft::new("ops", CredentialKind::Key, "admin").with_key_path("/k/shared"),
@@ -447,13 +455,18 @@ mod tests {
         );
         // Edited to the saved credential's user: that one is used.
         rows[2].user = " admin ".into();
-        // Emptied: logs in as root, with a key of its own.
+        // Emptied: logs in as root, with the same key.
         rows[3].user = String::new();
         let plan = plan_import(&rows, &store).unwrap();
-        assert_eq!(plan.credentials.len(), 2);
-        assert_eq!(plan.credentials[0].user.as_ref(), "deploy");
+        assert_eq!(plan.credentials.len(), 1);
+        assert_eq!(plan.credentials[0].user.as_ref(), "");
         assert_eq!(plan.credentials[0].name.as_ref(), "shared");
-        assert_eq!(plan.credentials[1].user.as_ref(), "root");
+        let users: Vec<&str> = plan
+            .entries
+            .iter()
+            .map(|entry| entry.draft.user.as_ref())
+            .collect();
+        assert_eq!(users, ["deploy", "deploy", "admin", "root"]);
         let logins: Vec<String> = plan
             .entries
             .iter()
@@ -465,7 +478,7 @@ mod tests {
                 "New(0)",
                 "New(0)",
                 format!("Saved({saved:?})").as_str(),
-                "New(1)"
+                "New(0)"
             ]
         );
     }
@@ -587,7 +600,10 @@ mod tests {
             );
             let credential = &store.credentials()[0];
             assert_eq!(credential.key_path.as_deref(), Some("/k/deploy"));
-            assert_eq!(credential.user.as_ref(), "deploy");
+            // Of no one user: the hosts name theirs.
+            assert_eq!(credential.user.as_ref(), "");
+            assert_eq!(store.hosts()[0].user.as_ref(), "deploy");
+            assert_eq!(store.login(store.hosts()[0].id).unwrap().user, "deploy");
         });
     }
 

@@ -93,10 +93,11 @@ pub(crate) fn repairs(set: &RecordSet) -> Vec<(RecordKey, Body)> {
                     .is_some_and(|credential| deleted(Kind::Credential, credential))
                 {
                     // The same on every device: the credential's user name
-                    // went with it, and the user fills in their own.
+                    // went with it, and the user fills in their own unless
+                    // the host already had one.
                     host.auth = Auth::Password;
                     host.credential = None;
-                    host.username = Some(String::new());
+                    host.username = Some(host.credential_username.take().unwrap_or_default());
                     changed = true;
                 }
                 if let Route::Jump(hops) = &mut host.route {
@@ -308,6 +309,25 @@ mod tests {
         assert_eq!(host.auth, Auth::Password);
         assert_eq!(host.credential, None);
         assert_eq!(host.username.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn a_deleted_credential_leaves_the_host_its_own_user_name() {
+        let mut host = ssh_host("web");
+        host.auth = Auth::Credential;
+        host.credential = Some("c".into());
+        host.username = None;
+        host.credential_username = Some("deploy".into());
+        let records = set([
+            deleted(Kind::Credential, "c", version(5, 'b')),
+            record(Kind::Host, "h", 1, RecordData::Host(host)),
+        ]);
+        let (records, _) = repaired(records);
+        let Some(RecordData::Host(host)) = parsed(&records, Kind::Host, "h") else {
+            panic!()
+        };
+        assert_eq!(host.username.as_deref(), Some("deploy"));
+        assert_eq!(host.credential_username, None);
     }
 
     #[test]
