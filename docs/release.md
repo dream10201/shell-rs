@@ -2,7 +2,7 @@
 
 [返回 README](../README.zh-CN.md)
 
-在 `CHANGELOG.md`（英文）和 `CHANGELOG.zh.md`（中文）里各写好 `## [x.y.z]` 一节，把 `Cargo.toml` 的版本改成 `x.y.z`，提交后推送 tag `vx.y.z`。`.github/workflows/release.yml` 依次：
+在 `CHANGELOG.md`（英文）和 `CHANGELOG.zh.md`（中文）里各写好 `## [x.y.z]` 一节（不用提交），然后运行 `scripts/release.sh x.y.z`：它把 `Cargo.toml` 和 `Cargo.lock` 的版本改成 `x.y.z`，连同两份更新日志提交，打 tag `vx.y.z`，一起推送。`.github/workflows/release.yml` 依次：
 
 1. 核对 tag 与 `Cargo.toml` 一致，两份更新日志都有这一节，从英文版截出 GitHub Release 的说明，确认代码里有发布公钥；
 2. 构建并打包：macOS 按 `aarch64`（Apple Silicon）和 `x86_64`（Intel）分别构建、签名、公证、staple，各自产出升级用的 `.app.zip` 和首次安装用的 `.dmg`；Windows 用 Inno Setup 打安装程序，另打便携版的 zip（根上是 `shellrs.exe` 和空的 `data` 文件夹，用 7-Zip 打包，打完核对正好是这两项），它既是首次下载的包、也是便携版升级用的包；Linux 打 AppImage；

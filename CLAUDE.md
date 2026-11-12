@@ -168,7 +168,7 @@ Cargo workspace，`cargo` 命令覆盖全部四个包：
 
 - **Windows** 只在 CI 上编译和测试：`windows.yml` 按路径触发，新加 `cfg(windows)` 代码的文件要加进那个列表。发布版是 GUI 子系统。C 运行库静态链接（`.cargo/config.toml` 的 `+crt-static`）：动态链接要 `VCRUNTIME140.dll`，LTSC 版和没装 VC++ 运行库的系统启动不了；`scripts/windows-runtime.ps1` 在 CI 里查 exe 的导入表。
 - 在线升级在 UI 测试里没有真实服务，测试从不联网。
-- **发布走 tag**（`docs/release.md`）：流水线给包签名（minisign，私钥在 `release` 环境的 `MINISIGN_SECRET_KEY`）、建 GitHub Release，最后把清单提交到 `update` 分支的 `v1/<通道>.json`，客户端从 raw.githubusercontent.com 读它；不用 R2、Cloudflare 和官网。没有 Apple 的 secrets 时 macOS 包是 ad-hoc 签名、不公证。更新日志由改版本号的提交写，中英两份（`CHANGELOG.zh.md`、`CHANGELOG.md`）都要有，功能提交不改。
+- **发布走 tag**（`docs/release.md`）：写好两份更新日志后运行 `scripts/release.sh x.y.z`，它改版本号、提交、打 tag、推送；流水线给包签名（minisign，私钥在 `release` 环境的 `MINISIGN_SECRET_KEY`）、建 GitHub Release，最后把清单提交到 `update` 分支的 `v1/<通道>.json`，客户端从 raw.githubusercontent.com 读它；不用 R2、Cloudflare 和官网。没有 Apple 的 secrets 时 macOS 包是 ad-hoc 签名、不公证。更新日志由改版本号的提交写，中英两份（`CHANGELOG.zh.md`、`CHANGELOG.md`）都要有，功能提交不改。
 - macOS 上关窗口是隐藏，⌘Q 才退出。
 
 ### 同步核心（`crates/shellrs-sync`）
