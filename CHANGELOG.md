@@ -4,6 +4,13 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.6]
+
+### Improved
+
+- A credential’s username is now optional: leave it empty and each host fills in its own, so one key can serve several users. A host that uses a credential has a username field below it; empty uses the credential’s username, filled in uses yours.
+- Importing hosts creates one key credential without a username per private key, and each host uses its own username.
+
 ## [1.0.5]
 
 This version does not read data from earlier versions: it starts empty, and the old data files and the passwords in the system keychain stay where they are, neither read nor deleted. With sync, set the password and join the sync again to get your hosts back.
