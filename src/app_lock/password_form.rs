@@ -8,10 +8,125 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+use std::ops::Range;
 use zeroize::Zeroizing;
 
 use super::{AppLock, PasswordOperation};
 use crate::i18n::t;
+
+/// The input's own handler, except that it turns the system input method off.
+struct LatinInput(ElementInputHandler<InputState>);
+
+impl InputHandler for LatinInput {
+    fn selected_text_range(
+        &mut self,
+        ignore_disabled_input: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<UTF16Selection> {
+        self.0
+            .selected_text_range(ignore_disabled_input, window, cx)
+    }
+
+    fn marked_text_range(&mut self, window: &mut Window, cx: &mut App) -> Option<Range<usize>> {
+        self.0.marked_text_range(window, cx)
+    }
+
+    fn text_for_range(
+        &mut self,
+        range_utf16: Range<usize>,
+        adjusted_range: &mut Option<Range<usize>>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<String> {
+        self.0
+            .text_for_range(range_utf16, adjusted_range, window, cx)
+    }
+
+    fn replace_text_in_range(
+        &mut self,
+        replacement_range: Option<Range<usize>>,
+        text: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.0
+            .replace_text_in_range(replacement_range, text, window, cx);
+    }
+
+    fn replace_and_mark_text_in_range(
+        &mut self,
+        range_utf16: Option<Range<usize>>,
+        new_text: &str,
+        new_selected_range: Option<Range<usize>>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.0.replace_and_mark_text_in_range(
+            range_utf16,
+            new_text,
+            new_selected_range,
+            window,
+            cx,
+        );
+    }
+
+    fn unmark_text(&mut self, window: &mut Window, cx: &mut App) {
+        self.0.unmark_text(window, cx);
+    }
+
+    fn bounds_for_range(
+        &mut self,
+        range_utf16: Range<usize>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<Bounds<Pixels>> {
+        self.0.bounds_for_range(range_utf16, window, cx)
+    }
+
+    fn character_index_for_point(
+        &mut self,
+        point: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<usize> {
+        self.0.character_index_for_point(point, window, cx)
+    }
+
+    fn text_length_utf16(&mut self, window: &mut Window, cx: &mut App) -> Option<usize> {
+        self.0.text_length_utf16(window, cx)
+    }
+
+    fn accepts_text_input(&mut self, _: &mut Window, _: &mut App) -> bool {
+        false
+    }
+}
+
+/// Switch the keyboard to its Latin layout: macOS keeps composing whatever the handler says.
+#[cfg(target_os = "macos")]
+fn select_latin_keyboard() {
+    use std::ffi::c_void;
+
+    #[link(name = "Carbon", kind = "framework")]
+    unsafe extern "C" {
+        fn TISCopyCurrentASCIICapableKeyboardInputSource() -> *const c_void;
+        fn TISSelectInputSource(source: *const c_void) -> i32;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFRelease(cf: *const c_void);
+    }
+
+    // SAFETY: called on the main thread; the source is owned (Copy rule) and
+    // released once.
+    unsafe {
+        let source = TISCopyCurrentASCIICapableKeyboardInputSource();
+        if !source.is_null() {
+            TISSelectInputSource(source);
+            CFRelease(source);
+        }
+    }
+}
 
 struct PasswordForm {
     service: Entity<AppLock>,
@@ -37,7 +152,8 @@ impl PasswordForm {
         let current = cx.new(|cx| InputState::new(window, cx).masked(true));
         let new = cx.new(|cx| InputState::new(window, cx).masked(true));
         let repeat = cx.new(|cx| InputState::new(window, cx).masked(true));
-        let subscriptions = [&current, &new, &repeat]
+        #[allow(unused_mut)]
+        let mut subscriptions: Vec<Subscription> = [&current, &new, &repeat]
             .into_iter()
             .map(|input| {
                 cx.subscribe_in(input, window, |this, _, event, window, cx| {
@@ -47,6 +163,11 @@ impl PasswordForm {
                 })
             })
             .collect();
+        #[cfg(target_os = "macos")]
+        for input in [&current, &new, &repeat] {
+            let focus = input.read(cx).focus_handle(cx);
+            subscriptions.push(cx.on_focus(&focus, window, |_, _, _| select_latin_keyboard()));
+        }
         Self {
             service,
             operation,
@@ -138,6 +259,10 @@ impl Render for PasswordForm {
                 .content_type(InputContentType::Password)
                 .disabled(self.working)
         };
+        let inputs = [&self.current, &self.new, &self.repeat].map(|input| {
+            let focus = input.read(cx).focus_handle(cx);
+            (input.clone(), focus)
+        });
         v_flex()
             .gap_3()
             .child(
@@ -162,6 +287,20 @@ impl Render for PasswordForm {
                                 .child(input(&self.repeat, "app-lock-repeat-password")),
                         )
                     }),
+            )
+            // Painted after the inputs, so this handler is the one the window keeps.
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |bounds, (), window, cx| {
+                        for (input, focus) in inputs {
+                            let handler = LatinInput(ElementInputHandler::new(bounds, input));
+                            window.handle_input(&focus, handler, cx);
+                        }
+                    },
+                )
+                .absolute()
+                .size_0(),
             )
             .when_some(self.error.clone(), |view, error| {
                 view.child(
