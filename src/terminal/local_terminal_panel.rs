@@ -19,7 +19,7 @@ use crate::shared::{ClosableTabTitle, close_tab_items};
 
 use super::{
     LocalTerminalId, SharedTerminalTransportFactory, TerminalEvent, TerminalLifecycle,
-    TerminalNotice, TerminalStatus, TerminalView, ZmodemDirection, ZmodemReply,
+    TerminalStatus, TerminalView, ZmodemDirection, ZmodemReply,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,7 +28,6 @@ pub enum LocalTerminalPanelEvent {
     Activated(LocalTerminalId),
     Closed(LocalTerminalId),
     StatusChanged(LocalTerminalId),
-    Notice(LocalTerminalId, TerminalNotice),
     /// `rz` or `sz` started (a shell of this computer can ssh on): the
     /// user chooses, and the answer goes to [`LocalTerminalPanel::zmodem_reply`].
     ZmodemAsk(LocalTerminalId, ZmodemDirection),
@@ -87,9 +86,6 @@ impl LocalTerminalPanel {
                     TerminalEvent::Input(input) => {
                         cx.emit(LocalTerminalPanelEvent::Input(id, input.clone()));
                     }
-                    TerminalEvent::Notice(notice) => {
-                        cx.emit(LocalTerminalPanelEvent::Notice(id, notice.clone()));
-                    }
                     TerminalEvent::ZmodemAsk(direction) => {
                         cx.emit(LocalTerminalPanelEvent::ZmodemAsk(id, *direction));
                     }
@@ -114,8 +110,8 @@ impl LocalTerminalPanel {
         }
     }
 
-    /// 「本地终端 1」, or its name in 项目: what a notification calls it,
-    /// whatever title the shell gives the tab.
+    /// 「本地终端 1」, or its name in 项目, whatever title the shell gives
+    /// the tab.
     pub fn default_title(&self) -> SharedString {
         self.name
             .as_ref()

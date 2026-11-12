@@ -16,7 +16,6 @@ mod local_shell;
 mod local_terminal_panel;
 mod model;
 mod mouse;
-mod notices;
 mod scrollbar;
 mod search;
 mod terminal_panel;
@@ -46,7 +45,6 @@ pub use model::{
     LocalTerminalId, RemoteTerminalId, RightClick, TerminalCursorStyle, TerminalInteraction,
     TerminalLifecycle, TerminalSize, TerminalStatus,
 };
-pub use notices::TerminalNotice;
 pub use search::{SearchDirection, SearchMark, SearchPosition};
 pub(crate) use terminal_panel::TerminalCopy;
 pub use terminal_panel::{TerminalPanel, TerminalPanelEvent};

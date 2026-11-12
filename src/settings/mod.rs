@@ -15,9 +15,9 @@ mod terminal_themes;
 pub use apply::apply;
 pub use model::{
     AppSettings, Appearance, Choice, DEFAULT_INTERFACE_FONT_SIZE, INTERFACE_FONT_SIZE_RANGE,
-    InterfaceLanguage, InterfaceSettings, LocalTerminalSettings, NotificationSettings,
-    SidebarTools, SidebarWidths, SyncLocation, SyncSettings, TerminalFontSettings,
-    TerminalHighlightSettings, TerminalThemeSettings, UpdateSettings, WindowSettings,
+    InterfaceLanguage, InterfaceSettings, LocalTerminalSettings, SidebarTools, SidebarWidths,
+    SyncLocation, SyncSettings, TerminalFontSettings, TerminalHighlightSettings,
+    TerminalThemeSettings, UpdateSettings, WindowSettings,
 };
 pub use settings_panel::{SettingsPanel, SettingsPanelEvent};
 pub use store::{SettingsProblem, SettingsStore, SettingsStoreEvent};

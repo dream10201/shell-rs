@@ -37,10 +37,7 @@ use super::local_shell_editor::{LocalShellEditor, local_shell_field};
 use super::shortcuts_editor::{ShortcutsEditor, shortcut_groups};
 use super::sidebar_tools::sidebar_tools_group;
 use super::terminal_themes::{app_follows_item, terminal_theme_item};
-use super::{
-    AppSettings, Choice, INTERFACE_FONT_SIZE_RANGE, NotificationSettings, SettingsStore,
-    WindowSettings,
-};
+use super::{AppSettings, Choice, INTERFACE_FONT_SIZE_RANGE, SettingsStore, WindowSettings};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SettingsPanelEvent {
@@ -418,7 +415,6 @@ fn terminal_groups(panel: &SettingsPanel, cx: &App) -> Vec<SettingGroup> {
             ]),
         interaction_group(store),
         sidebar_tools_group(store),
-        notification_group(store),
         local_terminal_group(panel),
     ]
 }
@@ -597,42 +593,6 @@ fn cursor_style_field(store: &Entity<SettingsStore>) -> SettingField<SharedStrin
             });
         },
     )
-}
-
-/// 终端 → 通知: when the window is not in front, the system's notification;
-/// when another tab is, one in the window.
-fn notification_group(store: &Entity<SettingsStore>) -> SettingGroup {
-    let switch = |read: fn(&NotificationSettings) -> bool,
-                  write: fn(&mut NotificationSettings, bool)| {
-        let (reader, writer) = (store.clone(), store.clone());
-        SettingField::switch(
-            move |cx| read(&reader.read(cx).settings().notifications),
-            move |on, cx| {
-                writer.update(cx, |store, cx| {
-                    store.update(|settings| write(&mut settings.notifications, on), cx)
-                });
-            },
-        )
-        .default_value(true)
-    };
-    SettingGroup::new()
-        .title(t!("settings.notifications.title"))
-        .description(t!("settings.notifications.description"))
-        .items([
-            SettingItem::new(
-                t!("settings.notifications.programs"),
-                switch(
-                    |settings| settings.programs,
-                    |settings, on| settings.programs = on,
-                ),
-            )
-            .description(t!("settings.notifications.programs_description")),
-            SettingItem::new(
-                t!("settings.notifications.bell"),
-                switch(|settings| settings.bell, |settings, on| settings.bell = on),
-            )
-            .description(t!("settings.notifications.bell_description")),
-        ])
 }
 
 /// What the 关键字高亮 preview shows: a service's log followed on a server,

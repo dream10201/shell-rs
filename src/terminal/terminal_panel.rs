@@ -26,7 +26,7 @@ use crate::shared::{ClosableTabTitle, HostMark, LatencyLabel, RenamableTab, clos
 
 use super::{
     HostTerminalTransports, RemoteTerminalId, ReportedDirectory, TerminalEvent, TerminalLifecycle,
-    TerminalMenuItems, TerminalNotice, TerminalStatus, TerminalView, ZmodemDirection, ZmodemReply,
+    TerminalMenuItems, TerminalStatus, TerminalView, ZmodemDirection, ZmodemReply,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,7 +39,6 @@ pub enum TerminalPanelEvent {
     Connected(RemoteTerminalId, HostId),
     PromptRequested(RemoteTerminalId, HostId, ConnectionPrompt),
     HostOsDetected(HostId, HostOs),
-    Notice(RemoteTerminalId, TerminalNotice),
     /// `rz` or `sz` started: the user chooses, and the answer goes to
     /// [`TerminalPanel::zmodem_reply`].
     ZmodemAsk(RemoteTerminalId, ZmodemDirection),
@@ -214,9 +213,6 @@ impl TerminalPanel {
                     TerminalEvent::HostOsDetected(os) => {
                         this.host.os = Some(*os);
                         cx.emit(TerminalPanelEvent::HostOsDetected(this.host_id, *os));
-                    }
-                    TerminalEvent::Notice(notice) => {
-                        cx.emit(TerminalPanelEvent::Notice(this.id, notice.clone()));
                     }
                     TerminalEvent::DirectoryChanged(_) => {}
                     TerminalEvent::ZmodemAsk(direction) => {

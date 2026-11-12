@@ -199,9 +199,6 @@ pub struct Workspace {
     /// The file transfers that are running, each on a terminal's own
     /// connection.
     pub(super) transfers: Entity<crate::transfer::TransferManager>,
-    /// When each terminal last notified, of each kind, keyed by
-    /// `notices::notice_tag` and the kind.
-    pub(super) notice_times: HashMap<String, std::time::Instant>,
     /// The pending write of the window's size and place, see
     /// `window_state.rs`.
     pub(super) window_state_save: Option<Task<()>>,
@@ -473,16 +470,6 @@ impl Workspace {
 
         // A fixture's hosts start with a terminal tab each.
         let connected: Vec<HostId> = store.read(cx).starting_terminals().to_vec();
-        // A click on a terminal's system notification shows that terminal.
-        let this = cx.weak_entity();
-        let handle = window.window_handle();
-        cx.on_system_notification_response(move |response, cx| {
-            _ = handle.update(cx, |_, window, cx| {
-                _ = this.update(cx, |this, cx| {
-                    this.on_notice_clicked(&response.tag, window, cx)
-                });
-            });
-        });
         // ⌘Q (and on Windows and Linux the window's close button) waits for
         // a last round of sync.
         let this = cx.weak_entity();
@@ -653,7 +640,6 @@ impl Workspace {
             active_prompt: None,
             focus_handle,
             transfers,
-            notice_times: HashMap::new(),
             window_state_save: None,
             sidebar_widths: launch_settings.sidebar_widths,
             sidebar_widths_save: None,
@@ -2094,9 +2080,6 @@ fn new_terminal_panel(
                 this.store
                     .update(cx, |store, cx| store.set_host_os(host_id, Some(os), cx));
             }
-            TerminalPanelEvent::Notice(terminal_id, notice) => {
-                this.on_terminal_notice(CenterTab::Terminal(*terminal_id), notice, window, cx)
-            }
             TerminalPanelEvent::ZmodemAsk(terminal_id, direction) => {
                 this.ask_zmodem(CenterTab::Terminal(*terminal_id), *direction, window, cx)
             }
@@ -2204,9 +2187,6 @@ fn new_local_terminal_panel(
             }
             LocalTerminalPanelEvent::WorkingDirectory(id, folder) => {
                 this.on_local_terminal_moved(*id, folder, cx);
-            }
-            LocalTerminalPanelEvent::Notice(id, notice) => {
-                this.on_terminal_notice(CenterTab::LocalTerminal(*id), notice, window, cx)
             }
             LocalTerminalPanelEvent::ZmodemAsk(id, direction) => {
                 this.ask_zmodem(CenterTab::LocalTerminal(*id), *direction, window, cx)

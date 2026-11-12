@@ -716,7 +716,6 @@ async fn highlight_rules_are_edited_in_place_on_their_page(cx: &mut TestAppConte
         window.click(("highlight-rule-color", 3usize), cx);
         window.press("secondary-a", cx);
         window.input("#D946EF", cx);
-        window.click(("highlight-rule-notify", 3usize), cx);
         window.click(("highlight-rule-enabled", 0usize), cx);
     });
     cx.run_until_parked();
@@ -724,7 +723,7 @@ async fn highlight_rules_are_edited_in_place_on_their_page(cx: &mut TestAppConte
     assert_eq!(rules[3].pattern, r"OutOfMemory\w*");
     assert_eq!(rules[3].note, "内存溢出");
     assert_eq!(rules[3].color, HighlightColor::from_hex("#d946ef").unwrap());
-    assert!(rules[3].enabled && rules[3].notify);
+    assert!(rules[3].enabled);
     assert!(!rules[0].enabled);
 
     // The color picker opens on its palette. (Its swatches are keyed by

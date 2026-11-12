@@ -1,8 +1,9 @@
 //! The folder a shell says it is in: OSC 7 (`file://host/path`, which the
 //! setup ShellRS offers writes, and fish sends by itself) and iTerm2's OSC
-//! 1337 `CurrentDir=`. `NoticeScanner` finds them in the output on the
-//! parser thread; the right sidebar's 文件 follows them.
+//! 1337 `CurrentDir=`. Alacritty drops both, so `DirectoryScanner` finds them
+//! in the output on the parser thread; the right sidebar's 文件 follows them.
 
+use alacritty_terminal::vte::{Parser, Perform};
 use percent_encoding::percent_decode_str;
 
 /// A folder the terminal's output reported: where its shell is, if the
@@ -31,6 +32,41 @@ impl ReportedDirectory {
             (None, _) => true,
             (Some(host), Some(name)) => host.eq_ignore_ascii_case(name),
             (Some(_), None) => false,
+        }
+    }
+}
+
+/// Finds the folders a shell reports in terminal output, however the output
+/// is split into chunks.
+pub(super) struct DirectoryScanner {
+    parser: Parser,
+    directory: Option<ReportedDirectory>,
+}
+
+impl Default for DirectoryScanner {
+    fn default() -> Self {
+        Self {
+            parser: Parser::new(),
+            directory: None,
+        }
+    }
+}
+
+impl DirectoryScanner {
+    /// The last folder `bytes` report, if they report one: only the latest
+    /// one matters.
+    pub fn scan(&mut self, bytes: &[u8]) -> Option<ReportedDirectory> {
+        self.parser.advance(&mut Found(&mut self.directory), bytes);
+        self.directory.take()
+    }
+}
+
+struct Found<'a>(&'a mut Option<ReportedDirectory>);
+
+impl Perform for Found<'_> {
+    fn osc_dispatch(&mut self, params: &[&[u8]], _: bool) {
+        if let Some(directory) = reported_directory(params) {
+            *self.0 = Some(directory);
         }
     }
 }
@@ -166,5 +202,16 @@ mod tests {
         for path in ["relative", "/tmp\ninjected", "/tmp\r", "/tmp\x1b"] {
             assert!(at(None, path).unwrap().cd_command().is_none());
         }
+    }
+
+    #[test]
+    fn a_reported_folder_is_found_across_chunks_the_last_one_counting() {
+        let mut scanner = DirectoryScanner::default();
+        assert_eq!(scanner.scan(b"\x1b]7;file://web-01/srv/a"), None);
+        let directory = scanner
+            .scan(b"%20b\x07\x1b]9;done\x07\x1b]7;file://web-01/tmp\x07")
+            .unwrap();
+        assert_eq!(directory.path, "/tmp");
+        assert_eq!(scanner.scan(b"plain"), None);
     }
 }

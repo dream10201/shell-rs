@@ -143,7 +143,7 @@ pub enum TerminalTransportEvent {
     WorkingDirectory(PathBuf),
     /// What the terminal showed when it last closed, drawn before anything
     /// else. Sent first, by a local transport given it; nothing watches it
-    /// as it would output (highlight rules, notices, ZMODEM).
+    /// as it would output (reported folders, ZMODEM).
     Replay(Vec<u8>),
     Exited {
         code: u32,

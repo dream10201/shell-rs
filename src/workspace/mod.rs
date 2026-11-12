@@ -13,7 +13,6 @@ mod forwards;
 mod front;
 mod imports;
 mod links;
-mod notices;
 mod projects;
 mod recent_hosts;
 mod sidebar;

@@ -204,25 +204,6 @@ settings.sidebar_tools.keywords:
   zh-CN: 侧栏,右侧栏,工具,显示,隐藏,项目
   en: sidebar,tools,show,hide,projects
 
-settings.notifications.title:
-  zh-CN: 通知
-  en: Notifications
-settings.notifications.description:
-  zh-CN: ShellRS 不在前台时发系统通知；在前台但终端在别的标签时，在窗口右上角提示，点一下切过去。
-  en: When ShellRS is in the background, you get a system notification. When it’s in front but the terminal is in another tab, a notice appears at the top right of the window; click it to go there.
-settings.notifications.programs:
-  zh-CN: 程序发送的通知
-  en: Notifications from programs
-settings.notifications.programs_description:
-  zh-CN: 远程或本地程序用 OSC 9 / 777 请求的通知，例如 printf '\e]9;完成\a'。
-  en: Notifications that remote or local programs ask for with OSC 9 / 777, for example printf '\e]9;Done\a'.
-settings.notifications.bell:
-  zh-CN: 响铃时通知
-  en: Notify on bell
-settings.notifications.bell_description:
-  zh-CN: 终端就在当前标签时不提示。
-  en: Not when the terminal is the current tab.
-
 # 终端 › 本地终端.
 settings.local_terminal.title:
   zh-CN: 本地终端
@@ -283,11 +264,11 @@ settings.highlight.rules:
   zh-CN: 规则（%{count}）
   en: Rules (%{count})
 settings.highlight.rules_description:
-  zh-CN: 规则按从上到下应用，勾选「通知」的规则在看不到终端时弹出提醒。
-  en: Rules apply from top to bottom. A rule with Notify checked alerts you when its terminal isn’t in view.
+  zh-CN: 规则按从上到下应用。
+  en: Rules apply from top to bottom.
 settings.highlight.rules_keywords:
-  zh-CN: 规则,正则,关键字,高亮,颜色,备注,通知,排序
-  en: rule,regex,keyword,highlight,color,note,notify,order
+  zh-CN: 规则,正则,关键字,高亮,颜色,备注,排序
+  en: rule,regex,keyword,highlight,color,note,order
 
 settings.window.title:
   zh-CN: 窗口
@@ -395,9 +376,6 @@ settings.highlight.column_note:
 settings.highlight.column_color:
   zh-CN: 颜色
   en: Color
-settings.highlight.column_notify:
-  zh-CN: 通知
-  en: Notify
 settings.highlight.drag:
   zh-CN: 拖动调整顺序
   en: Drag to reorder

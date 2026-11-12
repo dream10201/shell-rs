@@ -74,9 +74,8 @@ Source: "{#BuildDir}\shellrs.exe"; DestDir: "{app}"; Flags: ignoreversion
 Type: files; Name: "{app}\shellrs-cli.exe"
 
 [Icons]
-; The AppUserModelID ShellRS gives itself (`set_app_identity`, for its
-; notifications): the same here keeps a pinned shortcut and the running
-; window one taskbar button.
+; The AppUserModelID ShellRS gives itself (`set_app_identity`): the same
+; here keeps a pinned shortcut and the running window one taskbar button.
 Name: "{autoprograms}\ShellRS"; Filename: "{app}\shellrs.exe"; AppUserModelID: "com.shellrs.ShellRS"
 Name: "{autodesktop}\ShellRS"; Filename: "{app}\shellrs.exe"; AppUserModelID: "com.shellrs.ShellRS"; Tasks: desktopicon
 

@@ -200,13 +200,6 @@ workspace.auth.continue:
   zh-CN: 继续
   en: Continue
 
-workspace.notice.titled:
-  zh-CN: "%{tab}：%{title}"
-  en: "%{tab}: %{title}"
-workspace.notice.bell:
-  zh-CN: "%{tab}：响铃"
-  en: "%{tab}: Bell"
-
 workspace.credential.public_key_copied:
   zh-CN: 已复制公钥
   en: Copied the public key

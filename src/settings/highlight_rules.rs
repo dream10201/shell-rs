@@ -333,13 +333,6 @@ impl HighlightRulesEditor {
                     .flex_shrink_0()
                     .child(t!("settings.highlight.column_color")),
             )
-            .child(
-                // Wide enough for "Notify" as well as 通知.
-                div()
-                    .w_12()
-                    .flex_shrink_0()
-                    .child(t!("settings.highlight.column_notify")),
-            )
             .child(div().w_6().flex_shrink_0())
     }
 
@@ -459,17 +452,6 @@ impl HighlightRulesEditor {
                                 .font_family(mono),
                         ),
                     ),
-            )
-            .child(
-                div().w_12().flex_shrink_0().child(
-                    Checkbox::new(("highlight-rule-notify", id))
-                        .checked(row.rule.notify)
-                        .small()
-                        .on_click(cx.listener(move |this, checked: &bool, _, cx| {
-                            let notify = *checked;
-                            this.edit(id, |rule| rule.notify = notify, cx);
-                        })),
-                ),
             )
             .child(
                 div().w_6().flex_shrink_0().child(

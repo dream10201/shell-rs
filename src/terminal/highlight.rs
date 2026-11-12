@@ -1,5 +1,4 @@
-//! 关键字高亮: rules that color what matches them in every terminal, and may
-//! tell the user when new output matches while they look elsewhere.
+//! 关键字高亮: rules that color what matches them in every terminal.
 //!
 //! Only what is shown changes. A rule matches the text of the grid, what the
 //! emulator made of the output with escape sequences and carriage returns
@@ -15,17 +14,13 @@
 //! links use: its DFA cannot build `\b`, finds `^` only on the first line it
 //! looks at, and sees the blanks that pad a row before `$`.
 
-use std::collections::VecDeque;
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
-use alacritty_terminal::event::EventListener;
 use alacritty_terminal::grid::Dimensions as _;
 use alacritty_terminal::index::{Column, Line, Point};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Term, TermMode};
-use alacritty_terminal::vte::ansi::{Processor, Timeout as _};
 use gpui_kit::{App, Global, Hsla, Rgba, SharedString};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -36,15 +31,7 @@ use crate::i18n::t;
 /// The longest pattern a rule may have, in characters.
 pub const PATTERN_LIMIT: usize = 500;
 
-/// How long a line already told of stays quiet when it shows up again, the
-/// way a program that redraws its lines (apt, docker pull) shows it.
-const RETELL_AFTER: Duration = Duration::from_secs(300);
-
-/// How many lines told of are remembered.
-const TOLD_LIMIT: usize = 64;
-
-/// One rule: a regular expression, the color its matches show in, and
-/// whether to tell of them.
+/// One rule: a regular expression and the color its matches show in.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HighlightRule {
@@ -52,12 +39,9 @@ pub struct HighlightRule {
     /// A regular expression, case and all; `(?i)` ignores case. Empty in a
     /// row just added, when it matches nothing.
     pub pattern: String,
-    /// What the rule is for, in the user's words; a notification's title.
+    /// What the rule is for, in the user's words.
     pub note: String,
     pub color: HighlightColor,
-    /// Tell the user when a finished line of new output matches, while they
-    /// cannot see the terminal.
-    pub notify: bool,
 }
 
 impl Default for HighlightRule {
@@ -67,7 +51,6 @@ impl Default for HighlightRule {
             pattern: String::new(),
             note: String::new(),
             color: HighlightColor::RED,
-            notify: false,
         }
     }
 }
@@ -129,7 +112,7 @@ impl From<HighlightColor> for String {
     }
 }
 
-/// The rules a new installation starts with, none of them notifying. Their
+/// The rules a new installation starts with. Their
 /// notes are in the interface language of the day they are made: from then
 /// on they are the user's.
 pub fn default_rules() -> Vec<HighlightRule> {
@@ -190,21 +173,6 @@ impl HighlightRule {
                 _ => PatternError::Invalid,
             })
     }
-
-    /// What a notification calls the rule: its note, or its pattern.
-    fn title(&self) -> &str {
-        if self.note.trim().is_empty() {
-            &self.pattern
-        } else {
-            &self.note
-        }
-    }
-}
-
-/// Whether `regex` finds some text in `text`. A match of nothing, as `\b`
-/// or `x*` make, colors nothing and tells of nothing.
-fn finds_text(regex: &Regex, text: &str) -> bool {
-    regex.find_iter(text).any(|found| !found.is_empty())
 }
 
 /// The rules in effect, compiled once for every terminal: none while
@@ -216,12 +184,6 @@ pub struct HighlightSet {
     rules: Vec<HighlightRule>,
     compiled: Vec<Option<Regex>>,
 }
-
-// Shared by the UI thread and every terminal's parser thread.
-const _: fn() = || {
-    fn shared<T: Send + Sync>() {}
-    shared::<HighlightSet>();
-};
 
 impl HighlightSet {
     pub fn new(enabled: bool, rules: Vec<HighlightRule>) -> Self {
@@ -247,11 +209,6 @@ impl HighlightSet {
         self.enabled == enabled && self.rules == rules
     }
 
-    /// Whether any rule tells of the lines it matches.
-    pub fn notifies(&self) -> bool {
-        self.notifying().next().is_some()
-    }
-
     /// The rules that match, by their index.
     fn active(&self) -> impl DoubleEndedIterator<Item = (usize, &HighlightRule, &Regex)> {
         self.rules
@@ -259,10 +216,6 @@ impl HighlightSet {
             .zip(&self.compiled)
             .enumerate()
             .filter_map(|(ix, (rule, compiled))| Some((ix, rule, compiled.as_ref()?)))
-    }
-
-    fn notifying(&self) -> impl Iterator<Item = (usize, &HighlightRule, &Regex)> {
-        self.active().filter(|(_, rule, _)| rule.notify)
     }
 
     /// The runs of `text` the rules color, in order, by byte range. Where
@@ -346,17 +299,6 @@ impl TerminalHighlights {
     }
 }
 
-/// The rules a terminal's parser thread checks new lines against, swapped
-/// by the engine when they change.
-pub(super) type SharedHighlights = Arc<Mutex<Arc<HighlightSet>>>;
-
-pub(super) fn current(shared: &SharedHighlights) -> Arc<HighlightSet> {
-    shared
-        .lock()
-        .unwrap_or_else(|error| error.into_inner())
-        .clone()
-}
-
 /// The color of each cell in view, by its row on screen and column.
 pub struct ScreenHighlights {
     columns: usize,
@@ -410,7 +352,7 @@ struct LineText {
 impl LineText {
     /// The text of rows `first..=last`, without the blanks that pad the
     /// last one. A wide character's spacer is no character; a concealed one
-    /// reads as a blank, so it neither matches nor shows in a notification.
+    /// reads as a blank, so it does not match.
     fn read<T>(term: &Term<T>, first: Line, last: Line) -> Self {
         let mut text = String::new();
         let mut cells = Vec::new();
@@ -476,118 +418,12 @@ fn line_end<T>(term: &Term<T>, line: Line) -> Line {
     end
 }
 
-/// The text of the logical line the cursor is on.
-fn cursor_line<T>(term: &Term<T>) -> String {
-    let line = term.grid().cursor.point.line;
-    LineText::read(term, line_start(term, line), line_end(term, line)).text
-}
-
-/// Feed `bytes` to the emulator. With `watching`, also take the text of
-/// every line a line feed finishes, just before it does: the cursor is then
-/// still on that line, whose text is final, carriage returns and colors
-/// applied. Not on the alternate screen, whose programs redraw rather than
-/// print, nor while a synchronized update holds its output back, as the
-/// grid then still shows what came before.
-pub(super) fn advance_watching<T: EventListener>(
-    processor: &mut Processor,
-    term: &mut Term<T>,
-    bytes: &[u8],
-    watching: bool,
-) -> Vec<String> {
-    if !watching {
-        processor.advance(term, bytes);
-        return Vec::new();
-    }
-    let mut finished = Vec::new();
-    let mut rest = bytes;
-    while let Some(newline) = rest.iter().position(|byte| *byte == b'\n') {
-        processor.advance(term, &rest[..newline]);
-        if !term.mode().contains(TermMode::ALT_SCREEN)
-            && !processor.sync_timeout().pending_timeout()
-        {
-            finished.push(cursor_line(term));
-        }
-        // The line feed starts the next part.
-        rest = &rest[newline..];
-        processor.advance(term, &rest[..1]);
-        rest = &rest[1..];
-    }
-    processor.advance(term, rest);
-    finished
-}
-
-/// A finished line of new output that a notifying rule matched: the rule,
-/// by its note or pattern, and the line.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KeywordHit {
-    pub rule: String,
-    pub line: String,
-}
-
-/// Checks the lines a terminal finishes against the notifying rules, on its
-/// parser thread.
-pub(super) struct LineWatcher {
-    set: Arc<HighlightSet>,
-    /// The lines told of lately, by rule, and when.
-    told: VecDeque<(usize, String, Instant)>,
-}
-
-impl LineWatcher {
-    pub fn new(set: Arc<HighlightSet>) -> Self {
-        Self {
-            set,
-            told: VecDeque::new(),
-        }
-    }
-
-    /// Follow the rules as they change. What was told under the old ones is
-    /// forgotten.
-    pub fn sync(&mut self, set: Arc<HighlightSet>) {
-        if !Arc::ptr_eq(&self.set, &set) {
-            self.set = set;
-            self.told.clear();
-        }
-    }
-
-    pub fn is_watching(&self) -> bool {
-        self.set.notifies()
-    }
-
-    /// The first of `lines` a notifying rule matches, unless that rule told
-    /// of the same line in the last five minutes. One at most: a burst of
-    /// output is one notice.
-    pub fn check(&mut self, lines: Vec<String>, now: Instant) -> Option<KeywordHit> {
-        self.told
-            .retain(|(_, _, at)| now.saturating_duration_since(*at) < RETELL_AFTER);
-        for line in lines {
-            for (ix, rule, regex) in self.set.notifying() {
-                if !finds_text(regex, &line)
-                    || self
-                        .told
-                        .iter()
-                        .any(|(told, text, _)| *told == ix && *text == line)
-                {
-                    continue;
-                }
-                if self.told.len() == TOLD_LIMIT {
-                    self.told.pop_front();
-                }
-                self.told.push_back((ix, line.clone(), now));
-                return Some(KeywordHit {
-                    rule: rule.title().to_string(),
-                    line,
-                });
-            }
-        }
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use alacritty_terminal::event::VoidListener;
     use alacritty_terminal::grid::Scroll;
     use alacritty_terminal::term::Config;
+    use alacritty_terminal::vte::ansi::Processor;
 
     use super::*;
     use crate::terminal::TerminalSize;
@@ -601,13 +437,6 @@ mod tests {
             pattern: pattern.into(),
             color,
             ..HighlightRule::default()
-        }
-    }
-
-    fn notifying(rule: HighlightRule) -> HighlightRule {
-        HighlightRule {
-            notify: true,
-            ..rule
         }
     }
 
@@ -635,12 +464,6 @@ mod tests {
 
         fn feed(&mut self, text: &str) {
             self.processor.advance(&mut self.term, text.as_bytes());
-        }
-
-        /// The lines finished while feeding `text`, as the parser thread
-        /// collects them.
-        fn feed_watching(&mut self, text: &str) -> Vec<String> {
-            advance_watching(&mut self.processor, &mut self.term, text.as_bytes(), true)
         }
 
         fn resize(&mut self, columns: usize, rows: usize) {
@@ -847,85 +670,6 @@ mod tests {
         assert_eq!(
             screen.marks(vec![rule("ERROR", RED)]),
             runs(&[("ERROR", RED)])
-        );
-    }
-
-    #[test]
-    fn a_line_is_taken_when_its_line_feed_comes() {
-        let mut screen = Screen::new(40, 4);
-        assert!(screen.feed_watching("prompt$ ERR").is_empty());
-        assert_eq!(screen.feed_watching("OR boom\r\n"), ["prompt$ ERROR boom"]);
-        // Overwritten by a carriage return, the first text is gone.
-        assert_eq!(screen.feed_watching("ERROR\rok   \r\n"), ["ok"]);
-        assert_eq!(screen.feed_watching("a\nb\n"), ["a", " b"]);
-    }
-
-    #[test]
-    fn a_wrapped_line_is_taken_whole() {
-        let mut screen = Screen::new(10, 4);
-        assert_eq!(
-            screen.feed_watching("0123456789ERROR\r\n"),
-            ["0123456789ERROR"]
-        );
-    }
-
-    #[test]
-    fn full_screen_programs_and_synchronized_updates_are_not_watched() {
-        let mut screen = Screen::new(20, 4);
-        assert!(screen.feed_watching("\x1b[?1049hERROR\r\n").is_empty());
-        assert_eq!(
-            screen.feed_watching("\x1b[?1049lback\r\n").len(),
-            1,
-            "the main screen is watched again"
-        );
-        assert!(screen.feed_watching("\x1b[?2026hERROR\r\n").is_empty());
-    }
-
-    #[test]
-    fn a_notifying_rule_tells_of_a_line_once_in_a_while() {
-        let rules = Arc::new(set(vec![
-            rule("WARN", AMBER),
-            notifying(HighlightRule {
-                note: "错误".into(),
-                ..rule("ERROR", RED)
-            }),
-        ]));
-        let mut watcher = LineWatcher::new(rules);
-        assert!(watcher.is_watching());
-        let start = Instant::now();
-        let lines = |lines: &[&str]| lines.iter().map(|line| line.to_string()).collect();
-        assert_eq!(watcher.check(lines(&["WARN low disk"]), start), None);
-        // Named by its note.
-        assert_eq!(
-            watcher.check(lines(&["ok", "1 ERROR a", "2 ERROR b"]), start),
-            Some(KeywordHit {
-                rule: "错误".into(),
-                line: "1 ERROR a".into()
-            })
-        );
-        // Redrawn, the same line is not news; another one is.
-        assert_eq!(watcher.check(lines(&["1 ERROR a"]), start), None);
-        assert!(watcher.check(lines(&["2 ERROR b"]), start).is_some());
-        let later = start + RETELL_AFTER;
-        assert!(watcher.check(lines(&["1 ERROR a"]), later).is_some());
-        // New rules start afresh; without a note, the pattern names it.
-        watcher.sync(Arc::new(set(vec![notifying(rule("ERROR", RED))])));
-        assert_eq!(
-            watcher
-                .check(lines(&["1 ERROR a"]), later)
-                .map(|hit| hit.rule),
-            Some("ERROR".into())
-        );
-        watcher.sync(Arc::new(set(vec![rule("ERROR", RED)])));
-        assert!(!watcher.is_watching());
-    }
-
-    #[test]
-    fn a_match_of_nothing_tells_of_nothing() {
-        let mut watcher = LineWatcher::new(Arc::new(set(vec![notifying(rule(r"\b", RED))])));
-        assert_eq!(
-            watcher.check(vec!["any words".into()], Instant::now()),
-            None
         );
     }
 }

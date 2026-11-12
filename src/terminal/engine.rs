@@ -25,13 +25,9 @@ use crate::connection::{ConnectionPrompt, ConnectionPromptReply, Latency};
 use crate::host::HostOs;
 use crate::i18n::t;
 
-use super::directory::ReportedDirectory;
-use super::highlight::{
-    HighlightColor, KeywordHit, LineWatcher, SharedHighlights, TerminalHighlights,
-    advance_watching, current,
-};
+use super::directory::{DirectoryScanner, ReportedDirectory};
+use super::highlight::{HighlightColor, HighlightSet, TerminalHighlights};
 use super::links::{LinkMarker, url_search, visible_links};
-use super::notices::{NoticeScanner, ProgramNotice, TerminalNotice};
 use super::search::{MatchMarker, SearchDirection, SearchMark, SearchPosition, TerminalSearch};
 use super::zmodem::{Fed, Shown, Zmodem, ZmodemControl, ZmodemDirection, ZmodemReply};
 use super::{
@@ -102,9 +98,8 @@ pub struct TerminalEngine {
     search: RefCell<Option<TerminalSearch>>,
     /// Finds the web addresses on screen, built once.
     url_search: RefCell<RegexSearch>,
-    /// The 关键字高亮 rules, shared with the parser thread, which checks new
-    /// lines against them; swapped when the settings change them.
-    highlights: SharedHighlights,
+    /// The 关键字高亮 rules; swapped when the settings change them.
+    highlights: Arc<HighlightSet>,
     _highlights_observer: gpui_kit::Subscription,
     /// The theme, shared with the parser thread, which answers the colors
     /// programs ask for from it.
@@ -131,24 +126,19 @@ impl TerminalEngine {
         // threads therefore never wake GPUI's local executor directly, and a
         // burst of terminal bytes results in a single render notification.
         let (event_sender, event_receiver) = mpsc::channel();
-        let highlights = Arc::new(Mutex::new(TerminalHighlights::current(cx)));
         let theme = Arc::new(Mutex::new(TerminalColors::current(cx)));
         let runtime = TerminalRuntime::start(
             generation,
             size,
             factory.create(),
             event_sender.clone(),
-            highlights.clone(),
             theme.clone(),
             TerminalInteraction::current(cx),
         );
         let channels = TerminalChannels::default();
         channels.attach(runtime.commands.clone());
         let highlights_observer = cx.observe_global::<TerminalHighlights>(|this, cx| {
-            *this
-                .highlights
-                .lock()
-                .unwrap_or_else(|error| error.into_inner()) = TerminalHighlights::current(cx);
+            this.highlights = TerminalHighlights::current(cx);
             cx.notify();
         });
         let theme_observer = cx.observe_global::<TerminalColors>(|this, cx| {
@@ -170,7 +160,7 @@ impl TerminalEngine {
             latency: None,
             search: RefCell::new(None),
             url_search: RefCell::new(url_search()),
-            highlights,
+            highlights: TerminalHighlights::current(cx),
             _highlights_observer: highlights_observer,
             theme,
             _theme_observer: theme_observer,
@@ -283,18 +273,6 @@ impl TerminalEngine {
             TerminalUiEventKind::ClipboardStore(text) => {
                 cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
             }
-            TerminalUiEventKind::Notice(notice) => {
-                return Some(TerminalEvent::Notice(notice.cleaned()));
-            }
-            TerminalUiEventKind::Bell => {
-                let line = cursor_line_text(&self.runtime.term.lock());
-                return Some(TerminalEvent::Notice(TerminalNotice::bell(&line)));
-            }
-            TerminalUiEventKind::Keyword(hit) => {
-                return Some(TerminalEvent::Notice(TerminalNotice::keyword(
-                    &hit.rule, &hit.line,
-                )));
-            }
             TerminalUiEventKind::ZmodemAsk(direction) => {
                 return Some(TerminalEvent::ZmodemAsk(direction));
             }
@@ -329,7 +307,6 @@ impl TerminalEngine {
             self.size,
             self.factory.create(),
             self.event_sender.clone(),
-            self.highlights.clone(),
             self.theme.clone(),
             TerminalInteraction::current(cx),
         );
@@ -699,7 +676,7 @@ impl TerminalEngine {
             .unwrap_or_default();
         let mut marker = MatchMarker::new(&matches, focused.as_ref());
         let mut links = LinkMarker::new(visible_links(&term, &mut self.url_search.borrow_mut()));
-        let highlights = current(&self.highlights).screen(&term);
+        let highlights = self.highlights.screen(&term);
         let mut cells: Vec<_> = content
             .display_iter
             .map(|indexed| {
@@ -765,25 +742,6 @@ fn scroll_to(term: &mut AlacrittyTerm, lines: usize) {
     term.scroll_display(Scroll::Delta(delta));
 }
 
-/// The text of the line the cursor is on, or of the nearest line above it
-/// on screen that has any: where a program that rings for an answer has
-/// its question.
-fn cursor_line_text(term: &AlacrittyTerm) -> String {
-    let mut line = term.grid().cursor.point.line;
-    loop {
-        let text: String = term.grid()[line]
-            .into_iter()
-            .filter(|cell| !cell.flags.contains(Flags::WIDE_CHAR_SPACER))
-            .map(|cell| cell.c)
-            .collect();
-        let text = text.trim();
-        if !text.is_empty() || line.0 <= 0 {
-            return text.to_string();
-        }
-        line = Line(line.0 - 1);
-    }
-}
-
 /// Keep the leading cell and spacer of a full-width glyph visually atomic,
 /// for the selection and for find highlights alike.
 /// Alacritty stores CJK glyphs in one `WIDE_CHAR` cell followed by a
@@ -827,8 +785,6 @@ pub enum TerminalEvent {
     Started,
     PromptRequested(ConnectionPrompt),
     HostOsDetected(HostOs),
-    /// Something to show the user while they look elsewhere.
-    Notice(TerminalNotice),
     /// The shell reported another folder than the last one.
     DirectoryChanged(ReportedDirectory),
     /// A local shell is in another folder than the last one, as this
@@ -861,7 +817,6 @@ impl TerminalRuntime {
         size: TerminalSize,
         transport: Box<dyn super::TerminalTransport>,
         ui_events: mpsc::Sender<TerminalUiEvent>,
-        highlights: SharedHighlights,
         theme: SharedTheme,
         interaction: TerminalInteraction,
     ) -> Self {
@@ -887,9 +842,7 @@ impl TerminalRuntime {
         let mut parser = Parser {
             term: term.clone(),
             processor: Processor::new(),
-            notices: NoticeScanner::default(),
-            watcher: LineWatcher::new(current(&highlights)),
-            highlights,
+            directories: DirectoryScanner::default(),
             proxy: parser_proxy,
             zmodem: Zmodem::default(),
             transferring: transferring.clone(),
@@ -1137,11 +1090,8 @@ impl EventListener for TerminalEventProxy {
                 });
                 self.reply(Reply::Bytes(response.into_bytes()));
             }
-            Event::Bell => {
-                self.send(TerminalUiEventKind::Bell);
-                self.wakeup();
-            }
             Event::Wakeup
+            | Event::Bell
             | Event::MouseCursorDirty
             | Event::CursorBlinkingChange
             | Event::Exit
@@ -1230,15 +1180,10 @@ enum TerminalUiEventKind {
     Latency(Latency),
     /// A program's copy, by OSC 52.
     ClipboardStore(String),
-    /// A notification a program asked for, by OSC 9 or 777.
-    Notice(ProgramNotice),
     /// The folder the shell reported, by OSC 7 or 1337.
     Directory(ReportedDirectory),
     /// The folder a local shell is in, as this computer tells.
     WorkingDirectory(PathBuf),
-    Bell,
-    /// A finished line that a 关键字高亮 rule tells of.
-    Keyword(KeywordHit),
     /// `rz` or `sz` started: the user chooses files or a folder.
     ZmodemAsk(ZmodemDirection),
 }
@@ -1314,10 +1259,8 @@ fn earliest(one: Option<Instant>, other: Option<Instant>) -> Option<Instant> {
 struct Parser {
     term: Arc<FairMutex<AlacrittyTerm>>,
     processor: Processor,
-    /// Alacritty drops the notifications programs ask for.
-    notices: NoticeScanner,
-    watcher: LineWatcher,
-    highlights: SharedHighlights,
+    /// Alacritty drops the folders shells report.
+    directories: DirectoryScanner,
     proxy: TerminalEventProxy,
     /// Takes the output first: `rz` and `sz`'s is not for the screen.
     zmodem: Zmodem,
@@ -1353,33 +1296,18 @@ impl Parser {
             .store(self.zmodem.active(), Ordering::Release);
     }
 
-    /// Output for the emulator, and for what reads it beside: 关键字高亮,
-    /// the programs' notifications and folders.
+    /// Output for the emulator, and for what reads it beside: the folders
+    /// shells report.
     fn output(&mut self, bytes: &[u8]) {
-        self.watcher.sync(current(&self.highlights));
-        // The lines are only read under the lock; the rules match them
-        // once it is let go.
-        let lines = {
+        {
             let mut term = self.term.lock();
             // Output that never pauses gives the wait no chance to see the
             // time is up.
             end_overdue_sync(&mut self.processor, &mut term);
-            let lines = advance_watching(
-                &mut self.processor,
-                &mut term,
-                bytes,
-                self.watcher.is_watching(),
-            );
+            self.processor.advance(&mut *term, bytes);
             self.proxy.answer(&term);
-            lines
-        };
-        if let Some(hit) = self.watcher.check(lines, Instant::now()) {
-            self.proxy.send(TerminalUiEventKind::Keyword(hit));
         }
-        for notice in self.notices.scan(bytes) {
-            self.proxy.send(TerminalUiEventKind::Notice(notice));
-        }
-        if let Some(directory) = self.notices.take_directory() {
+        if let Some(directory) = self.directories.scan(bytes) {
             self.proxy.send(TerminalUiEventKind::Directory(directory));
         }
     }
@@ -1704,32 +1632,6 @@ mod tests {
                 link("https://elsewhere.z", "https://x.y/"),
             ]
         );
-    }
-
-    #[test]
-    fn notifications_and_the_bell_reach_the_ui() {
-        let (mut term, _, ui_events) = test_term_with_channels(40, 4);
-        // The parser thread scans what it feeds the terminal.
-        let output = "构建中\r\n\x1b]777;notify;构建;完成\x07ok?\x07".as_bytes();
-        let mut scanner = NoticeScanner::default();
-        let found = scanner.scan(output);
-        feed(&mut term, output);
-        assert_eq!(
-            found,
-            [ProgramNotice {
-                title: Some("构建".into()),
-                body: "完成".into()
-            }]
-        );
-        let bells = ui_events
-            .try_iter()
-            .filter(|event| matches!(event.kind, TerminalUiEventKind::Bell))
-            .count();
-        assert_eq!(bells, 1, "the BEL ending the OSC does not ring");
-        assert_eq!(cursor_line_text(&term), "ok?");
-        // An empty cursor line gives the nearest line above with text.
-        feed(&mut term, b"\r\n\r\n");
-        assert_eq!(cursor_line_text(&term), "ok?");
     }
 
     #[test]
@@ -2203,7 +2105,6 @@ mod tests {
             TerminalSize::new(40, 4, 8, 16),
             Box::new(ScriptedTransport(script)),
             ui_events,
-            Arc::default(),
             Arc::new(Mutex::new(TerminalTheme::default_for(
                 gpui_kit::component::ThemeMode::Light,
             ))),
@@ -2353,7 +2254,6 @@ mod tests {
                 commands: commands_out,
             }),
             ui_events,
-            Arc::default(),
             Arc::new(Mutex::new(TerminalTheme::default_for(
                 gpui_kit::component::ThemeMode::Light,
             ))),

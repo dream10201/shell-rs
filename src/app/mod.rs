@@ -58,9 +58,8 @@ pub const CREDENTIAL_PANEL_CONTEXT: &str = "CredentialPanel";
 /// `packaging/linux/shellrs.desktop` names them. Unused elsewhere.
 pub const DESKTOP_APP_ID: &str = "shellrs";
 
-/// The identity the system shows ShellRS's notifications and taskbar button
-/// under: the macOS bundle's, which the Windows setup gives its shortcuts
-/// too. A portable copy has one of its own, so that next to an installed
+/// The identity the system shows ShellRS's taskbar button under: the macOS
+/// bundle's, which the Windows setup gives its shortcuts too. A portable copy has one of its own, so that next to an installed
 /// copy it gets its own taskbar button and pinning it pins this copy.
 pub fn app_identity() -> &'static str {
     if portable_root().is_some() {

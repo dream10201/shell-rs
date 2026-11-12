@@ -49,8 +49,6 @@ pub struct AppSettings {
     /// 同步.
     pub sync: SyncSettings,
     pub update: UpdateSettings,
-    /// 终端 → 通知.
-    pub notifications: NotificationSettings,
     /// 关键字高亮.
     pub terminal_highlight: TerminalHighlightSettings,
     /// 应用 → 窗口.
@@ -283,7 +281,7 @@ impl TerminalThemeSettings {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TerminalHighlightSettings {
-    /// 启用关键字高亮. Off, no rule colors anything or notifies.
+    /// 启用关键字高亮. Off, no rule colors anything.
     pub enabled: bool,
     #[serde(deserialize_with = "readable_rules")]
     pub rules: Vec<HighlightRule>,
@@ -329,26 +327,6 @@ impl Default for LocalTerminalSettings {
         Self {
             shell: None,
             keep_output: true,
-        }
-    }
-}
-
-/// 终端 → 通知: what a terminal may tell the user about while they look
-/// elsewhere. Both on until the user turns them off.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct NotificationSettings {
-    /// 程序发送的通知: OSC 9 and 777.
-    pub programs: bool,
-    /// 响铃时通知.
-    pub bell: bool,
-}
-
-impl Default for NotificationSettings {
-    fn default() -> Self {
-        Self {
-            programs: true,
-            bell: true,
         }
     }
 }
@@ -785,25 +763,12 @@ mod tests {
     }
 
     #[test]
-    fn notifications_are_on_unless_the_file_says_otherwise() {
-        let settings: AppSettings = serde_json::from_str("{}").unwrap();
-        assert!(settings.notifications.programs && settings.notifications.bell);
-        let settings: AppSettings =
-            serde_json::from_str(r#"{"notifications":{"bell":false}}"#).unwrap();
-        assert!(settings.notifications.programs && !settings.notifications.bell);
-    }
-
-    #[test]
     fn highlight_rules_start_as_examples_and_stay_as_the_user_leaves_them() {
-        // Off, with the examples each on and quiet, ready for when it is.
+        // Off, with the examples each on, ready for when it is.
         let settings: AppSettings = serde_json::from_str("{}").unwrap();
         assert!(!settings.terminal_highlight.enabled);
         assert_eq!(settings.terminal_highlight.rules, default_rules());
-        assert!(
-            default_rules()
-                .iter()
-                .all(|rule| rule.enabled && !rule.notify)
-        );
+        assert!(default_rules().iter().all(|rule| rule.enabled));
         let settings: AppSettings =
             serde_json::from_str(r#"{"terminal_highlight":{"enabled":true,"rules":[]}}"#).unwrap();
         assert!(settings.terminal_highlight.enabled);
@@ -815,8 +780,7 @@ mod tests {
                 "enabled": true,
                 "pattern": "ERROR",
                 "note": "错误",
-                "color": "#e5484d",
-                "notify": false
+                "color": "#e5484d"
             })
         );
     }
@@ -840,7 +804,7 @@ mod tests {
         assert_eq!(rules.len(), 2);
         assert_eq!(rules[0].pattern, "OOM");
         assert_eq!(rules[0].color.to_hex(), "#d946ef");
-        assert!(rules[0].enabled && rules[0].notify);
+        assert!(rules[0].enabled);
         // A row added and not filled in yet stays, to be filled in.
         assert_eq!(rules[1], HighlightRule::default());
     }
