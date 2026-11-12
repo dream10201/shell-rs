@@ -4,6 +4,19 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.7]
+
+### Improved
+
+- Upload is now two items, “Upload files…” and “Upload folder…”: the tab bar’s Upload button opens them, and the right-click menu lists both. On Linux the old picker could only choose folders.
+- While the window is off screen (minimized or hidden) or ShellRS is locked, the right sidebar’s tools no longer read the host; they read again as soon as you are back.
+- A host that prints faster than the terminal can show is slowed down by its own connection, rather than taking more and more memory.
+- Idle terminals use less of the processor.
+
+### Removed
+
+- Terminal and system notifications: notifications requested by programs, the bell alert, and the “Notify” option of keyword highlight rules. Nothing is written to the registry on Windows any more.
+
 ## [1.0.6]
 
 ### Improved
