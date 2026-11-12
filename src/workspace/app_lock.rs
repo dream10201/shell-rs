@@ -22,12 +22,16 @@ impl Workspace {
     }
 
     /// Lock, after writing what is still to be written: the key that
-    /// seals it is forgotten with the lock.
+    /// seals it is forgotten with the lock, and so are the hosts in memory
+    /// and the passwords of connections that are not saved.
     fn lock_app(&mut self, lock: &Entity<AppLock>, cx: &mut Context<Self>) {
         if lock.read(cx).is_locked() || lock.read(cx).is_busy() {
             return;
         }
-        self.store().update(cx, |store, cx| store.save_now(cx));
+        self.store().update(cx, |store, cx| {
+            store.unload(cx);
+            store.forget_temporary_passwords();
+        });
         lock.update(cx, |lock, cx| lock.lock(cx));
     }
 

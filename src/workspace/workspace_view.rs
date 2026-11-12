@@ -388,7 +388,10 @@ impl Workspace {
                     this.on_transfer_event(event, window, cx)
                 },
             ),
-            cx.observe_in(&store, window, |this, _, window, cx| {
+            cx.observe_in(&store, window, |this, store, window, cx| {
+                if store.read(cx).is_unloaded() {
+                    return;
+                }
                 // The system a host runs decides which tools it is offered.
                 this.sync_tool_sidebar(window, cx);
                 cx.notify()
@@ -593,8 +596,9 @@ impl Workspace {
             subscriptions.push(cx.observe_in(&lock, window, |this, _, window, cx| {
                 this.pause_unseen_tools(window, cx);
                 if !crate::app_lock::is_locked(cx) {
-                    // What changed while locked could not be sealed then.
-                    this.store.update(cx, |store, cx| store.save_now(cx));
+                    // The hosts come back; what changed while locked could
+                    // not be sealed then.
+                    this.store.update(cx, |store, cx| store.reload(cx));
                     for link in std::mem::take(&mut this.locked_links) {
                         this.open_link(link, window, cx);
                     }

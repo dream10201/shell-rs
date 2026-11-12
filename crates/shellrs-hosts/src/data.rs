@@ -377,6 +377,38 @@ impl HostData {
         }
     }
 
+    /// Let go of everything the database holds, and of the database: what
+    /// is left is the hosts that are not saved, where secrets and files
+    /// go, and what is still to be passed on. [`Self::reload`] brings the
+    /// rest back.
+    pub fn unload(&mut self) {
+        let before = std::mem::replace(self, Self::empty());
+        self.keep_from(before);
+    }
+
+    /// Read everything back from `database`, as [`Self::load`] does, after
+    /// [`Self::unload`].
+    pub fn reload(&mut self, database: HostDatabase) -> rusqlite::Result<()> {
+        let before = std::mem::replace(self, Self::load(database)?);
+        self.keep_from(before);
+        Ok(())
+    }
+
+    /// What is not the database's, from the data this one replaces.
+    fn keep_from(&mut self, before: Self) {
+        self.temporary = before.temporary;
+        self.external = before.external;
+        // Past the hosts that are not saved, which no database counts.
+        self.next_host_id = self.next_host_id.max(before.next_host_id);
+        self.secrets = before.secrets;
+        self.key_dir = before.key_dir;
+        self.terminal_output_dir = before.terminal_output_dir;
+        self.events = before.events;
+        self.secret_jobs = before.secret_jobs;
+        // A round that read the records before is not applied after.
+        self.sync_revision = before.sync_revision + 1;
+    }
+
     /// Attach where passwords are kept. `main` does this once at startup; the UI
     /// tests attach an in-memory store instead.
     pub fn with_secrets(mut self, secrets: SharedSecretStore) -> Self {
@@ -742,6 +774,12 @@ impl HostData {
         if self.remove_temporary_unnotified(id) {
             self.changed();
         }
+    }
+
+    /// Forget the passwords of the hosts that are not saved: they are
+    /// asked for again when one of them connects.
+    pub fn forget_temporary_passwords(&self) {
+        self.secrets.forget_all();
     }
 
     pub fn remove_temporary_unnotified(&mut self, id: HostId) -> bool {
@@ -3972,6 +4010,34 @@ mod tests {
         assert!(reopened.host(id).is_none());
         assert!(reopened.recent_hosts().next().is_none());
         assert!(reopened.bookmarks(id, BookmarkSide::Remote).is_empty());
+    }
+
+    #[test]
+    fn unloaded_data_holds_only_what_is_not_saved_and_reloads_the_rest() {
+        let data = tempfile::tempdir().unwrap();
+        let path = data.path().join("shellrs.db");
+        let mut store = HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
+        let group = store.insert_group(GroupDraft::new("生产", None));
+        let saved = store.insert(draft("web-01", Some(group)));
+        let temporary = store.insert_external(link("token", "10.0.0.9", 22), None);
+        let revision = store.sync_revision();
+
+        store.unload();
+        assert!(store.hosts().is_empty());
+        assert!(store.groups().is_empty());
+        assert!(store.host(saved).is_none());
+        assert!(store.database_changes().is_none());
+        assert!(store.host(temporary).is_some());
+        assert!(store.sync_revision() > revision);
+
+        store.reload(HostDatabase::open(&path).unwrap()).unwrap();
+        assert_eq!(store.host(saved).unwrap().name.as_ref(), "web-01");
+        assert_eq!(store.groups().len(), 1);
+        assert!(store.host(temporary).is_some());
+        // A new host does not take the id of the one that is not saved.
+        assert!(store.insert(draft("db-01", None)).0 > temporary.0);
+        let reopened = HostData::load(HostDatabase::open(&path).unwrap()).unwrap();
+        assert_eq!(reopened.hosts().len(), 2);
     }
 
     /// Run the keychain writes the changes queued, as the app does on a

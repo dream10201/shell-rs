@@ -317,6 +317,9 @@ impl Workspace {
     /// terminals now, and those renamed are called so.
     pub(super) fn on_saved_terminals_changed(&mut self, cx: &mut Context<Self>) {
         let store = self.store.read(cx);
+        if store.is_unloaded() {
+            return;
+        }
         let before = self.saved_terminals.len();
         self.saved_terminals
             .retain(|_, id| store.saved_terminal(*id).is_some());

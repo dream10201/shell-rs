@@ -123,7 +123,7 @@ jobs:
       - name: Sign ad hoc
         if: env.NOTARIZED != 'true'
         run: |
-          codesign --force --deep --sign - build/ShellRS.app
+          codesign --force --deep --options runtime --sign - build/ShellRS.app
           codesign --verify --deep --strict --verbose=2 build/ShellRS.app
       - name: Sign
         if: env.NOTARIZED == 'true'

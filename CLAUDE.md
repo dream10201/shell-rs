@@ -49,7 +49,7 @@ ShellRS（crate 与二进制都叫 `shellrs`）是 Xshell 式的 SSH 主机管�
 - **没有终端通知和系统通知**：程序请求的通知（OSC 9 / 777）、响铃提醒、关键字高亮规则的「通知」和系统通知整个去掉了，不写注册表（Windows 上系统通知要登记 `HKCU\Software\Classes\AppUserModelId`），不要加回来（用户定的）；窗口里的提示（操作结果、出错）照旧。
 - **字号**：界面字号在「外观」里，默认 16、Windows 14（对齐系统 9pt 正文）；⌘= / ⌘- / ⌘0 在终端里调终端字号，在终端外调界面字号。
 - **主题**：浅色、深色各选一套；「界面跟随主题」默认关，界面是中性灰、只有终端配色（用户试过，别改回去）。默认深色用炭灰，不用近黑。只有内置主题，只收宽松许可的配色。
-- **应用锁**：就是加密，必须设密码、关不掉（用户定的）。首次启动先设应用锁密码（至少 8 个字符，输两遍，「开始使用」），每次启动和锁定后都要输入；忘了密码数据就再也打不开。ShellRS 存的东西都封在数据目录的 `vault/` 里：数据库 `shellrs.db`、`settings.json`、`known_hosts`、`keys/`、`terminal-output/`、`compose-history.json`、`secrets`（密码、口令、代理密码、同步的密钥和登录）；不加密的只有 `vault/vault.json`（Argon2id 参数、盐、nonce、包裹后的数据密钥，没有密码）和 `window.json`（输密码前就要用）。Argon2id（256 MiB、3 轮、4 路、32 字节随机盐）把密码变成包裹密钥，包裹随机的 256 位数据密钥；每个文件用数据密钥经 XChaCha20-Poly1305 加密、绑定文件名。改密码只重新包裹数据密钥，不重写文件。完全不用系统钥匙串。不迁移：1.0.5 之前的明文数据和钥匙串里的密码不读也不删，从空库开始（用户定的）。锁定就是忘掉内存里的密钥：封着的读不了也写不了；开着的终端和端口转发照常跑（用户定的），锁定期间不新建连接、不自动重连、不同步、不保存，期间的改动解锁后写下。输密码之前窗口用系统语言和默认主题（设置也封着）。「设置 › 应用 › 应用锁」只有「立即锁定」和「修改密码…」。「多久未操作自动锁定」和「电脑锁屏时锁定」（默认关）都由工作区每秒一次的循环查，锁屏状态经 `ScreenState`（macOS 会话字典、Windows WTS、Linux logind 的 `LockedHint`）。
+- **应用锁**：就是加密，必须设密码、关不掉（用户定的）。首次启动先设应用锁密码（至少 8 个字符，输两遍，「开始使用」），每次启动和锁定后都要输入；忘了密码数据就再也打不开。ShellRS 存的东西都封在数据目录的 `vault/` 里：数据库 `shellrs.db`、`settings.json`、`known_hosts`、`keys/`、`terminal-output/`、`compose-history.json`、`secrets`（密码、口令、代理密码、同步的密钥和登录）；不加密的只有 `vault/vault.json`（Argon2id 参数、盐、nonce、包裹后的数据密钥，没有密码）和 `window.json`（输密码前就要用）。Argon2id（256 MiB、3 轮、4 路、32 字节随机盐）把密码变成包裹密钥，包裹随机的 256 位数据密钥；每个文件用数据密钥经 XChaCha20-Poly1305 加密、绑定文件名。改密码只重新包裹数据密钥，不重写文件。完全不用系统钥匙串。不迁移：1.0.5 之前的明文数据和钥匙串里的密码不读也不删，从空库开始（用户定的）。锁定就是忘掉内存里的密钥和主机库：封着的读不了也写不了，主机库写盘后从内存卸掉（`HostStore::unload`，只留不保存的主机；写不进文件或没有文件时不卸），解锁时从 `shellrs.db` 重新载入，临时连接、外部连接的密码也一并忘掉（重连时再问）；开着的终端和端口转发照常跑（用户定的），锁定期间不新建连接、不自动重连、不同步、不保存，期间的改动解锁后写下。输密码之前窗口用系统语言和默认主题（设置也封着）。「设置 › 应用 › 应用锁」只有「立即锁定」和「修改密码…」。「多久未操作自动锁定」和「电脑锁屏时锁定」（默认关）都由工作区每秒一次的循环查，锁屏状态经 `ScreenState`（macOS 会话字典、Windows WTS、Linux logind 的 `LockedHint`）。
 - **键盘快捷键**：设置里单独一类，只收主要功能；冲突就拒绝。终端里只按 Ctrl 加字母的通用快捷键让给 shell，所以「关闭标签」在 Windows / Linux 默认 Ctrl+Shift+W（同 Windows Terminal；不把 Ctrl+W 从 shell 抢过来，用户定的）；「显示或隐藏 ShellRS」是系统级快捷键，默认不设键。
 - **关键字高亮**：设置里单独一类；规则是正则、颜色任意；总开关默认关，预置三条示例。
 
@@ -103,6 +103,7 @@ Cargo workspace，`cargo` 命令覆盖全部四个包：
 - **秘密只进保险库的 `secrets`**，不进数据库，有守卫测试；`SecretStore` 是阻塞的，只在后台调用；秘密不放进派生了 `Debug` 的结构。ShellRS 保存的私钥在 `vault/keys/`；用户自己的私钥文件从不改动或删除。
 - **数据库在内存里跑，整库存成一个加密文件**：`HostStore` 在 `settle` 后稍等一下（防抖）、锁定前、解锁后、退出时把整库写进 `vault/shellrs.db`；锁着时写不了，解锁后补写。
 - **ShellRS 自己的文件一律经 `shellrs_ssh::files::{read, write}`**，不直接用 `std::fs`：装上保险库后 `vault/` 里的文件经它加解密，别处的（用户自己的私钥）原样读写；锁着时读写都失败（`PermissionDenied`）。例外只有不加密的 `vault.json` 和 `window.json`（`files::replace`）。
+- **锁着时 store 是空的，不等于被删了**：观察 store 的地方先看 `is_unloaded()`，卸掉期间不能把「找不到」当成删除（停转发、关标签、清选中）；这期间开着的终端要写的（文件夹、标题、开着的标签）由 `HostStore` 先记着，载入后补写；同步的 `with_data` 返回 `None`。
 - **登录快照在 UI 线程解析**：工作线程拿到的是查好凭据和跳板的 `HostLogin`，不读 store。
 - **对外只给 `PublicId`**，不给内部 id。
 - **改表**：升 `SCHEMA_VERSION`、加一步迁移和「旧库升级后与新库比对」的测试；表都是 `STRICT`；库只往前升，迁移前先备份。
@@ -166,6 +167,7 @@ Cargo workspace，`cargo` 命令覆盖全部四个包：
 
 ### 升级、发布、平台
 
+- **进程内存**：启动时 Linux 关掉 dumpable，Windows 给进程换上只许结束、等待、查询的 DACL（同用户的非提权进程读不了内存、注入不了），macOS 的包（ad-hoc 的也是）带 hardened runtime。
 - **Windows** 只在 CI 上编译和测试：`windows.yml` 按路径触发，新加 `cfg(windows)` 代码的文件要加进那个列表。发布版是 GUI 子系统。C 运行库静态链接（`.cargo/config.toml` 的 `+crt-static`）：动态链接要 `VCRUNTIME140.dll`，LTSC 版和没装 VC++ 运行库的系统启动不了；`scripts/windows-runtime.ps1` 在 CI 里查 exe 的导入表。
 - 在线升级在 UI 测试里没有真实服务，测试从不联网。
 - **发布走 tag**（`docs/release.md`）：写好两份更新日志后运行 `scripts/release.sh x.y.z`，它改版本号、提交、打 tag、推送；流水线给包签名（minisign，私钥在 `release` 环境的 `MINISIGN_SECRET_KEY`）、建 GitHub Release，最后把清单提交到 `update` 分支的 `v1/<通道>.json`，客户端从 raw.githubusercontent.com 读它；不用 R2、Cloudflare 和官网。没有 Apple 的 secrets 时 macOS 包是 ad-hoc 签名、不公证。更新日志由改版本号的提交写，中英两份（`CHANGELOG.zh.md`、`CHANGELOG.md`）都要有，功能提交不改。

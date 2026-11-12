@@ -34,6 +34,22 @@ pub struct HostStore {
     data: HostData,
     /// Where the database, which runs in memory, is kept as a file.
     file: Option<DatabaseFile>,
+    /// The app is locked: the data is to be let go of as soon as the file
+    /// has all of it.
+    locked: bool,
+    /// The data is in the file alone, until [`Self::reload`].
+    unloaded: bool,
+    /// The keychain writes running: they come back to the data.
+    secret_jobs: usize,
+    /// What open terminals said while the data was unloaded.
+    held: Vec<Held>,
+}
+
+/// A change kept until the data is back to take it.
+enum Held {
+    Directory(SavedTerminalId, String),
+    Title(SavedTerminalId, SharedString),
+    Tabs(Vec<SavedTerminalTab>),
 }
 
 /// The database's file and how far it is behind.
@@ -93,7 +109,14 @@ macro_rules! settled {
 
 impl HostStore {
     pub fn new(data: HostData) -> Self {
-        Self { data, file: None }
+        Self {
+            data,
+            file: None,
+            locked: false,
+            unloaded: false,
+            secret_jobs: 0,
+            held: Vec::new(),
+        }
     }
 
     /// Keep the database, which runs in memory, in the file at `path`:
@@ -117,6 +140,9 @@ impl HostStore {
     /// Write the database's file now, if it is behind. A vault that is
     /// locked cannot take it: it is written once unlocked.
     pub fn save_now(&mut self, cx: &mut Context<Self>) {
+        if self.unloaded {
+            return;
+        }
         let Some(file) = &mut self.file else {
             return;
         };
@@ -139,8 +165,84 @@ impl HostStore {
         }
     }
 
+    /// The app locked: write the file and keep nothing of it in memory.
+    /// Hosts that are not saved stay, as the tabs open on them do. A store
+    /// without a file, or one the file could not take, stays as it is.
+    pub fn unload(&mut self, cx: &mut Context<Self>) {
+        self.locked = true;
+        self.save_now(cx);
+        self.unload_once_kept(cx);
+    }
+
+    fn unload_once_kept(&mut self, cx: &mut Context<Self>) {
+        let kept = self
+            .file
+            .as_ref()
+            .is_some_and(|file| self.data.database_changes() == Some(file.saved));
+        if !self.locked || self.unloaded || self.secret_jobs > 0 || !kept {
+            return;
+        }
+        self.settle(cx);
+        if let Some(file) = &mut self.file {
+            file.saving = None;
+        }
+        self.data.unload();
+        self.unloaded = true;
+        cx.notify();
+    }
+
+    /// Whether the data is in the file alone: what reads the store then
+    /// finds nothing, which does not mean it was deleted.
+    pub fn is_unloaded(&self) -> bool {
+        self.unloaded
+    }
+
+    /// The app unlocked: read the data back from the file, or write what
+    /// changed while locked if it never left.
+    pub fn reload(&mut self, cx: &mut Context<Self>) {
+        self.locked = false;
+        if !self.unloaded {
+            self.save_now(cx);
+            return;
+        }
+        let Some(file) = &mut self.file else {
+            return;
+        };
+        let loaded = shellrs_ssh::files::read(&file.path)
+            .map_err(anyhow::Error::from)
+            .and_then(|image| Ok(HostDatabase::from_image(Some(&image))?))
+            .and_then(|database| Ok(self.data.reload(database)?));
+        if let Err(error) = loaded {
+            cx.emit(HostStoreEvent::PersistFailed(
+                crate::app::database_unavailable(&error),
+            ));
+            return;
+        }
+        // The file is what was just read; the new database counts its
+        // changes from the start.
+        file.saved = self.data.database_changes().unwrap_or(0);
+        file.written = Arc::default();
+        self.unloaded = false;
+        for held in std::mem::take(&mut self.held) {
+            match held {
+                Held::Directory(id, directory) => {
+                    self.data.set_saved_terminal_directory(id, directory);
+                }
+                Held::Title(id, title) => {
+                    self.data.set_saved_terminal_title(id, title);
+                }
+                Held::Tabs(tabs) => self.data.set_saved_terminal_tabs(tabs),
+            }
+        }
+        self.settle(cx);
+        cx.notify();
+    }
+
     /// Write the file once the changes have stopped coming.
     fn save_soon(&mut self, cx: &mut Context<Self>) {
+        if self.unloaded {
+            return;
+        }
         let changes = self.data.database_changes();
         let Some(file) = &mut self.file else {
             return;
@@ -281,11 +383,8 @@ impl HostStore {
         fn rename_terminal_group(id: TerminalGroupId, name: SharedString) -> bool;
         fn set_terminal_group_expanded(id: TerminalGroupId, expanded: bool) -> bool;
         fn remove_terminal_group(id: TerminalGroupId) -> Vec<SavedTerminalId>;
-        fn set_saved_terminal_directory(id: SavedTerminalId, directory: String) -> bool;
-        fn set_saved_terminal_title(id: SavedTerminalId, title: SharedString) -> bool;
         fn remove_saved_terminal(id: SavedTerminalId) -> bool;
         fn move_terminal_node(source: TerminalNode, drop: TerminalDrop) -> bool;
-        fn set_saved_terminal_tabs(tabs: Vec<SavedTerminalTab>);
         fn insert_snippet(draft: SnippetDraft) -> SnippetId;
         fn update_snippet(id: SnippetId, draft: SnippetDraft) -> bool;
         fn remove_snippet(id: SnippetId) -> bool;
@@ -299,6 +398,46 @@ impl HostStore {
             export: &SyncExport
         ) -> Result<SecretWork, ApplyError>;
         fn adopt_synced_secrets(written: &SecretsWritten);
+    }
+
+    /// A saved terminal's shell is in `directory` now. Kept for later
+    /// while the data is unloaded, as the next two are: open terminals go
+    /// on under the lock.
+    pub fn set_saved_terminal_directory(
+        &mut self,
+        id: SavedTerminalId,
+        directory: String,
+        cx: &mut Context<Self>,
+    ) {
+        if self.unloaded {
+            self.held.push(Held::Directory(id, directory));
+            return;
+        }
+        self.data.set_saved_terminal_directory(id, directory);
+        self.settle(cx);
+    }
+
+    pub fn set_saved_terminal_title(
+        &mut self,
+        id: SavedTerminalId,
+        title: SharedString,
+        cx: &mut Context<Self>,
+    ) {
+        if self.unloaded {
+            self.held.push(Held::Title(id, title));
+            return;
+        }
+        self.data.set_saved_terminal_title(id, title);
+        self.settle(cx);
+    }
+
+    pub fn set_saved_terminal_tabs(&mut self, tabs: Vec<SavedTerminalTab>, cx: &mut Context<Self>) {
+        if self.unloaded {
+            self.held.push(Held::Tabs(tabs));
+            return;
+        }
+        self.data.set_saved_terminal_tabs(tabs);
+        self.settle(cx);
     }
 
     /// Connect to what an `ssh://` link from outside names
@@ -391,10 +530,11 @@ impl HostStore {
     /// Run a keychain write on the background executor, and settle how it
     /// went.
     fn run_secret_job(
-        &self,
+        &mut self,
         job: SecretJob,
         cx: &mut Context<Self>,
     ) -> Task<Result<(), SharedString>> {
+        self.secret_jobs += 1;
         cx.spawn(async move |this, cx| {
             let outcome = cx
                 .background_executor()
@@ -402,8 +542,12 @@ impl HostStore {
                 .await;
             let failed = outcome.failure().map(|failure| failure.message());
             this.update(cx, |store, cx| {
+                store.secret_jobs -= 1;
                 store.data.secret_done(outcome);
                 store.settle(cx);
+                // Locked meanwhile: nothing is waited for any more.
+                store.save_now(cx);
+                store.unload_once_kept(cx);
             })
             .ok();
             failed.map_or(Ok(()), Err)
@@ -527,6 +671,66 @@ mod tests {
         store.update(cx, |store, cx| store.save_now(cx));
         wait(cx);
         assert!(!path.exists());
+    }
+
+    #[gpui_kit::test]
+    fn a_locked_store_keeps_its_data_in_the_file_alone(cx: &mut gpui_kit::TestAppContext) {
+        use gpui_kit::AppContext as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("shellrs.db");
+        let store = cx.new(|cx| {
+            let mut store = HostStore::load(HostDatabase::in_memory().unwrap()).unwrap();
+            store.keep_at(path.clone(), cx);
+            store
+        });
+        let (web, terminal) = store.update(cx, |store, cx| {
+            let web = store.insert(draft("web", None), cx);
+            let terminal = store.insert_saved_terminal(None, None, cx).unwrap();
+            store.unload(cx);
+            (web, terminal)
+        });
+        store.read_with(cx, |store, _| {
+            assert!(store.is_unloaded());
+            assert!(store.hosts().is_empty());
+            assert!(store.saved_terminal(terminal).is_none());
+        });
+        // An open terminal goes on: what it says waits.
+        store.update(cx, |store, cx| {
+            store.set_saved_terminal_directory(terminal, "/var/log".into(), cx);
+        });
+        cx.run_until_parked();
+
+        store.update(cx, |store, cx| store.reload(cx));
+        store.update(cx, |store, cx| {
+            assert!(!store.is_unloaded());
+            assert_eq!(store.host(web).unwrap().name.as_ref(), "web");
+            assert_eq!(
+                store.saved_terminal(terminal).unwrap().directory.as_deref(),
+                Some("/var/log")
+            );
+            // Changes after it are written as before.
+            store.insert(draft("db", None), cx);
+            store.save_now(cx);
+        });
+        let image = shellrs_ssh::files::read(&path).unwrap();
+        let kept = HostDatabase::from_image(Some(&image))
+            .unwrap()
+            .load()
+            .unwrap();
+        assert_eq!(kept.hosts.len(), 2);
+    }
+
+    #[gpui_kit::test]
+    fn a_store_without_a_file_stays_loaded(cx: &mut gpui_kit::TestAppContext) {
+        use gpui_kit::AppContext as _;
+
+        let store = cx.new(|_| HostStore::seed());
+        store.update(cx, |store, cx| store.unload(cx));
+        store.read_with(cx, |store, _| {
+            assert!(!store.is_unloaded());
+            assert!(!store.hosts().is_empty());
+        });
     }
 
     #[gpui_kit::test]

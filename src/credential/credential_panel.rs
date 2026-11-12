@@ -113,6 +113,11 @@ impl CredentialPanel {
     /// Select whatever credential the store just gained, and let go of a
     /// selection whose credential is gone.
     fn on_store_changed(&mut self, cx: &mut Context<Self>) {
+        // Unloaded under the app's lock: nothing was made or deleted.
+        if self.store.read(cx).is_unloaded() {
+            cx.notify();
+            return;
+        }
         let current: Vec<CredentialId> = self
             .store
             .read(cx)

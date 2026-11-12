@@ -52,6 +52,9 @@ pub struct HostPanel {
     /// revealed without the dialog having to report back to the panel.
     known_groups: HashSet<GroupId>,
     seen_hosts: HashSet<HostId>,
+    /// The row selected when the store let go of its data under the app's
+    /// lock, to select again once it is back.
+    selected_before_unload: Option<SharedString>,
     /// Which node the last right-click landed on, `None` for the blank space
     /// below the rows. Shared with the row renderer and the context menu
     /// builder, both of which run outside this entity.
@@ -136,6 +139,7 @@ impl HostPanel {
             expanded,
             known_groups,
             seen_hosts,
+            selected_before_unload: None,
             right_clicked: Rc::new(Cell::new(None)),
             drop_target: Rc::new(Cell::new(None)),
             row_tooltips: RowTooltips::new("host-tooltip", cx),
@@ -147,8 +151,24 @@ impl HostPanel {
     /// Rebuild the tree, then put the cursor on whatever the store just
     /// gained so a freshly created group or host is visible and selected.
     fn on_store_changed(&mut self, cx: &mut Context<Self>) {
+        // Unloaded under the app's lock: nothing was made or deleted, and
+        // the rows drawn last are let go of too.
+        if self.store.read(cx).is_unloaded() {
+            if let Some(selected) = self.tree_state.read(cx).selected_item() {
+                self.selected_before_unload = Some(selected.id.clone());
+            }
+            self.tree_state
+                .update(cx, |state, cx| state.set_items(Vec::new(), cx));
+            return;
+        }
         let created = self.take_created_node(cx);
         self.rebuild_tree(cx);
+        if let Some(id) = self.selected_before_unload.take() {
+            self.tree_state.update(cx, |state, cx| {
+                let ix = state.index_of(&id);
+                state.set_selected_index(ix, cx);
+            });
+        }
         if let Some(node) = created {
             self.select_node(node, cx);
         }

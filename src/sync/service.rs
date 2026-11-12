@@ -656,11 +656,17 @@ impl RoundHost for DesktopRound {
         let mut cx = self.cx.clone();
         self.store
             .update(&mut cx, |store, cx| {
+                // Unloaded under the app's lock: there is nothing to
+                // read, and nothing of it is gone.
+                if store.is_unloaded() {
+                    return None;
+                }
                 let result = f(store);
                 store.settle(cx);
-                result
+                Some(result)
             })
             .ok()
+            .flatten()
     }
 
     fn background<R: Send + 'static>(&self, work: Blocking<R>) -> impl Future<Output = R> + Send {

@@ -118,6 +118,11 @@ impl ForwardPanel {
     /// Select whatever rule the store just gained, and let go of a selection
     /// whose rule is gone.
     fn on_store_changed(&mut self, cx: &mut Context<Self>) {
+        // Unloaded under the app's lock: nothing was made or deleted.
+        if self.store.read(cx).is_unloaded() {
+            cx.notify();
+            return;
+        }
         let current: Vec<ForwardId> = self
             .store
             .read(cx)

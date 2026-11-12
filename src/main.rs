@@ -199,12 +199,44 @@ fn load_store() -> anyhow::Result<HostStore> {
 }
 
 /// Keep the keys in this process's memory out of core dumps and out of
-/// reach of other processes of the same user. Linux only; a program
-/// started from here (a local terminal's shell) is not affected.
+/// reach of other processes of the same user. A program started from here
+/// (a local terminal's shell) is not affected.
 fn keep_memory_private() {
     #[cfg(target_os = "linux")]
     // SAFETY: a plain system call on this process.
     unsafe {
         libc::prctl(libc::PR_SET_DUMPABLE, 0);
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::LocalFree;
+        use windows_sys::Win32::Security::Authorization::{
+            ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+        };
+        use windows_sys::Win32::Security::{DACL_SECURITY_INFORMATION, SetKernelObjectSecurity};
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+        // The owner may end the process, wait for it, ask what it is and
+        // read this list; the system and administrators keep everything.
+        // Naming the owner's rights also takes away its right to change
+        // the list back.
+        let sddl: Vec<u16> = "D:P(A;;0x121001;;;OW)(A;;GA;;;SY)(A;;GA;;;BA)\0"
+            .encode_utf16()
+            .collect();
+        let mut descriptor = std::ptr::null_mut();
+        // SAFETY: a NUL-terminated string; the descriptor Windows
+        // allocates is freed below.
+        unsafe {
+            if ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                std::ptr::null_mut(),
+            ) != 0
+            {
+                SetKernelObjectSecurity(GetCurrentProcess(), DACL_SECURITY_INFORMATION, descriptor);
+                LocalFree(descriptor);
+            }
+        }
     }
 }

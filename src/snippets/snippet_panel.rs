@@ -142,6 +142,11 @@ impl SnippetPanel {
     }
 
     fn on_store_changed(&mut self, cx: &mut Context<Self>) {
+        // Unloaded under the app's lock: nothing was made or deleted.
+        if self.store.read(cx).is_unloaded() {
+            cx.notify();
+            return;
+        }
         let now = nodes(self.store.read(cx));
         let made = now
             .difference(&self.known)

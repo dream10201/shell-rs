@@ -39,6 +39,11 @@ impl TemporarySecretStore {
     pub fn forget(&self, host: u64) {
         self.passwords().remove(&host);
     }
+
+    /// 忘掉全部临时主机的密码。只碰内存。
+    pub fn forget_all(&self) {
+        self.passwords().clear();
+    }
 }
 
 impl SecretStore for TemporarySecretStore {
@@ -105,6 +110,13 @@ mod tests {
 
         store.forget(7);
         assert!(store.get(&link).unwrap().is_none());
+        assert_eq!(keychain.len(), 1);
+
+        store.remember(7, Zeroizing::new("token".into()));
+        store.remember(8, Zeroizing::new("other".into()));
+        store.forget_all();
+        assert!(store.get(&link).unwrap().is_none());
+        assert!(store.get(&SecretRef::temporary(8)).unwrap().is_none());
         assert_eq!(keychain.len(), 1);
     }
 

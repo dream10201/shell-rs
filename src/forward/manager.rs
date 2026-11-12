@@ -279,6 +279,9 @@ impl ForwardManager {
     /// stop running and leave nothing behind.
     fn forget_removed(&mut self, cx: &mut Context<Self>) {
         let store = self.store.read(cx);
+        if store.is_unloaded() {
+            return;
+        }
         let removed: Vec<ForwardId> = self
             .links
             .keys()
