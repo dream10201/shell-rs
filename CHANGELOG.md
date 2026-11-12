@@ -4,6 +4,15 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.8]
+
+### Security
+
+- Locking unloads the saved hosts, credentials, port forwards and snippets from memory; they are read again after unlocking. Open terminals and port forwards keep running.
+- Locking forgets the passwords of quick and external connections, which ask for the password again if they reconnect after a lock.
+- On Windows, other programs of the same user can no longer read or change ShellRS’s memory (those run as administrator still can).
+- macOS packages that are not notarized use the hardened runtime too, so other programs cannot attach to ShellRS.
+
 ## [1.0.7]
 
 ### Improved

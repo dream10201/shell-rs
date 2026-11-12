@@ -1,6 +1,6 @@
 [package]
 name = "shellrs"
-version = "1.0.7"
+version = "1.0.8"
 edition = "2024"
 publish = false
 description = "SSH client and host manager: terminal, file transfer, port forwarding"
