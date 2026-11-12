@@ -198,6 +198,19 @@ async fn the_monitor_reads_the_host_only_while_it_shows(cx: &mut TestAppContext)
     })
     .await;
 
+    // Nor while the window is not on screen.
+    cx.simulate_window_visibility_change(handle.into(), gpui_kit::WindowVisibility::Hidden);
+    cx.run_until_parked();
+    let unseen = factory.exec_count();
+    cx.executor().advance_clock(Duration::from_secs(10));
+    cx.run_until_parked();
+    assert_eq!(factory.exec_count(), unseen);
+    cx.simulate_window_visibility_change(handle.into(), gpui_kit::WindowVisibility::Visible);
+    cx.wait_for(handle.into(), Duration::from_secs(5), |_, _| {
+        factory.exec_count() > unseen
+    })
+    .await;
+
     // Nor while another tool is showing.
     in_frame(cx, handle, |window, cx| window.click("tool-snippets", cx));
     let other = factory.exec_count();

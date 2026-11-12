@@ -581,10 +581,17 @@ impl Workspace {
         // Settled before the first `LayoutChanged` arrives, so the handler
         // does not take the initial state for a tab having just closed.
         skin.set_center_empty(center_empty, cx);
+        subscriptions.push(window.observe_window_visibility({
+            let this = cx.weak_entity();
+            move |_, window, cx| {
+                let _ = this.update(cx, |this, cx| this.pause_unseen_tools(window, cx));
+            }
+        }));
         if let Some(lock) = crate::app_lock::AppLock::global(cx) {
             lock.update(cx, |lock, cx| lock.record_activity(cx));
             Self::watch_idle_lock(lock.clone(), window, cx);
             subscriptions.push(cx.observe_in(&lock, window, |this, _, window, cx| {
+                this.pause_unseen_tools(window, cx);
                 if !crate::app_lock::is_locked(cx) {
                     // What changed while locked could not be sealed then.
                     this.store.update(cx, |store, cx| store.save_now(cx));

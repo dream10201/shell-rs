@@ -577,6 +577,14 @@ impl Workspace {
         self.sync_tool_sidebar(window, cx);
     }
 
+    /// The tools read nothing from the host while the window is not on
+    /// screen or ShellRS is locked.
+    pub(super) fn pause_unseen_tools(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let paused = !window.is_visible() || crate::app_lock::is_locked(cx);
+        self.tools
+            .update(cx, |tools, cx| tools.set_paused(paused, cx));
+    }
+
     /// Point the sidebar at the terminal in front, and open it on the tool
     /// its host keeps (every local terminal's, for a local one) if one is
     /// and the tool works there; close it otherwise. Also when the host
@@ -594,6 +602,7 @@ impl Workspace {
         let open = tool.is_some();
         self.tools
             .update(cx, |tools, cx| tools.set_target(target, open, cx));
+        self.pause_unseen_tools(window, cx);
         if self.dock_area.read(cx).is_dock_open(DockPlacement::Right) != open {
             // A focus inside the sidebar would go off screen with it.
             let focus_inside = self

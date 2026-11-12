@@ -115,8 +115,23 @@ pub struct TerminalEngine {
     generation: u64,
     size: TerminalSize,
     event_sender: mpsc::Sender<TerminalUiEvent>,
+    /// Tells the event task that output is about to come.
+    busy: async_channel::Sender<()>,
     event_task: Option<gpui_kit::Task<()>>,
 }
+
+/// How many of a transport's events wait for the parser. A transport with
+/// more to say waits here, so a host printing faster than the terminal
+/// reads is held back by its own connection instead of filling memory.
+const TRANSPORT_QUEUE: usize = 64;
+
+/// How often the parser's events are collected while the terminal is busy:
+/// once a frame.
+const BUSY_POLL: Duration = Duration::from_millis(16);
+/// And once it has been quiet for [`QUIET_AFTER`]. Anything sent to the
+/// terminal makes it busy again at once, so an echo never waits this long.
+const QUIET_POLL: Duration = Duration::from_millis(100);
+const QUIET_AFTER: Duration = Duration::from_secs(1);
 
 impl TerminalEngine {
     pub fn new(factory: SharedTerminalTransportFactory, cx: &mut gpui_kit::Context<Self>) -> Self {
@@ -126,6 +141,7 @@ impl TerminalEngine {
         // threads therefore never wake GPUI's local executor directly, and a
         // burst of terminal bytes results in a single render notification.
         let (event_sender, event_receiver) = mpsc::channel();
+        let (busy, busy_receiver) = async_channel::bounded(1);
         let theme = Arc::new(Mutex::new(TerminalColors::current(cx)));
         let runtime = TerminalRuntime::start(
             generation,
@@ -171,14 +187,16 @@ impl TerminalEngine {
             generation,
             size,
             event_sender,
+            busy,
             event_task: None,
         };
-        this.event_task = Some(Self::listen(event_receiver, cx));
+        this.event_task = Some(Self::listen(event_receiver, busy_receiver, cx));
         this
     }
 
     fn listen(
         events: mpsc::Receiver<TerminalUiEvent>,
+        busy: async_channel::Receiver<()>,
         cx: &mut gpui_kit::Context<Self>,
     ) -> gpui_kit::Task<()> {
         cx.spawn(async move |this, cx| {
@@ -187,11 +205,23 @@ impl TerminalEngine {
             // (`crate::app::frame_due`).
             let mut drawn: Option<Instant> = None;
             let mut undrawn = false;
+            let mut active = Instant::now();
             loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(16))
-                    .await;
+                let mut told = busy.try_recv().is_ok();
+                if told || undrawn || active.elapsed() < QUIET_AFTER {
+                    cx.background_executor().timer(BUSY_POLL).await;
+                } else {
+                    let timer = cx.background_executor().timer(QUIET_POLL);
+                    match select(timer, std::pin::pin!(busy.recv())).await {
+                        Either::Left(_) => {}
+                        Either::Right((Ok(()), _)) => told = true,
+                        Either::Right((Err(_), _)) => break,
+                    }
+                }
                 let batch: Vec<_> = events.try_iter().collect();
+                if told || !batch.is_empty() {
+                    active = Instant::now();
+                }
                 if batch.is_empty() && !undrawn {
                     continue;
                 }
@@ -302,6 +332,7 @@ impl TerminalEngine {
         self.directory = None;
         // The new emulator starts empty; matches in the old one mean nothing.
         self.search.replace(None);
+        self.expect_output();
         self.runtime = TerminalRuntime::start(
             self.generation,
             self.size,
@@ -331,6 +362,7 @@ impl TerminalEngine {
     /// [`TerminalTransportCommand::SendBreak`].
     pub fn send_break(&self) {
         if matches!(self.lifecycle, TerminalLifecycle::Running) {
+            self.expect_output();
             self.runtime.send_break();
         }
     }
@@ -360,6 +392,7 @@ impl TerminalEngine {
 
     pub fn write(&self, bytes: impl Into<Vec<u8>>) {
         if self.lifecycle.accepts_input() {
+            self.expect_output();
             self.runtime.write(bytes.into());
         }
     }
@@ -367,6 +400,11 @@ impl TerminalEngine {
     /// Send bytes originating from the user. Unlike protocol writes such as
     /// terminal query responses and focus reports, interactive input returns
     /// to the live screen and retires the previous selection first.
+    /// Output is about to come: collect it a frame at a time again.
+    fn expect_output(&self) {
+        let _ = self.busy.try_send(());
+    }
+
     pub fn send_user_input(&self, bytes: impl Into<Vec<u8>>) {
         if !self.lifecycle.accepts_input() {
             return;
@@ -375,6 +413,7 @@ impl TerminalEngine {
         let mut term = self.runtime.term.lock();
         prepare_term_for_user_input(&mut term);
         drop(term);
+        self.expect_output();
         self.runtime.write(bytes.into());
     }
 
@@ -419,6 +458,7 @@ impl TerminalEngine {
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = size;
         self.runtime.term.lock().resize(size);
+        self.expect_output();
         self.runtime.resize(size);
         cx.notify();
     }
@@ -619,6 +659,7 @@ impl TerminalEngine {
     /// What the user chose for the transfer [`TerminalEvent::ZmodemAsk`]
     /// asked about.
     pub fn zmodem_reply(&self, reply: ZmodemReply) {
+        self.expect_output();
         let _ = self.runtime.zmodem.try_send(ZmodemControl::Reply(reply));
     }
 
@@ -631,6 +672,7 @@ impl TerminalEngine {
             return Err(t!("terminal.zmodem.busy"));
         }
         // Sent first: `rz` answers once the other end has run it.
+        self.expect_output();
         let _ = self.runtime.zmodem.try_send(ZmodemControl::Dropped(files));
         self.enter_command("rz", true, false).inspect_err(|_| {
             let _ = self
@@ -821,7 +863,7 @@ impl TerminalRuntime {
         interaction: TerminalInteraction,
     ) -> Self {
         let (commands, command_receiver) = mpsc::channel();
-        let (transport_events, transport_receiver) = async_channel::unbounded();
+        let (transport_events, transport_receiver) = async_channel::bounded(TRANSPORT_QUEUE);
         let shared_size = Arc::new(Mutex::new(size));
         let wakeup_pending = Arc::new(AtomicBool::new(false));
         let proxy = TerminalEventProxy {

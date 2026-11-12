@@ -4,10 +4,8 @@
 //! that puts a connection's questions in the terminal and its answers back.
 
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
-use std::time::Duration;
 
 use anyhow::{Context as _, Result};
 use async_channel::Sender;
@@ -34,26 +32,20 @@ where
         .build()
         .context(t!("ssh.terminal.runtime_failed"))?;
     let (command_tx, mut bridge_commands) = tokio_mpsc::unbounded_channel();
-    let stop = Arc::new(AtomicBool::new(false));
-    let bridge_stop = stop.clone();
-    let bridge = thread::Builder::new()
+    // Ends with the terminal: on the first command after the worker is
+    // done, or when the terminal lets go of its end.
+    thread::Builder::new()
         .name("shellrs-ssh-command-bridge".into())
         .spawn(move || {
-            while !bridge_stop.load(Ordering::Acquire) {
-                match commands.recv_timeout(Duration::from_millis(20)) {
-                    Ok(command) => {
-                        if command_tx.send(command).is_err() {
-                            break;
-                        }
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            while let Ok(command) = commands.recv() {
+                if command_tx.send(command).is_err() {
+                    break;
                 }
             }
         })
         .context(t!("ssh.terminal.bridge_failed"))?;
 
-    let result = runtime.block_on(async move {
+    runtime.block_on(async move {
         let (io_tx, io_rx) = tokio_mpsc::unbounded_channel();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         let broker = Arc::new(SshPrompts::new(
@@ -88,8 +80,5 @@ where
         let result = body(broker, io_rx).await;
         router.abort();
         result
-    });
-    stop.store(true, Ordering::Release);
-    let _ = bridge.join();
-    result
+    })
 }

@@ -114,6 +114,9 @@ pub struct ToolSidebar {
     target: Option<SidebarTarget>,
     /// Whether the right dock is open.
     shown: bool,
+    /// Nobody can see the tools: the window is not on screen, or ShellRS
+    /// is locked. Nothing is read from the host meanwhile.
+    paused: bool,
     monitor: Entity<MonitorPanel>,
     snippets: Entity<SnippetPanel>,
     history: Entity<HistoryPanel>,
@@ -139,6 +142,7 @@ impl ToolSidebar {
             tool: ToolKind::default(),
             target: None,
             shown: false,
+            paused: false,
             monitor: cx.new(|_| MonitorPanel::new(dispatch.clone())),
             projects: cx.new(|cx| ProjectPanel::new(store.clone(), dispatch.clone(), cx)),
             snippets: cx.new(|cx| SnippetPanel::new(store, dispatch.clone(), window, cx)),
@@ -169,6 +173,15 @@ impl ToolSidebar {
             self.shown = shown;
             self.sync_tools(cx);
             cx.notify();
+        }
+    }
+
+    /// Stop reading the host while nobody can see the tools, and start
+    /// over once they can.
+    pub fn set_paused(&mut self, paused: bool, cx: &mut Context<Self>) {
+        if self.paused != paused {
+            self.paused = paused;
+            self.sync_tools(cx);
         }
     }
 
@@ -299,7 +312,7 @@ impl ToolSidebar {
             terminal: terminal.id,
             view: terminal.view.clone(),
         });
-        let showing = |tool| self.shown && self.tool == tool;
+        let showing = |tool| self.shown && !self.paused && self.tool == tool;
         let (monitor, netstat, processes, services, history, tmux) = (
             showing(ToolKind::Monitor),
             showing(ToolKind::Connections),
