@@ -6,7 +6,9 @@ use gpui_kit::component::{WindowExt as _, notification::Notification};
 use gpui_kit::*;
 
 use super::Workspace;
-use crate::app::{CancelFileTransfers, DownloadFiles, StartDownload, StartUpload, UploadFiles};
+use crate::app::{
+    CancelFileTransfers, DownloadFiles, StartDownload, StartUpload, UploadFiles, UploadFolders,
+};
 use crate::i18n::{t, tn};
 use crate::terminal::{RemoteTerminalId, TerminalChannels, TerminalLifecycle};
 use crate::transfer::{TransferEvent, TransferJob, open_download_dialog, open_upload_dialog};
@@ -42,13 +44,34 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let id = action.0;
+        // Only macOS has a picker for files and folders at once: elsewhere
+        // one that takes folders shows no files.
+        self.choose_uploads(action.0, cfg!(target_os = "macos"), window, cx);
+    }
+
+    /// 上传文件夹…
+    pub(super) fn on_upload_folders(
+        &mut self,
+        action: &UploadFolders,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.choose_uploads(action.0, true, window, cx);
+    }
+
+    fn choose_uploads(
+        &mut self,
+        id: RemoteTerminalId,
+        folders: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.transfer_terminal(id, cx).is_none() {
             return;
         }
         let chosen = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: true,
+            files: !folders || cfg!(target_os = "macos"),
+            directories: folders,
             multiple: true,
             prompt: Some(t!("transfer.upload.choose")),
         });

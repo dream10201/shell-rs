@@ -4,7 +4,10 @@ use std::rc::Rc;
 use gpui_kit::component::{
     Disableable as _, Icon, IconName, Sizable as _, WindowExt as _,
     button::Button,
+    button::ButtonVariants as _,
     dock::{BasePanel, Panel, PanelEvent, TabGroup},
+    h_flex,
+    menu::DropdownMenu as _,
     menu::PopupMenu,
     notification::Notification,
 };
@@ -14,7 +17,7 @@ use gpui_kit::*;
 use crate::app::{
     CatalogIcon, CenterTab, CloseTerminal, CopyHostAddress, CopyHostId, DisconnectTerminal,
     DownloadFiles, DuplicateTerminal, EditHost, ReconnectTerminal, RenameTerminal, SendBreak,
-    UploadFiles,
+    UploadFiles, UploadFolders,
 };
 use crate::connection::{ConnectionPrompt, ConnectionPromptReply};
 use crate::host::{ConnectionState, Host, HostConnection, HostId, HostOs, HostStore, ProtocolKind};
@@ -443,15 +446,47 @@ impl Panel for TerminalPanel {
             .context_menu(move |menu, _, cx| tab_menu.build(menu, cx))
     }
 
-    /// The connection's latest round trip, beside the toolbar. Shown only
-    /// while the shell runs, so a dropped connection leaves no stale number.
+    /// The connection's latest round trip, shown only while the shell runs,
+    /// so a dropped connection leaves no stale number, and an SSH host's
+    /// upload button: its menu makes it more than the toolbar's `Button`.
     fn title_suffix(&mut self, _: &mut Window, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let id = self.id;
         let terminal = self.terminal.read(cx);
-        if terminal.lifecycle(cx) != TerminalLifecycle::Running {
-            return None;
-        }
-        let latency = terminal.latency(cx)?;
-        Some(LatencyLabel::new(("terminal-latency", self.id.0), latency))
+        let running = terminal.lifecycle(cx) == TerminalLifecycle::Running;
+        let latency = running
+            .then(|| terminal.latency(cx))
+            .flatten()
+            .map(|latency| LatencyLabel::new(("terminal-latency", id.0), latency));
+        let upload = self.host.is_ssh().then(|| {
+            let dispatch = self.focus_handle(cx);
+            Button::new(("upload-files", id.0))
+                .icon(Icon::new(CatalogIcon::Upload))
+                .xsmall()
+                .ghost()
+                .tab_stop(false)
+                .tooltip(t!("terminal.remote.upload"))
+                .disabled(!running)
+                .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
+                    menu.action_context(dispatch.clone())
+                        .menu_with_icon(
+                            t!("terminal.remote.upload_files"),
+                            Icon::new(CatalogIcon::FileUp),
+                            Box::new(UploadFiles(id)),
+                        )
+                        .menu_with_icon(
+                            t!("terminal.remote.upload_folders"),
+                            Icon::new(CatalogIcon::FolderUp),
+                            Box::new(UploadFolders(id)),
+                        )
+                })
+        });
+        (latency.is_some() || upload.is_some()).then(|| {
+            h_flex()
+                .flex_shrink_0()
+                .gap_1()
+                .children(latency)
+                .children(upload)
+        })
     }
 
     fn toolbar_buttons(&mut self, _: &mut Window, cx: &mut Context<Self>) -> Option<Vec<Button>> {
@@ -461,23 +496,14 @@ impl Panel for TerminalPanel {
         // it is up.
         let connected = self.terminal.read(cx).lifecycle(cx) == TerminalLifecycle::Running;
         let transfers = self.host.is_ssh().then(|| {
-            let (upload, download) = (reconnect_dispatch.clone(), reconnect_dispatch.clone());
-            [
-                Button::new(("upload-files", terminal_id.0))
-                    .icon(Icon::new(CatalogIcon::Upload))
-                    .tooltip(t!("terminal.remote.upload_files"))
-                    .disabled(!connected)
-                    .on_click(move |_, window, cx| {
-                        upload.dispatch_action(&UploadFiles(terminal_id), window, cx)
-                    }),
-                Button::new(("download-files", terminal_id.0))
-                    .icon(Icon::new(CatalogIcon::Download))
-                    .tooltip(t!("terminal.remote.download_files"))
-                    .disabled(!connected)
-                    .on_click(move |_, window, cx| {
-                        download.dispatch_action(&DownloadFiles(terminal_id), window, cx)
-                    }),
-            ]
+            let download = reconnect_dispatch.clone();
+            [Button::new(("download-files", terminal_id.0))
+                .icon(Icon::new(CatalogIcon::Download))
+                .tooltip(t!("terminal.remote.download_files"))
+                .disabled(!connected)
+                .on_click(move |_, window, cx| {
+                    download.dispatch_action(&DownloadFiles(terminal_id), window, cx)
+                })]
         });
         let reconnect = Button::new(("reconnect", terminal_id.0))
             .icon(Icon::new(CatalogIcon::RefreshCw))
@@ -545,6 +571,12 @@ fn remote_menu_items(
                 t!("terminal.remote.upload_files"),
                 Icon::new(CatalogIcon::Upload),
                 Box::new(UploadFiles(id)),
+                !running,
+            )
+            .menu_with_icon_and_disabled(
+                t!("terminal.remote.upload_folders"),
+                Icon::new(CatalogIcon::FolderUp),
+                Box::new(UploadFolders(id)),
                 !running,
             )
             .menu_with_icon_and_disabled(
@@ -647,6 +679,12 @@ impl TabMenu {
                     t!("terminal.remote.upload_files"),
                     Icon::new(CatalogIcon::Upload),
                     Box::new(UploadFiles(id)),
+                    !self.running,
+                )
+                .menu_with_icon_and_disabled(
+                    t!("terminal.remote.upload_folders"),
+                    Icon::new(CatalogIcon::FolderUp),
+                    Box::new(UploadFolders(id)),
                     !self.running,
                 )
                 .menu_with_icon_and_disabled(

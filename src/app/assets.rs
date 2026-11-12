@@ -32,6 +32,7 @@ icon_assets!(
         FolderSymlink,
         FileSymlink,
         FilePlus,
+        FileUp,
         Bookmark,
         SquarePen,
         Settings,

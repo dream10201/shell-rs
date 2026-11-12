@@ -247,6 +247,8 @@ id_actions! {
     EditHost(HostId);
     /// Choose files of this computer to copy to a remote terminal's host.
     UploadFiles(RemoteTerminalId);
+    /// Choose folders of this computer to copy to a remote terminal's host.
+    UploadFolders(RemoteTerminalId);
     /// Ask what to copy here from a remote terminal's host.
     DownloadFiles(RemoteTerminalId);
     /// Duplicate a host in the same group.

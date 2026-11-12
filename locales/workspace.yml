@@ -270,8 +270,8 @@ workspace.zmodem.choose_folder:
   zh-CN: 保存到此处
   en: Save here
 workspace.zmodem.files_only:
-  zh-CN: ZMODEM 只能上传文件，文件夹请用标签栏右侧的「上传文件…」
-  en: ZMODEM uploads only files. Upload folders with “Upload files…” at the right of the tab bar.
+  zh-CN: ZMODEM 只能上传文件，文件夹请用标签栏右侧「上传」里的「上传文件夹…」
+  en: ZMODEM uploads only files. Upload folders with “Upload folders…” under “Upload” at the right of the tab bar.
 
 # 项目: the line under a terminal's kept output, drawn again as it opens.
 workspace.projects.kept_output:

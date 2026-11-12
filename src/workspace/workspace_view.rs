@@ -2251,6 +2251,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_quick_connect))
             .on_action(cx.listener(Self::on_new_local_terminal))
             .on_action(cx.listener(Self::on_upload_files))
+            .on_action(cx.listener(Self::on_upload_folders))
             .on_action(cx.listener(Self::on_download_files))
             .on_action(cx.listener(Self::on_start_upload))
             .on_action(cx.listener(Self::on_start_download))

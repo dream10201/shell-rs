@@ -58,7 +58,7 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 
 **File transfer**
 
-- Once an SSH terminal is connected, "Upload files…" and "Download files…" at the right of its tab bar move files and folders over that terminal's own connection: no second login, and jump hosts and proxies work as they do for the terminal.
+- Once an SSH terminal is connected, "Upload" and "Download files…" at the right of its tab bar move files and folders over that terminal's own connection: no second login, and jump hosts and proxies work as they do for the terminal.
 - Neither SFTP nor `scp`: only `cat`, `wc`, `mkdir`, `mv` and `find` in the host's shell, so a server without the SFTP subsystem works too.
 - An upload goes to a temporary file first and replaces the old one only once it has arrived whole, so a dropped connection leaves no half file. Progress shows in the status bar, and you can cancel.
 
@@ -118,7 +118,7 @@ Once installed, ShellRS keeps itself up to date: it checks, downloads and verifi
 
 1. Click "New host…" in the title bar (⌘N, or Ctrl+N on Windows and Linux) and fill in the address, port and login. Passwords are saved encrypted with the app lock password.
 2. Double-click a host to open a terminal. On the first connection you're asked to confirm the host key.
-3. Once a terminal is connected, click "Upload files…" or "Download files…" at the right of its tab bar to move files.
+3. Once a terminal is connected, click "Upload" or "Download files…" at the right of its tab bar to move files.
 4. The three icons after "ShellRS" in the title bar switch the sidebar between hosts, port forwards and credentials.
 5. ⌘T (Ctrl+T) opens a local terminal. Drag a tab to the top, bottom, left or right edge of the tab area to split it.
 
