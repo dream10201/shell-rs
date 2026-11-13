@@ -75,6 +75,44 @@ fn opens_links(modifiers: &Modifiers) -> bool {
     }
 }
 
+/// Whether the mouse event being handled came from the left button. macOS
+/// hands a Ctrl-click over as a right click with Ctrl taken off.
+#[cfg(target_os = "macos")]
+fn from_left_button() -> bool {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+
+    const LEFT_MOUSE_DOWN: usize = 1;
+    const LEFT_MOUSE_UP: usize = 2;
+
+    // SAFETY: mouse events are handled on the main thread, where the
+    // application and the event it is dispatching live.
+    unsafe {
+        let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        let event: *mut AnyObject = msg_send![app, currentEvent];
+        if event.is_null() {
+            return false;
+        }
+        let kind: usize = msg_send![event, type];
+        matches!(kind, LEFT_MOUSE_DOWN | LEFT_MOUSE_UP)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn from_left_button() -> bool {
+    false
+}
+
+/// The button to report for `button`, and whether Ctrl was taken off it.
+fn reported_button(button: MouseButton) -> Option<(ReportButton, bool)> {
+    match button {
+        MouseButton::Left => Some((ReportButton::Left, false)),
+        MouseButton::Middle => Some((ReportButton::Middle, false)),
+        MouseButton::Right if from_left_button() => Some((ReportButton::Left, true)),
+        _ => None,
+    }
+}
+
 /// What a key does in a terminal whose connection has ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EndedKey {
@@ -1816,11 +1854,25 @@ impl Element for TerminalElement {
                 let Some(cell) = viewport.cell_at(event.position) else {
                     return;
                 };
-                let button = match event.button {
-                    MouseButton::Left => ReportButton::Left,
-                    MouseButton::Middle => ReportButton::Middle,
-                    _ => return,
+                let Some((button, control)) = reported_button(event.button) else {
+                    return;
                 };
+                if control {
+                    // A program that asked for the mouse hears the
+                    // Ctrl-click; otherwise it stays a right click.
+                    let modifiers = Modifiers {
+                        control: true,
+                        ..event.modifiers
+                    };
+                    let reported = view.update(cx, |view, cx| {
+                        view.report_mouse(button, ReportKind::Press, cell, modifiers, cx)
+                    });
+                    if reported {
+                        view.update(cx, |view, cx| view.focus(window, cx));
+                        cx.stop_propagation();
+                    }
+                    return;
+                }
                 if button == ReportButton::Left
                     && opens_links(&event.modifiers)
                     && let Some((_, uri)) = links.at(cell)
@@ -1897,14 +1949,16 @@ impl Element for TerminalElement {
                 if !phase.capture() {
                     return;
                 }
-                let button = match event.button {
-                    MouseButton::Left => ReportButton::Left,
-                    MouseButton::Middle => ReportButton::Middle,
-                    _ => return,
+                let Some((button, control)) = reported_button(event.button) else {
+                    return;
+                };
+                let modifiers = Modifiers {
+                    control: control || event.modifiers.control,
+                    ..event.modifiers
                 };
                 let cell = viewport.nearest_cell(event.position);
                 view.update(cx, |view, cx| {
-                    view.release_mouse(button, cell, event.modifiers, cx)
+                    view.release_mouse(button, cell, modifiers, cx)
                 });
             }
         });
