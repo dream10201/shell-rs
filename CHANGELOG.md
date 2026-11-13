@@ -4,6 +4,16 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.9]
+
+### Improved
+
+- The fields for the app lock password (setting it, unlocking, changing it) turn the input method off and type Latin letters only: Windows and Wayland switch the input method off, macOS switches to a Latin keyboard.
+
+### Fixed
+
+- On macOS, programs that use the mouse (such as tmux) did not receive Ctrl-clicks and Ctrl-drags with the left button. They now do; where the program has not asked for the mouse, a Ctrl-click is still a right click.
+
 ## [1.0.8]
 
 ### Security
