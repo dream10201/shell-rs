@@ -122,10 +122,14 @@ impl AppShell {
             }
             self.unlock
                 .update(cx, |screen, cx| screen.focus(window, cx));
-        } else if self.was_locked
-            && let Some(focus) = self.previous_focus.take()
-        {
-            window.focus(&focus, cx);
+        } else if self.was_locked {
+            // With nothing to go back to, the keyboard leaves the unlock
+            // screen all the same: the workspace then places it.
+            match self.previous_focus.take() {
+                Some(focus) => window.focus(&focus, cx),
+                None if self.unlock.read(cx).contains_focus(window, cx) => window.blur(cx),
+                None => {}
+            }
         }
         self.was_locked = locked;
         cx.notify();

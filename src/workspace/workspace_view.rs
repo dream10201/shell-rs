@@ -2237,6 +2237,13 @@ impl Render for Workspace {
             .id("workspace")
             .key_context("Workspace")
             .track_focus(&self.focus_handle)
+            // A press on what takes no focus (the title bar, a gap) would
+            // give it to this root, away from the terminal being typed in.
+            .on_any_mouse_down(cx.listener(|this, _, window, cx| {
+                if this.focus_handle.contains_focused(window, cx) {
+                    window.prevent_default();
+                }
+            }))
             .on_action(cx.listener(Self::on_new_host))
             .on_action(cx.listener(Self::on_new_temporary_connection))
             .on_action(cx.listener(Self::on_quick_connect))

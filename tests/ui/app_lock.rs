@@ -2,7 +2,9 @@
 //! in a temporary folder and injected workspace transports.
 use crate::support::*;
 use gpui_kit::AnyView;
+use shellrs::app::{ChangeAppLockPassword, LockApp};
 use shellrs::app_lock::AppLock;
+use shellrs::host::SavedTerminalTab;
 use shellrs::vault::{Cost, Vault};
 use shellrs::workspace::AppShell;
 use std::cell::Cell;
@@ -19,7 +21,8 @@ fn open_locked_workspace(
     cx: &mut TestAppContext,
     dir: &std::path::Path,
 ) -> (WindowHandle<Root>, Entity<AppLock>, Rc<Cell<usize>>) {
-    let (handle, lock, created, _) = open_locked_workspace_with_settings(cx, dir, settings_store());
+    let (handle, lock, created, _) =
+        open_locked_workspace_with_settings(cx, dir, settings_store(), HostStore::empty());
     (handle, lock, created)
 }
 
@@ -42,6 +45,7 @@ fn open_locked_workspace_with_settings(
     cx: &mut TestAppContext,
     dir: &std::path::Path,
     settings: SettingsStore,
+    store: HostStore,
 ) -> (
     WindowHandle<Root>,
     Entity<AppLock>,
@@ -69,7 +73,7 @@ fn open_locked_workspace_with_settings(
                 None,
                 move |_, _, window, cx| {
                     count.set(count.get() + 1);
-                    let store = cx.new(|_| HostStore::empty());
+                    let store = cx.new(|_| store);
                     let settings = initial_settings;
                     let workspace = cx.new(|cx| {
                         Workspace::new_with_services(
@@ -378,4 +382,59 @@ fn app_lock_follows_the_computers_lock_screen_once_switched_on(cx: &mut TestAppC
     screen.0.store(true, Ordering::SeqCst);
     advance(cx);
     assert!(!locked(cx));
+}
+
+#[gpui_kit::test]
+fn unlocking_leaves_the_keyboard_in_the_terminal_shown(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = HostStore::empty();
+    let terminal = store.insert_saved_terminal_unnotified(None, None).unwrap();
+    store.set_saved_terminal_tabs_unnotified(vec![SavedTerminalTab {
+        terminal,
+        front: true,
+    }]);
+    let (handle, lock, _, _) =
+        open_locked_workspace_with_settings(cx, dir.path(), settings_store(), store);
+    let terminal_focused = |cx: &mut TestAppContext| {
+        in_frame(cx, handle, |window, _| {
+            window.find(("local-terminal", 1_u64)).focused()
+        })
+    };
+    // The terminal the last launch left open, at the start.
+    choose_password(cx, handle, &lock, "focus password");
+    assert_eq!(terminal_focused(cx), Some(true));
+
+    let unlock = |cx: &mut TestAppContext| {
+        in_frame(cx, handle, |window, cx| {
+            enter(window, "app-lock-password", "focus password", cx);
+            window.press("enter", cx);
+        });
+        wait_for_password(cx, &lock);
+    };
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(Box::new(LockApp), cx)
+    });
+    unlock(cx);
+    assert_eq!(terminal_focused(cx), Some(true));
+
+    // A press on the title bar, as when dragging the window, takes no
+    // focus from it.
+    in_frame(cx, handle, |window, cx| {
+        click_at(
+            window,
+            point(px(550.), px(6.)),
+            gpui_kit::Modifiers::default(),
+            cx,
+        )
+    });
+    assert_eq!(terminal_focused(cx), Some(true));
+
+    // Locked with a dialog open, which goes with the lock.
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(Box::new(ChangeAppLockPassword), cx)
+    });
+    cx.update(|cx| lock.update(cx, |lock, cx| lock.lock(cx)));
+    cx.run_until_parked();
+    unlock(cx);
+    assert_eq!(terminal_focused(cx), Some(true));
 }
