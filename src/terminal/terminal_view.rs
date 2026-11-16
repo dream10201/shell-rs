@@ -1745,10 +1745,15 @@ impl Element for TerminalElement {
         let cursor = self
             .snapshot
             .cursor_row
-            .filter(|_| {
+            .filter(|row| {
                 self.marked_text.is_empty()
                     && self.cursor_visible
                     && self.focus_handle.is_focused(window)
+                    && !self
+                        .snapshot
+                        .cells
+                        .get(row * self.snapshot.columns + self.snapshot.cursor_column)
+                        .is_some_and(|cell| cell.selected)
             })
             .and_then(|_| cursor_quad(cursor_bounds, self.snapshot.cursor_shape, &palette));
 

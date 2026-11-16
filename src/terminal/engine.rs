@@ -7,11 +7,11 @@ use std::time::{Duration, Instant};
 
 use alacritty_terminal::Term;
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
-use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::grid::{Dimensions, Indexed, Scroll};
 use alacritty_terminal::index::{Column, Line, Point, Side};
-use alacritty_terminal::selection::{Selection, SelectionType};
+use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
 use alacritty_terminal::sync::FairMutex;
-use alacritty_terminal::term::cell::Flags;
+use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::color::COUNT;
 use alacritty_terminal::term::search::RegexSearch;
 use alacritty_terminal::term::{ClipboardType, Config, Osc52, TermMode};
@@ -707,8 +707,6 @@ impl TerminalEngine {
         let selection = content.selection;
         let display_offset = content.display_offset as i32;
         let cursor_row = content.cursor.point.line.0 + display_offset;
-        let cursor_point = content.cursor.point;
-        let cursor_shape = content.cursor.shape;
         let columns = term.grid().columns();
         let (matches, focused) = self
             .search
@@ -731,9 +729,7 @@ impl TerminalEngine {
                     foreground: indexed.cell.fg,
                     background: indexed.cell.bg,
                     flags: indexed.cell.flags,
-                    selected: selection.is_some_and(|range| {
-                        range.contains_cell(&indexed, cursor_point, cursor_shape)
-                    }),
+                    selected: selection.is_some_and(|range| is_selected(&range, &indexed)),
                     search: marker.mark(indexed.point),
                     link: links.mark(indexed.point, indexed.cell.hyperlink()),
                     highlight: highlights.color(
@@ -782,6 +778,12 @@ fn scroll_to(term: &mut AlacrittyTerm, lines: usize) {
     let offset = grid.history_size().saturating_sub(lines);
     let delta = offset as i32 - grid.display_offset() as i32;
     term.scroll_display(Scroll::Delta(delta));
+}
+
+/// Alacritty leaves a block cursor at either end of the selection out of it;
+/// here the cell under the cursor is selected like any other.
+fn is_selected(range: &SelectionRange, indexed: &Indexed<&Cell>) -> bool {
+    range.contains_cell(indexed, indexed.point, CursorShape::Hidden)
 }
 
 /// Keep the leading cell and spacer of a full-width glyph visually atomic,
@@ -1920,6 +1922,29 @@ mod tests {
             term.grid().total_lines() - term.grid().screen_lines(),
             10_000
         );
+    }
+
+    #[test]
+    fn selection_covers_the_cell_under_the_cursor() {
+        let mut term = test_term(8, 2);
+        feed(&mut term, b"hello");
+        let cursor = term.grid().cursor.point;
+        let mut selection = Selection::new(
+            SelectionType::Simple,
+            Point::new(Line(0), Column(3)),
+            Side::Left,
+        );
+        selection.update(cursor, Side::Right);
+        term.selection = Some(selection);
+
+        let content = term.renderable_content();
+        let range = content.selection.unwrap();
+        let selected: Vec<_> = content
+            .display_iter
+            .filter(|indexed| is_selected(&range, indexed))
+            .map(|indexed| indexed.point.column.0)
+            .collect();
+        assert_eq!(selected, [3, 4, 5]);
     }
 
     #[test]
