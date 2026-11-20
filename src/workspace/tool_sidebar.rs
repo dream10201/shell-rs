@@ -18,7 +18,7 @@ use crate::monitor::{MonitorDetail, MonitorPanel};
 use crate::netstat::NetstatPanel;
 use crate::processes::{Process, ProcessDetails, ProcessPanel, ProcessSort};
 use crate::project::ProjectPanel;
-use crate::services::{Service, ServicePanel};
+use crate::services::{HostClock, Service, ServicePanel, Timer};
 use crate::snippets::SnippetPanel;
 use crate::terminal::{ExecTarget, LocalTerminalId, RemoteTerminalId, TerminalView};
 use crate::tmux::{TmuxPanel, TmuxTable};
@@ -268,6 +268,12 @@ impl ToolSidebar {
     /// A service of the host in front, as 系统服务 last showed it.
     pub fn service(&self, name: &str, cx: &App) -> Option<Service> {
         self.services.read(cx).service(name)
+    }
+
+    /// A timer of the host in front, as 系统服务 last showed it, and the
+    /// host's clock its times are by.
+    pub fn timer(&self, name: &str, cx: &App) -> Option<(Timer, HostClock)> {
+        self.services.read(cx).timer(name)
     }
 
     /// 进程管理's 刷新.

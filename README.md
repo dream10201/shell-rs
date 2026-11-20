@@ -52,7 +52,7 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 
 - They follow the current remote terminal and read and run on that terminal's own connection, with no second login. ⌘⌥B (Ctrl+Alt+B elsewhere) shows or hides them.
 - System monitor: system details, CPU (per core too), memory, network rates and disk use, refreshed every 2 seconds.
-- Network connections, processes and services: search and filter, process details, ending processes, starting, stopping and restarting systemd services, switching them on at boot, and their logs; when not root, passwordless sudo is used. These three and the monitor are for Linux only.
+- Network connections, processes and services: search and filter, process details, ending processes, starting, stopping and restarting systemd services, switching them on at boot, and their logs; systemd timers with their next and last runs, and running a timer’s job now; when not root, passwordless sudo is used. These three and the monitor are for Linux only.
 - Command history reads `~/.bash_history` on the host, and snippets, shared by every host, can be sorted into categories; click one to type it into the terminal, or run it straight away.
 - tmux: the host's tmux sessions, with the one the terminal is in marked; start one, attach the terminal to one or detach it, rename and end them.
 

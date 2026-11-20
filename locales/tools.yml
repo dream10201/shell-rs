@@ -111,6 +111,26 @@ tools.service.disable.done:
 tools.service.disable.failed:
   zh-CN: 无法禁用开机启动 %{name}：%{error}
   en: "Couldn’t disable %{name} at boot: %{error}"
+tools.service.run.title:
+  zh-CN: 立即运行“%{name}”？
+  en: Run “%{name}” now?
+tools.service.run.description:
+  zh-CN: 它会马上在主机上运行一次，定时器的计划不变。
+  en: It runs once on the host right away. The timer’s schedule doesn’t change.
+tools.service.run.done:
+  zh-CN: "%{name} 已开始运行"
+  en: "%{name} started"
+tools.service.run.failed:
+  zh-CN: 无法运行 %{name}：%{error}
+  en: "Couldn’t run %{name}: %{error}"
+
+# 系统服务: a systemd timer.
+tools.timer.stop.title:
+  zh-CN: 停止定时器“%{name}”？
+  en: Stop timer “%{name}”?
+tools.timer.stop.description:
+  zh-CN: 停止后它不再按计划运行任务，直到再次启动。
+  en: It won’t run its job on schedule until it’s started again.
 
 # 进程管理: ending a process.
 tools.process.end.title:

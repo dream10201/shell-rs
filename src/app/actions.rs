@@ -320,8 +320,8 @@ id_actions! {
     /// Open the details of a process of the host of the SSH terminal in
     /// front, by its PID.
     ShowProcess(u32);
-    /// Open the details of a service of the host of the SSH terminal in
-    /// front, by its name.
+    /// Open the details of a service or a timer of the host of the SSH
+    /// terminal in front, by its name.
     ShowService(String);
     /// Copy a command of 历史命令 or 命令片段 to the clipboard.
     CopyCommand(String);
@@ -421,9 +421,10 @@ pub struct EndProcess {
     pub force: bool,
 }
 
-/// Start, stop or restart a service of the host of the SSH terminal in
-/// front, or enable or disable it at boot; asks first before stopping or
-/// restarting it.
+/// Start, stop or restart a service or a timer of the host of the SSH
+/// terminal in front, enable or disable it at boot, or run a timer's
+/// service now; asks first before stopping or restarting one, or running a
+/// timer's service.
 #[derive(Action, Clone, PartialEq, Eq)]
 #[action(namespace = shellrs, no_json)]
 pub struct ControlService {

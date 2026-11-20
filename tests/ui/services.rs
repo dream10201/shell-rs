@@ -314,3 +314,293 @@ async fn the_services_wait_for_the_terminal_to_connect(cx: &mut TestAppContext) 
     )
     .await;
 }
+
+/// A host with timers: the administrator's backup, whose last run failed,
+/// logrotate's, and one that is stopped. Its clock says 2026-11-19 08:00:00
+/// UTC.
+const WITH_TIMERS: &str = "\
+@@version
+systemd 249 (249.11-0ubuntu3.12)
+@@state
+degraded
+@@now
+1795075200
+@@uptime
+86400.00 170000.11
+@@units
+Id=nginx.service
+Description=A high performance web server
+ActiveState=active
+SubState=running
+UnitFileState=enabled
+FragmentPath=/lib/systemd/system/nginx.service
+LoadState=loaded
+
+Id=logrotate.service
+Description=Rotate log files
+ActiveState=inactive
+SubState=dead
+UnitFileState=static
+FragmentPath=/lib/systemd/system/logrotate.service
+LoadState=loaded
+
+Id=backup.service
+Description=Nightly backup
+ActiveState=failed
+SubState=failed
+UnitFileState=static
+FragmentPath=/etc/systemd/system/backup.service
+LoadState=loaded
+
+Id=logrotate.timer
+Description=Daily rotation of log files
+ActiveState=active
+SubState=waiting
+UnitFileState=enabled
+FragmentPath=/lib/systemd/system/logrotate.timer
+LoadState=loaded
+Unit=logrotate.service
+TimersCalendar={ OnCalendar=*-*-* 00:30:00 ; next_elapse=Fri 2026-11-20 00:30:00 UTC }
+NextElapseUSecRealtime=Fri 2026-11-20 00:30:00 UTC
+NextElapseUSecMonotonic=infinity
+LastTriggerUSec=Wed 2026-11-18 23:30:00 UTC
+
+Id=backup.timer
+Description=Nightly backup
+ActiveState=active
+SubState=waiting
+UnitFileState=enabled
+FragmentPath=/etc/systemd/system/backup.timer
+LoadState=loaded
+Unit=backup.service
+TimersCalendar={ OnCalendar=*-*-* 02:30:00 ; next_elapse=Fri 2026-11-20 02:30:00 UTC }
+NextElapseUSecRealtime=Fri 2026-11-20 02:30:00 UTC
+NextElapseUSecMonotonic=infinity
+LastTriggerUSec=Thu 2026-11-19 02:30:00 UTC
+
+Id=fstrim.timer
+Description=Discard unused blocks once a week
+ActiveState=inactive
+SubState=dead
+UnitFileState=disabled
+FragmentPath=/lib/systemd/system/fstrim.timer
+LoadState=loaded
+Unit=fstrim.service
+TimersCalendar={ OnCalendar=Mon *-*-* 00:00:00 ; next_elapse=n/a }
+NextElapseUSecRealtime=
+NextElapseUSecMonotonic=0
+LastTriggerUSec=n/a
+";
+
+const TIMER_LINES: [&str; 5] = [
+    "timers-group:custom",
+    "timer:backup.timer",
+    "timers-group:system",
+    "timer:logrotate.timer",
+    "timer:fstrim.timer",
+];
+
+/// 系统服务 on a host with timers, switched to 定时器.
+async fn open_timers(
+    cx: &mut TestAppContext,
+    factory: Arc<FakeTerminalFactory>,
+) -> WindowHandle<Root> {
+    let handle = open_services(cx, factory);
+    wait_for_list(cx, handle).await;
+    in_frame(cx, handle, |window, cx| {
+        window.within("services-kind").click(1usize, cx)
+    });
+    handle
+}
+
+#[gpui_kit::test]
+async fn the_timers_come_by_when_they_go_off(cx: &mut TestAppContext) {
+    let factory = Arc::new(FakeTerminalFactory::answering(&[WITH_TIMERS]));
+    let handle = open_services(cx, factory.clone());
+    wait_for_list(cx, handle).await;
+    // A service a timer starts says so, being stopped between runs.
+    in_frame(cx, handle, |window, cx| {
+        assert_eq!(
+            window.find("service:logrotate.service").label(),
+            Some("logrotate.service · Rotate log files · 已停止 · 静态 · 定时任务")
+        );
+        assert_eq!(
+            window.find("service:nginx.service").label(),
+            Some("nginx.service · A high performance web server · 运行中 · 已启用")
+        );
+        window.within("services-kind").click(1usize, cx)
+    });
+    in_frame(cx, handle, |window, _| {
+        assert_eq!(
+            window.within("services-kind").find(1usize).selected(),
+            Some(true)
+        );
+        assert_eq!(listed(window, &TIMER_LINES), TIMER_LINES);
+        assert_eq!(
+            window.find("timers-group:system").label(),
+            Some("系统定时器 2")
+        );
+        assert_eq!(
+            window.find("timer:backup.timer").label(),
+            Some(
+                "backup.timer · Nightly backup · 下次 18 小时后 · 上次 5 小时前 · \
+                 等待中 · 已启用 · 上次运行失败"
+            )
+        );
+        assert_eq!(
+            window.find("timer:logrotate.timer").label(),
+            Some(
+                "logrotate.timer · Daily rotation of log files · 下次 16 小时后 · \
+                 上次 8 小时前 · 等待中 · 已启用"
+            )
+        );
+        assert_eq!(
+            window.find("timer:fstrim.timer").label(),
+            Some("fstrim.timer · Discard unused blocks once a week · 已停止 · 已禁用")
+        );
+        // A waiting timer can be stopped and its service run now, a
+        // stopped one started.
+        assert!(window.try_find("timer-stop:logrotate.timer").is_some());
+        assert!(window.try_find("timer-run:logrotate.timer").is_some());
+        assert!(window.try_find("timer-start:fstrim.timer").is_some());
+        assert!(window.try_find("service:nginx.service").is_none());
+    });
+
+    // 失败: the timer whose service failed, though it waits.
+    in_frame(cx, handle, |window, cx| {
+        window.within("services-tabs").click(3usize, cx)
+    });
+    in_frame(cx, handle, |window, _| {
+        assert_eq!(
+            listed(window, &TIMER_LINES),
+            ["timers-group:custom", "timer:backup.timer"]
+        );
+    });
+    // The search goes through the timers, and finds none of a service.
+    in_frame(cx, handle, |window, cx| {
+        window.within("services-tabs").click(0usize, cx);
+        window.click("services-search", cx);
+        window.input("nginx", cx);
+    });
+    in_frame(cx, handle, |window, _| {
+        assert_eq!(
+            window.find("services-empty").label(),
+            Some("没有符合条件的定时器")
+        );
+    });
+    // One reading for both lists.
+    assert_eq!(factory.exec_count(), 1);
+}
+
+#[gpui_kit::test]
+async fn running_a_timers_service_now_asks_first(cx: &mut TestAppContext) {
+    let factory = Arc::new(FakeTerminalFactory::answering(&[
+        WITH_TIMERS,
+        "@@status 0\n",
+        WITH_TIMERS,
+        "@@status 0\n",
+        WITH_TIMERS,
+    ]));
+    let handle = open_timers(cx, factory.clone()).await;
+
+    in_frame(cx, handle, |window, cx| {
+        window.click("timer-run:logrotate.timer", cx)
+    });
+    // Nothing runs before the answer, and the card's own click does not
+    // open the details.
+    assert_eq!(factory.exec_count(), 1);
+    in_frame(cx, handle, |window, cx| {
+        assert!(window.try_find("timer-details").is_none());
+        window.click("ok", cx)
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(5), |_, _| {
+        factory.exec_count() == 3
+    })
+    .await;
+    // The service, without waiting for it to finish.
+    let commands = factory.exec_commands();
+    assert!(
+        commands[1].contains("systemctl start --no-block -- \"logrotate.service\""),
+        "{}",
+        commands[1]
+    );
+
+    // Stopping the timer asks too.
+    in_frame(cx, handle, |window, cx| {
+        window.click("timer-stop:logrotate.timer", cx)
+    });
+    assert_eq!(factory.exec_count(), 3);
+    in_frame(cx, handle, |window, cx| window.click("ok", cx));
+    cx.wait_for(handle.into(), Duration::from_secs(5), |_, _| {
+        factory.exec_count() == 5
+    })
+    .await;
+    assert!(factory.exec_commands()[3].contains("systemctl stop -- \"logrotate.timer\""));
+}
+
+#[gpui_kit::test]
+async fn a_click_on_a_timer_shows_its_schedule_and_journal(cx: &mut TestAppContext) {
+    let factory = Arc::new(FakeTerminalFactory::answering(&[WITH_TIMERS, JOURNAL]));
+    let handle = open_timers(cx, factory.clone()).await;
+
+    in_frame(cx, handle, |window, cx| {
+        window.click("timer:logrotate.timer", cx)
+    });
+    in_frame(cx, handle, |window, _| {
+        let field = |id: &str| {
+            window
+                .find(SharedString::from(format!("service-field:{id}")))
+                .label()
+                .map(str::to_owned)
+                .unwrap_or_default()
+        };
+        assert_eq!(field("active"), "等待中");
+        assert_eq!(field("boot"), "已启用");
+        assert_eq!(field("schedule"), "*-*-* 00:30:00");
+        // On this computer's clock, and how far off.
+        assert!(
+            field("next_run").ends_with("（16 小时后）"),
+            "{}",
+            field("next_run")
+        );
+        assert!(
+            field("last_run").ends_with("（8 小时前）"),
+            "{}",
+            field("last_run")
+        );
+        assert_eq!(field("unit"), "logrotate.service（已停止）");
+        assert_eq!(field("unit_file"), "/lib/systemd/system/logrotate.timer");
+        assert!(window.try_find("timer-dialog-stop").is_some());
+        assert!(window.try_find("timer-dialog-run").is_some());
+        assert!(window.try_find("timer-dialog-disable").is_some());
+    });
+    // What the list read is enough.
+    assert_eq!(factory.exec_count(), 1);
+
+    // The journal is the timer's and its service's, read when its tab
+    // opens.
+    in_frame(cx, handle, |window, cx| {
+        window.within("timer-tabs").click(1usize, cx)
+    });
+    wait_for_label(cx, handle, "service-journal", JOURNAL.trim_end()).await;
+    assert!(
+        factory.exec_commands()[1]
+            .contains("journalctl -u \"logrotate.timer\" -u \"logrotate.service\"")
+    );
+}
+
+#[gpui_kit::test]
+async fn a_service_a_timer_starts_names_the_timer(cx: &mut TestAppContext) {
+    let factory = Arc::new(FakeTerminalFactory::answering(&[
+        WITH_TIMERS,
+        "Id=logrotate.service\nDescription=Rotate log files\nLoadState=loaded\n\
+         ActiveState=inactive\nSubState=dead\nUnitFileState=static\n\
+         FragmentPath=/lib/systemd/system/logrotate.service\n",
+    ]));
+    let handle = open_services(cx, factory);
+    wait_for_list(cx, handle).await;
+    in_frame(cx, handle, |window, cx| {
+        window.click("service:logrotate.service", cx)
+    });
+    wait_for_label(cx, handle, "service-field:timers", "logrotate.timer").await;
+}

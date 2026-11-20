@@ -9,6 +9,7 @@ use gpui_kit::component::{
     tab::{Tab, TabBar},
     v_flex,
 };
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::linux::{log_command, parse_status, status_command};
@@ -18,13 +19,13 @@ use super::model::{
 };
 use super::service_panel::{command_icon, state_color};
 use crate::app::{CatalogIcon, ControlService};
-use crate::i18n::t;
+use crate::i18n::{join_list, t};
 use crate::shared::{format_bytes, soft_tag};
 use crate::terminal::{ExecResult, TerminalView, exec_answer};
 
 /// How wide the dialog is: two columns of a label and a value, and the
-/// journal's lines.
-const DIALOG_WIDTH: f32 = 44.;
+/// journal's lines. A timer's details are as wide.
+pub(super) const DIALOG_WIDTH: f32 = 44.;
 
 /// Open the details of a service of the host of `terminal`, whose
 /// connection reads its state and journal. `dispatch` is the workspace's
@@ -100,7 +101,7 @@ pub fn open_service_dialog(
 }
 
 /// Something read off the host for the dialog.
-enum Read<T> {
+pub(super) enum Read<T> {
     /// Not asked for yet: the journal until its tab is opened.
     NotYet,
     Reading,
@@ -170,16 +171,10 @@ impl ServiceDetailsView {
             self.journal = Read::Reading;
             self._journal_task = Some(run(
                 &self.terminal,
-                log_command(&self.service.name),
+                log_command(&[&self.service.name]),
                 cx,
                 |this, answer, _| {
-                    this.journal = match answer {
-                        Ok(output) if output.trim().is_empty() => {
-                            Read::Unknown(t!("services.details.no_journal").into())
-                        }
-                        Ok(output) => Read::Known(output.trim_end().to_owned()),
-                        Err(why) => Read::Unknown(why),
-                    };
+                    this.journal = journal(answer);
                     // The newest lines are the last.
                     this.journal_scroll.scroll_to_bottom();
                 },
@@ -244,6 +239,13 @@ impl ServiceDetailsView {
                         .map(|(label, value)| field(label, value, cx)),
                 ),
             )
+            .when(!self.service.timers.is_empty(), |status| {
+                status.child(field(
+                    "services.field.timers",
+                    join_list(&self.service.timers),
+                    cx,
+                ))
+            })
             .child(field(
                 "services.field.unit_file",
                 status.path.clone().unwrap_or("—".into()),
@@ -251,40 +253,53 @@ impl ServiceDetailsView {
             ))
             .into_any_element()
     }
+}
 
-    fn render_journal(&self, cx: &App) -> AnyElement {
-        match &self.journal {
-            Read::Known(journal) => div()
-                .id("service-journal")
-                .test_support()
-                .aria_label(journal.clone())
-                .h(rems(20.))
-                .overflow_y_scroll()
-                .track_scroll(&self.journal_scroll)
-                .p_3()
-                .rounded(cx.theme().radius)
-                .bg(cx.theme().muted)
-                .font_family(cx.theme().mono_font_family.clone())
-                .text_xs()
-                .child(journal.clone())
-                .into_any_element(),
-            Read::Unknown(why) => message("service-journal-unknown", why.clone(), cx),
-            Read::Reading | Read::NotYet => reading("service-journal-reading", cx),
+/// The journal as `log_command` answered: its lines, or why there are
+/// none.
+pub(super) fn journal(answer: Result<String, String>) -> Read<String> {
+    match answer {
+        Ok(output) if output.trim().is_empty() => {
+            Read::Unknown(t!("services.details.no_journal").into())
         }
+        Ok(output) => Read::Known(output.trim_end().to_owned()),
+        Err(why) => Read::Unknown(why),
+    }
+}
+
+/// The 日志 tab: the journal's lines, scrolled by `scroll`.
+pub(super) fn render_journal(
+    journal: &Read<String>,
+    scroll: &ScrollHandle,
+    cx: &App,
+) -> AnyElement {
+    match journal {
+        Read::Known(journal) => div()
+            .id("service-journal")
+            .test_support()
+            .aria_label(journal.clone())
+            .h(rems(20.))
+            .overflow_y_scroll()
+            .track_scroll(scroll)
+            .p_3()
+            .rounded(cx.theme().radius)
+            .bg(cx.theme().muted)
+            .font_family(cx.theme().mono_font_family.clone())
+            .text_xs()
+            .child(journal.clone())
+            .into_any_element(),
+        Read::Unknown(why) => message("service-journal-unknown", why.clone(), cx),
+        Read::Reading | Read::NotYet => reading("service-journal-reading", cx),
     }
 }
 
 /// Run `command` on `terminal`'s connection, and hand the answer to
 /// `record`: what it printed, or why it did not run.
-fn run(
+pub(super) fn run<T: 'static>(
     terminal: &WeakEntity<TerminalView>,
     command: Option<String>,
-    cx: &mut Context<ServiceDetailsView>,
-    record: impl FnOnce(
-        &mut ServiceDetailsView,
-        Result<String, String>,
-        &mut Context<ServiceDetailsView>,
-    ) + 'static,
+    cx: &mut Context<T>,
+    record: impl FnOnce(&mut T, Result<String, String>, &mut Context<T>) + 'static,
 ) -> Task<()> {
     let reply = command.and_then(|command| terminal.upgrade()?.read(cx).exec(command, cx));
     cx.spawn(async move |this, cx| {
@@ -306,7 +321,7 @@ fn run(
 
 /// A label, by its text's key, and its value, over a line. The line is
 /// found by the last part of the key: 「service-field:main_pid」.
-fn field(label: &'static str, value: String, cx: &App) -> impl IntoElement {
+pub(super) fn field(label: &'static str, value: String, cx: &App) -> impl IntoElement {
     let id = label.rsplit('.').next().unwrap_or(label);
     h_flex()
         .id(SharedString::from(format!("service-field:{id}")))
@@ -328,7 +343,7 @@ fn field(label: &'static str, value: String, cx: &App) -> impl IntoElement {
         .child(div().flex_1().min_w_0().truncate().child(value))
 }
 
-fn reading(id: &'static str, cx: &App) -> AnyElement {
+pub(super) fn reading(id: &'static str, cx: &App) -> AnyElement {
     h_flex()
         .id(id)
         .test_support()
@@ -342,7 +357,7 @@ fn reading(id: &'static str, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-fn message(id: &'static str, text: String, cx: &App) -> AnyElement {
+pub(super) fn message(id: &'static str, text: String, cx: &App) -> AnyElement {
     div()
         .id(id)
         .test_support()
@@ -383,7 +398,7 @@ impl Render for ServiceDetailsView {
             .child(if self.tab == 0 {
                 self.render_status(cx)
             } else {
-                self.render_journal(cx)
+                render_journal(&self.journal, &self.journal_scroll, cx)
             })
     }
 }

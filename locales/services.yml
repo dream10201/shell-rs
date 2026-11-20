@@ -1,10 +1,10 @@
 _version: 2
 
-# 系统服务: a Linux host's systemd services. systemd's states keep the
-# words systemd uses.
+# 系统服务: a Linux host's systemd services and timers. systemd's states
+# keep the words systemd uses.
 
 services.panel.search:
-  zh-CN: 搜索服务名称或描述
+  zh-CN: 搜索名称或描述
   en: Search names and descriptions
 services.panel.empty:
   zh-CN: 没有服务
@@ -12,6 +12,12 @@ services.panel.empty:
 services.panel.no_match:
   zh-CN: 没有符合条件的服务
   en: No matching services
+services.panel.no_timers:
+  zh-CN: 没有定时器
+  en: No timers
+services.panel.no_matching_timers:
+  zh-CN: 没有符合条件的定时器
+  en: No matching timers
 services.panel.no_description:
   zh-CN: 无描述
   en: No description
@@ -33,6 +39,20 @@ services.group.custom:
 services.group.system:
   zh-CN: 系统服务
   en: System services
+services.group.custom_timers:
+  zh-CN: 自定义定时器
+  en: Custom timers
+services.group.system_timers:
+  zh-CN: 系统定时器
+  en: System timers
+
+# The switch over the tabs.
+services.kind.service:
+  zh-CN: 服务
+  en: Services
+services.kind.timer:
+  zh-CN: 定时器
+  en: Timers
 
 services.filter.all:
   zh-CN: 全部
@@ -62,6 +82,9 @@ services.command.enable:
 services.command.disable:
   zh-CN: 禁用开机启动
   en: Disable at boot
+services.command.run:
+  zh-CN: 立即运行
+  en: Run now
 
 # systemd's ActiveState.
 services.active.active:
@@ -111,6 +134,9 @@ services.sub.auto_restart:
 services.sub.condition:
   zh-CN: 条件不满足
   en: Condition not met
+services.sub.elapsed:
+  zh-CN: 已触发
+  en: Elapsed
 services.sub.starting:
   zh-CN: 正在启动
   en: Starting
@@ -203,7 +229,85 @@ services.error.status:
   zh-CN: systemctl 返回 %{status}
   en: systemctl exited with status %{status}
 
-# A service's details.
+# On a service a timer starts, and on a timer whose service failed.
+services.tag.scheduled:
+  zh-CN: 定时任务
+  en: Scheduled
+services.tag.failed_last:
+  zh-CN: 上次运行失败
+  en: Last run failed
+
+# A timer's times.
+services.timer.next:
+  zh-CN: 下次 %{when}
+  en: Next %{when}
+services.timer.last:
+  zh-CN: 上次 %{when}
+  en: Ran %{when}
+services.timer.due:
+  zh-CN: 已到下次运行时间
+  en: Next run is due
+services.timer.moment:
+  zh-CN: "%{time}（%{when}）"
+  en: "%{time} (%{when})"
+services.timer.unit_state:
+  zh-CN: "%{unit}（%{state}）"
+  en: "%{unit} (%{state})"
+services.when.within_a_minute:
+  zh-CN: 1 分钟内
+  en: within a minute
+services.when.in_minutes.one:
+  en: in %{count} minute
+services.when.in_minutes.other:
+  zh-CN: "%{count} 分钟后"
+  en: in %{count} minutes
+services.when.in_hours.one:
+  en: in %{count} hour
+services.when.in_hours.other:
+  zh-CN: "%{count} 小时后"
+  en: in %{count} hours
+services.when.in_days.one:
+  en: in %{count} day
+services.when.in_days.other:
+  zh-CN: "%{count} 天后"
+  en: in %{count} days
+services.when.just_now:
+  zh-CN: 刚刚
+  en: just now
+services.when.minutes_ago.one:
+  en: "%{count} minute ago"
+services.when.minutes_ago.other:
+  zh-CN: "%{count} 分钟前"
+  en: "%{count} minutes ago"
+services.when.hours_ago.one:
+  en: "%{count} hour ago"
+services.when.hours_ago.other:
+  zh-CN: "%{count} 小时前"
+  en: "%{count} hours ago"
+services.when.days_ago.one:
+  en: "%{count} day ago"
+services.when.days_ago.other:
+  zh-CN: "%{count} 天前"
+  en: "%{count} days ago"
+
+# What a timer goes off on; %{time} is systemd's span, 「15min」.
+services.trigger.active:
+  zh-CN: 定时器启动 %{time} 后
+  en: "%{time} after the timer starts"
+services.trigger.boot:
+  zh-CN: 开机 %{time} 后
+  en: "%{time} after boot"
+services.trigger.startup:
+  zh-CN: systemd 启动 %{time} 后
+  en: "%{time} after systemd starts"
+services.trigger.unit_active:
+  zh-CN: 上次运行 %{time} 后
+  en: "%{time} after the last run"
+services.trigger.unit_inactive:
+  zh-CN: 上次运行结束 %{time} 后
+  en: "%{time} after the last run ends"
+
+# A service's details, and a timer's.
 services.details.tab_status:
   zh-CN: 状态
   en: Status
@@ -249,3 +353,18 @@ services.field.stopped:
 services.field.unit_file:
   zh-CN: Unit 文件
   en: Unit file
+services.field.timers:
+  zh-CN: 定时器
+  en: Timers
+services.field.schedule:
+  zh-CN: 计划
+  en: Schedule
+services.field.next_run:
+  zh-CN: 下次运行
+  en: Next run
+services.field.last_run:
+  zh-CN: 上次运行
+  en: Last run
+services.field.unit:
+  zh-CN: 触发的服务
+  en: Activates

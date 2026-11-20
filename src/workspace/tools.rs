@@ -32,7 +32,9 @@ use crate::app::{
 use crate::host::{HostId, HostOs};
 use crate::i18n::t;
 use crate::processes::{end_command, ended, open_process_dialog};
-use crate::services::{ServiceCommand, control_command, controlled, open_service_dialog};
+use crate::services::{
+    ServiceCommand, control_command, controlled, open_service_dialog, open_timer_dialog,
+};
 use crate::shared::confirm_danger;
 use crate::terminal::{LocalTerminalId, RemoteTerminalId, exec_answer};
 
@@ -361,7 +363,8 @@ impl Workspace {
             .update(cx, |tools, cx| tools.refresh_services(cx));
     }
 
-    /// A service's details: its state in full and its journal.
+    /// A service's details, its state in full and its journal; or a
+    /// timer's, as the list read it, and its journal with its service's.
     pub(super) fn on_show_service(
         &mut self,
         action: &ShowService,
@@ -371,21 +374,18 @@ impl Workspace {
         let Some(terminal) = self.tool_terminal(cx) else {
             return;
         };
-        let Some(service) = self.tools.read(cx).service(&action.0, cx) else {
-            return;
-        };
-        open_service_dialog(
-            service,
-            terminal.view,
-            self.focus_handle.clone(),
-            window,
-            cx,
-        );
+        let dispatch = self.focus_handle.clone();
+        if let Some((timer, clock)) = self.tools.read(cx).timer(&action.0, cx) {
+            open_timer_dialog(timer, clock, terminal.view, dispatch, window, cx);
+        } else if let Some(service) = self.tools.read(cx).service(&action.0, cx) {
+            open_service_dialog(service, terminal.view, dispatch, window, cx);
+        }
     }
 
-    /// Run a command on a service over the SSH terminal's own connection,
-    /// asking first before it stops or restarts one; how it went is a
-    /// notification, and the list is read again.
+    /// Run a command on a service or a timer over the SSH terminal's own
+    /// connection, asking first before it stops or restarts one or runs a
+    /// timer's service now; how it went is a notification, and the list is
+    /// read again.
     pub(super) fn on_control_service(
         &mut self,
         action: &ControlService,
@@ -417,9 +417,14 @@ impl Workspace {
             }
         });
         // Stopping and restarting take something away, if only for a
-        // moment; starting and the boot settings do not.
+        // moment, and a timer's job run now does whatever it does; starting
+        // and the boot settings do not.
         let ssh = matches!(name.as_str(), "ssh.service" | "sshd.service");
         let (title, description) = match command {
+            ServiceCommand::Stop if name.ends_with(".timer") => (
+                t!("tools.timer.stop.title", name = name),
+                t!("tools.timer.stop.description"),
+            ),
             ServiceCommand::Stop => (
                 t!("tools.service.stop.title", name = name),
                 if ssh {
@@ -431,6 +436,10 @@ impl Workspace {
             ServiceCommand::Restart => (
                 t!("tools.service.restart.title", name = name),
                 t!("tools.service.restart.description"),
+            ),
+            ServiceCommand::Run => (
+                t!("tools.service.run.title", name = name),
+                t!("tools.service.run.description"),
             ),
             _ => return run(window, cx),
         };
@@ -713,6 +722,7 @@ fn service_done(name: &str, command: ServiceCommand) -> SharedString {
         ServiceCommand::Restart => t!("tools.service.restart.done", name = name),
         ServiceCommand::Enable => t!("tools.service.enable.done", name = name),
         ServiceCommand::Disable => t!("tools.service.disable.done", name = name),
+        ServiceCommand::Run => t!("tools.service.run.done", name = name),
     }
 }
 
@@ -724,5 +734,6 @@ fn service_failed(name: &str, command: ServiceCommand, why: &str) -> SharedStrin
         ServiceCommand::Restart => t!("tools.service.restart.failed", name = name, error = why),
         ServiceCommand::Enable => t!("tools.service.enable.failed", name = name, error = why),
         ServiceCommand::Disable => t!("tools.service.disable.failed", name = name, error = why),
+        ServiceCommand::Run => t!("tools.service.run.failed", name = name, error = why),
     }
 }
