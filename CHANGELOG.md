@@ -4,6 +4,13 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.12]
+
+### Added
+
+- Services now shows systemd timers: “Services” and “Timers” at the top switch between the two lists. Timers are listed by when they run next, and each card says how long until the next run and since the last one; a timer whose service failed last time is marked and listed under “Failed”. You can start and stop a timer, enable or disable it at boot, and “Run now” runs the service it starts once, right away (it asks first, and the timer’s schedule doesn’t change). The details show the schedule, the next and last run times, the service it activates, and the journal of the timer and its service.
+- A service a timer starts is marked “Scheduled”, and its details name the timer.
+
 ## [1.0.11]
 
 ### Fixed
