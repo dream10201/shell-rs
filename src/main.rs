@@ -19,10 +19,22 @@ fn main() {
     // writes its changes through, so a second one would write over the
     // first one's; opened again, ShellRS brings the running one forward
     // and hands it the link.
-    if shellrs::instance::activate_running_app(&shellrs::app::instance_socket_path(), link.clone())
-    {
+    let endpoint = shellrs::app::instance_socket_path();
+    if shellrs::instance::activate_running_app(&endpoint, link.clone()) {
         return;
     }
+    shellrs::i18n::set_locale(shellrs::settings::InterfaceLanguage::default().resolved());
+    // Taken before the window opens: a copy opened at the same moment then
+    // finds this one instead of opening a second window that cannot start.
+    let server = match shellrs::instance::InstanceServer::reserve(endpoint.clone()) {
+        Err(error)
+            if error.kind() == std::io::ErrorKind::AddrInUse
+                && shellrs::instance::activate_running_app(&endpoint, link.clone()) =>
+        {
+            return;
+        }
+        server => server,
+    };
     let app = gpui_kit::application().with_assets(shellrs::app::AppAssets);
     // macOS: the Dock icon of a ShellRS whose window was closed, which only
     // hid it (see `hide_when_closed`).
@@ -39,7 +51,6 @@ fn main() {
         // language and the default theme.
         let vault = std::sync::Arc::new(shellrs::vault::Vault::new(shellrs::app::vault_dir()));
         shellrs::vault::install(vault.clone());
-        shellrs::i18n::set_locale(shellrs::settings::InterfaceLanguage::default().resolved());
         shellrs::init(cx);
         // 显示或隐藏 ShellRS takes its key from the system; tests never do.
         shellrs::app::listen_for_system_hotkey(cx);
@@ -72,9 +83,7 @@ fn main() {
                         lock.watch_screen(shellrs::app_lock::system_screen())
                     });
                     shellrs::settings::apply(shellrs::settings::AppSettings::default(), window, cx);
-                    let server = match shellrs::instance::InstanceServer::reserve(
-                        shellrs::app::instance_socket_path(),
-                    ) {
+                    let server = match server {
                         Ok(server) => server,
                         Err(error) => {
                             let failure =
