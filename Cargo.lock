@@ -7832,7 +7832,7 @@ dependencies = [
 
 [[package]]
 name = "shellrs"
-version = "1.0.12"
+version = "1.0.13"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
