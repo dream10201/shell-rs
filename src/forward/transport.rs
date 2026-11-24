@@ -35,6 +35,8 @@ pub enum ForwardEvent {
     Connections(usize),
     /// One connection could not be carried. The forward keeps running.
     ConnectionFailed(String),
+    /// A connection was carried again after one failed.
+    ConnectionsRecovered,
     /// The connection to the server dropped. Attempt `attempt` of `of` to
     /// log in again starts after `delay`.
     Reconnecting {

@@ -375,7 +375,10 @@ impl ForwardManager {
                 ));
                 return;
             }
-            ForwardEvent::Listening => ForwardStatus::Running { connections: 0 },
+            ForwardEvent::Listening => {
+                self.problems.remove(&id);
+                ForwardStatus::Running { connections: 0 }
+            }
             ForwardEvent::Connections(connections) => {
                 // Not a change of state, so observers redraw but nobody is
                 // told: on a busy proxy the count moves all the time. A
@@ -389,6 +392,12 @@ impl ForwardManager {
             ForwardEvent::ConnectionFailed(problem) => {
                 self.problems.insert(id, problem.into());
                 cx.notify();
+                return;
+            }
+            ForwardEvent::ConnectionsRecovered => {
+                if self.problems.remove(&id).is_some() {
+                    cx.notify();
+                }
                 return;
             }
             ForwardEvent::Reconnecting { attempt, of, .. } => {

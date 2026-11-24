@@ -38,6 +38,21 @@ async fn wait_for_forward_status(
     .await;
 }
 
+async fn wait_for_forward_line(
+    cx: &mut TestAppContext,
+    handle: WindowHandle<Root>,
+    id: ForwardId,
+    shows: impl Fn(&str) -> bool,
+) {
+    cx.wait_for(handle.into(), Duration::from_secs(2), |window, cx| {
+        window.render_frame(cx);
+        window
+            .try_find(("forward-line", id.0))
+            .is_some_and(|line| line.label().is_some_and(&shows))
+    })
+    .await;
+}
+
 #[gpui_kit::test]
 async fn the_title_bar_switches_the_sidebar_between_hosts_and_forwards(cx: &mut TestAppContext) {
     let (handle, _) = open_workspace_with_forwards(
@@ -539,6 +554,18 @@ async fn a_running_forward_reports_reconnecting_and_giving_up(cx: &mut TestAppCo
     in_frame(cx, handle, |window, cx| {
         assert!(window.notifications(cx).is_empty());
     });
+
+    run.events
+        .send_blocking(ForwardEvent::ConnectionFailed(
+            "服务器无法连接 db.internal:3306".into(),
+        ))
+        .unwrap();
+    let problem = "服务器无法连接 db.internal:3306";
+    wait_for_forward_line(cx, handle, id, |line| line == problem).await;
+    run.events
+        .send_blocking(ForwardEvent::ConnectionsRecovered)
+        .unwrap();
+    wait_for_forward_line(cx, handle, id, |line| line != problem).await;
 
     run.events
         .send_blocking(ForwardEvent::Reconnecting {

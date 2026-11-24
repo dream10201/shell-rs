@@ -523,6 +523,32 @@ fn a_target_the_server_cannot_reach_fails_that_connection_only() {
 }
 
 #[test]
+fn a_connection_carried_after_a_failed_one_reports_the_recovery() {
+    runtime().block_on(async {
+        let Some(server) = server().await else { return };
+        let fixture = Fixture::new(server.port);
+        let local = free_port();
+        let target = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = target.local_addr().unwrap().port();
+        drop(target);
+        let run = fixture.start(ForwardKind::Local, local, Some(port));
+        run.listening().await;
+
+        let mut socket = connect(local).await;
+        assert!(closed(&mut socket).await);
+        assert!(matches!(
+            run.next_state().await,
+            ForwardEvent::ConnectionFailed(_)
+        ));
+
+        let target = TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+        let _accept = tokio::spawn(async move { target.accept().await });
+        let _socket = connect(local).await;
+        assert_eq!(run.next_state().await, ForwardEvent::ConnectionsRecovered);
+    });
+}
+
+#[test]
 fn a_taken_local_port_fails_before_anyone_is_asked_anything() {
     runtime().block_on(async {
         let Some(server) = server().await else { return };

@@ -16,7 +16,7 @@ use russh::ChannelOpenFailure;
 use tokio::{
     io::AsyncWriteExt as _,
     net::{TcpListener, TcpStream},
-    sync::{mpsc, watch},
+    sync::{Notify, mpsc, watch},
     task::JoinSet,
 };
 
@@ -378,6 +378,8 @@ impl SshForwardTransport {
         // Each task ends with what went wrong for its connection, if that
         // is worth telling.
         let mut connections: JoinSet<Option<String>> = JoinSet::new();
+        let opened = Arc::new(Notify::new());
+        let mut failing = false;
         let mut reported = 0;
         let mut count = tokio::time::interval(COUNT_INTERVAL);
         let end = loop {
@@ -392,7 +394,7 @@ impl SshForwardTransport {
                             if self.kind == ForwardKind::Remote
                                 && open.connected_port == u32::from(self.bind.port) =>
                         {
-                            connections.spawn(carry_remote(open, target.clone()));
+                            connections.spawn(carry_remote(open, target.clone(), opened.clone()));
                         }
                         // Not something this forward asked for.
                         _ => {
@@ -406,16 +408,28 @@ impl SshForwardTransport {
                     let handle = connection.handle.clone();
                     match (self.kind, &self.target) {
                         (ForwardKind::Local, Some(target)) => {
-                            connections.spawn(carry_local(handle, socket, peer, target.clone()));
+                            connections.spawn(carry_local(
+                                handle,
+                                socket,
+                                peer,
+                                target.clone(),
+                                opened.clone(),
+                            ));
                         }
                         _ => {
-                            connections.spawn(carry_dynamic(handle, socket, peer));
+                            connections.spawn(carry_dynamic(handle, socket, peer, opened.clone()));
                         }
                     }
                 }
                 Some(ended) = connections.join_next(), if !connections.is_empty() => {
                     if let Ok(Some(problem)) = ended {
+                        failing = true;
                         let _ = events.send(ForwardEvent::ConnectionFailed(problem)).await;
+                    }
+                }
+                _ = opened.notified() => {
+                    if std::mem::take(&mut failing) {
+                        let _ = events.send(ForwardEvent::ConnectionsRecovered).await;
                     }
                 }
                 _ = count.tick() => {
@@ -577,11 +591,13 @@ async fn carry_local(
     mut socket: TcpStream,
     peer: SocketAddr,
     target: ForwardEndpoint,
+    opened: Arc<Notify>,
 ) -> Option<String> {
     let mut stream = match open_channel(&handle, target.bare_host(), target.port, peer).await {
         Ok(channel) => channel.into_stream(),
         Err(error) => return describe_open_error(error.as_ref(), &target.to_string()),
     };
+    opened.notify_one();
     let _ = tokio::io::copy_bidirectional(&mut socket, &mut stream).await;
     None
 }
@@ -591,6 +607,7 @@ async fn carry_dynamic(
     handle: Arc<SshHandle>,
     mut socket: TcpStream,
     peer: SocketAddr,
+    opened: Arc<Notify>,
 ) -> Option<String> {
     let request = match tokio::time::timeout(SOCKS_TIMEOUT, socks::negotiate(&mut socket)).await {
         Ok(Ok(request)) => request,
@@ -604,6 +621,7 @@ async fn carry_dynamic(
     let target = &request.target;
     match open_channel(&handle, &target.host, target.port, peer).await {
         Ok(channel) => {
+            opened.notify_one();
             if socks::reply(&mut socket, request.version, SocksReply::Succeeded)
                 .await
                 .is_err()
@@ -641,7 +659,11 @@ async fn carry_dynamic(
 /// `ssh -R`: someone connected to the server's port; this machine connects
 /// to the target. The channel is accepted only once the target answers, so
 /// a target that is down looks refused from the other end, not half-open.
-async fn carry_remote(open: ForwardedTcpip, target: ForwardEndpoint) -> Option<String> {
+async fn carry_remote(
+    open: ForwardedTcpip,
+    target: ForwardEndpoint,
+    opened: Arc<Notify>,
+) -> Option<String> {
     let dial = TcpStream::connect((target.bare_host(), target.port));
     let mut socket = match tokio::time::timeout(DIAL_TIMEOUT, dial).await {
         Ok(Ok(socket)) => socket,
@@ -665,6 +687,7 @@ async fn carry_remote(open: ForwardedTcpip, target: ForwardEndpoint) -> Option<S
         }
     };
     open.reply.accept().await;
+    opened.notify_one();
     let mut stream = open.channel.into_stream();
     let _ = tokio::io::copy_bidirectional(&mut socket, &mut stream).await;
     None

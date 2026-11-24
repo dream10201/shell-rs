@@ -365,6 +365,9 @@ impl ForwardPanel {
                             .child(div().truncate().child(row.title))
                             .child(
                                 div()
+                                    .id(("forward-line", id.0))
+                                    .test_support()
+                                    .aria_label(line.clone())
                                     .text_xs()
                                     .text_color(line_color)
                                     .map(|line| if wraps { line } else { line.truncate() })
