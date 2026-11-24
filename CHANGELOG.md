@@ -4,6 +4,12 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS’s update dialog opens the changelog on GitHub with What’s new: CHANGELOG.zh.md for the Chinese interface, this file for the others. Written in Markdown, for users.
 
+## [1.0.14]
+
+### Fixed
+
+- After one connection through a port forward failed (such as “The server couldn’t connect to …”), the yellow message stayed in the list even once later connections went through. It now goes away as soon as a connection succeeds or the forward reconnects.
+
 ## [1.0.13]
 
 ### Fixed
